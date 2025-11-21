@@ -1,0 +1,313 @@
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const pool = require('../config/database');
+const { success, error } = require('../utils/response');
+const { authenticate, requireAdmin } = require('../middleware/auth');
+const { generateId } = require('../utils/uuid');
+
+const router = express.Router();
+
+/**
+ * GET /api/users
+ * Получение списка пользователей (только для админов)
+ */
+router.get('/', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '' } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = `
+      SELECT id, email, display_name, photo_url, uid, phone_number, city,
+       first_name, second_name, country, gender, count_performed, count_orders,
+       jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+       admin, fcm_token, auth_type, latitude, longitude, created_time
+       FROM users
+    `;
+    const params = [];
+
+    if (search) {
+      query += ` WHERE email LIKE ? OR display_name LIKE ? OR first_name LIKE ? OR second_name LIKE ?`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    query += ` ORDER BY created_time DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const [users] = await pool.execute(query, params);
+
+    // Получение общего количества
+    let countQuery = 'SELECT COUNT(*) as total FROM users';
+    const countParams = [];
+    if (search) {
+      countQuery += ` WHERE email LIKE ? OR display_name LIKE ? OR first_name LIKE ? OR second_name LIKE ?`;
+      const searchPattern = `%${search}%`;
+      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+    const [countResult] = await pool.execute(countQuery, countParams);
+    const total = countResult[0].total;
+
+    success(res, {
+      users,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('Ошибка получения пользователей:', err);
+    error(res, 'Ошибка при получении списка пользователей', 500);
+  }
+});
+
+/**
+ * GET /api/users/:id
+ * Получение данных пользователя по ID
+ */
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Пользователь может видеть только свои данные, если он не админ
+    if (req.user.userId !== id && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен', 403);
+    }
+
+    const [users] = await pool.execute(
+      `SELECT id, email, display_name, photo_url, uid, phone_number, city,
+       first_name, second_name, country, gender, count_performed, count_orders,
+       jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+       admin, fcm_token, auth_type, latitude, longitude, created_time
+       FROM users WHERE id = ?`,
+      [id]
+    );
+
+    if (users.length === 0) {
+      return error(res, 'Пользователь не найден', 404);
+    }
+
+    success(res, { user: users[0] });
+  } catch (err) {
+    console.error('Ошибка получения пользователя:', err);
+    error(res, 'Ошибка при получении данных пользователя', 500);
+  }
+});
+
+/**
+ * PUT /api/users/:id
+ * Обновление данных пользователя
+ */
+router.put('/:id', authenticate, [
+  body('displayName').optional().isString(),
+  body('firstName').optional().isString(),
+  body('secondName').optional().isString(),
+  body('phoneNumber').optional().isString(),
+  body('city').optional().isString(),
+  body('country').optional().isString(),
+  body('gender').optional().isString(),
+  body('photoUrl').optional().isURL(),
+  body('latitude').optional().isFloat(),
+  body('longitude').optional().isFloat(),
+  body('fcmToken').optional().isString()
+], async (req, res) => {
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+    }
+
+    const { id } = req.params;
+
+    // Пользователь может обновлять только свои данные, если он не админ
+    if (req.user.userId !== id && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен', 403);
+    }
+
+    const {
+      displayName,
+      firstName,
+      secondName,
+      phoneNumber,
+      city,
+      country,
+      gender,
+      photoUrl,
+      latitude,
+      longitude,
+      fcmToken
+    } = req.body;
+
+    // Проверка существования пользователя
+    const [existingUsers] = await pool.execute(
+      'SELECT id FROM users WHERE id = ?',
+      [id]
+    );
+
+    if (existingUsers.length === 0) {
+      return error(res, 'Пользователь не найден', 404);
+    }
+
+    // Формирование запроса обновления
+    const updates = [];
+    const params = [];
+
+    if (displayName !== undefined) {
+      updates.push('display_name = ?');
+      params.push(displayName);
+    }
+    if (firstName !== undefined) {
+      updates.push('first_name = ?');
+      params.push(firstName);
+    }
+    if (secondName !== undefined) {
+      updates.push('second_name = ?');
+      params.push(secondName);
+    }
+    if (phoneNumber !== undefined) {
+      updates.push('phone_number = ?');
+      params.push(phoneNumber);
+    }
+    if (city !== undefined) {
+      updates.push('city = ?');
+      params.push(city);
+    }
+    if (country !== undefined) {
+      updates.push('country = ?');
+      params.push(country);
+    }
+    if (gender !== undefined) {
+      updates.push('gender = ?');
+      params.push(gender);
+    }
+    if (photoUrl !== undefined) {
+      updates.push('photo_url = ?');
+      params.push(photoUrl);
+    }
+    if (latitude !== undefined) {
+      updates.push('latitude = ?');
+      params.push(latitude);
+    }
+    if (longitude !== undefined) {
+      updates.push('longitude = ?');
+      params.push(longitude);
+    }
+    if (fcmToken !== undefined) {
+      updates.push('fcm_token = ?');
+      params.push(fcmToken);
+    }
+
+    if (updates.length === 0) {
+      return error(res, 'Нет данных для обновления', 400);
+    }
+
+    updates.push('updated_at = NOW()');
+    params.push(id);
+
+    await pool.execute(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+
+    // Получение обновленных данных
+    const [users] = await pool.execute(
+      `SELECT id, email, display_name, photo_url, uid, phone_number, city,
+       first_name, second_name, country, gender, count_performed, count_orders,
+       jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+       admin, fcm_token, auth_type, latitude, longitude, created_time
+       FROM users WHERE id = ?`,
+      [id]
+    );
+
+    success(res, { user: users[0] }, 'Данные пользователя обновлены');
+  } catch (err) {
+    console.error('Ошибка обновления пользователя:', err);
+    error(res, 'Ошибка при обновлении данных пользователя', 500);
+  }
+});
+
+/**
+ * PUT /api/users/:id/jcoins
+ * Обновление количества Joycoins (только для админов)
+ */
+router.put('/:id/jcoins', authenticate, requireAdmin, [
+  body('jcoins').isInt().withMessage('jcoins должен быть числом'),
+  body('operation').optional().isIn(['set', 'add', 'subtract']).withMessage('Операция должна быть set, add или subtract')
+], async (req, res) => {
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+    }
+
+    const { id } = req.params;
+    const { jcoins, operation = 'set' } = req.body;
+
+    // Проверка существования пользователя
+    const [existingUsers] = await pool.execute(
+      'SELECT jcoins FROM users WHERE id = ?',
+      [id]
+    );
+
+    if (existingUsers.length === 0) {
+      return error(res, 'Пользователь не найден', 404);
+    }
+
+    const currentJcoins = existingUsers[0].jcoins || 0;
+    let newJcoins;
+
+    switch (operation) {
+      case 'add':
+        newJcoins = currentJcoins + jcoins;
+        break;
+      case 'subtract':
+        newJcoins = Math.max(0, currentJcoins - jcoins);
+        break;
+      case 'set':
+      default:
+        newJcoins = jcoins;
+        break;
+    }
+
+    await pool.execute(
+      'UPDATE users SET jcoins = ?, updated_at = NOW() WHERE id = ?',
+      [newJcoins, id]
+    );
+
+    success(res, { jcoins: newJcoins }, 'Joycoins обновлены');
+  } catch (err) {
+    console.error('Ошибка обновления Joycoins:', err);
+    error(res, 'Ошибка при обновлении Joycoins', 500);
+  }
+});
+
+/**
+ * DELETE /api/users/:id
+ * Удаление пользователя (только для админов)
+ */
+router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Проверка существования пользователя
+    const [existingUsers] = await pool.execute(
+      'SELECT id FROM users WHERE id = ?',
+      [id]
+    );
+
+    if (existingUsers.length === 0) {
+      return error(res, 'Пользователь не найден', 404);
+    }
+
+    await pool.execute('DELETE FROM users WHERE id = ?', [id]);
+
+    success(res, null, 'Пользователь удален');
+  } catch (err) {
+    console.error('Ошибка удаления пользователя:', err);
+    error(res, 'Ошибка при удалении пользователя', 500);
+  }
+});
+
+module.exports = router;
+
