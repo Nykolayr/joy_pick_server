@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Joy Pick Server - Статус</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .status-grid {
+            display: grid;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .status-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .status-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-right: 20px;
+            flex-shrink: 0;
+        }
+
+        .status-icon.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-icon.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-icon.loading {
+            background: #fff3cd;
+            color: #856404;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .status-info {
+            flex: 1;
+        }
+
+        .status-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 16px;
+        }
+
+        .status-details {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .timestamp {
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #999;
+            font-size: 14px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🌱</div>
+            <h1>Joy Pick Server</h1>
+            <p class="subtitle">API сервер для экологического приложения</p>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-item">
+                <div class="status-icon success" id="node-icon">✓</div>
+                <div class="status-info">
+                    <div class="status-label">Node.js сервер</div>
+                    <div class="status-details" id="node-status">Работает</div>
+                </div>
+            </div>
+
+            <div class="status-item">
+                <div class="status-icon loading" id="db-icon">⟳</div>
+                <div class="status-info">
+                    <div class="status-label">База данных MySQL</div>
+                    <div class="status-details" id="db-status">Проверка...</div>
+                </div>
+            </div>
+
+            <div class="status-item">
+                <div class="status-icon success" id="api-icon">✓</div>
+                <div class="status-info">
+                    <div class="status-label">API эндпоинты</div>
+                    <div class="status-details" id="api-status">Доступны</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="timestamp" id="timestamp">
+            Время проверки: <span id="time">загрузка...</span>
+        </div>
+
+        <div class="footer">
+            <p>Версия: 1.0.0</p>
+            <p>API доступен по адресу: <a href="/api" style="color: #667eea;">/api</a></p>
+            <p style="margin-top: 10px; font-size: 12px; color: #bbb;">Админ панель в разработке</p>
+        </div>
+    </div>
+
+    <script>
+        function updateTimestamp() {
+            const now = new Date();
+            const timeString = now.toLocaleString('ru-RU', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('time').textContent = timeString;
+        }
+
+        function setStatus(elementId, iconId, status, details, isSuccess) {
+            const icon = document.getElementById(iconId);
+            const statusEl = document.getElementById(elementId);
+            
+            if (isSuccess) {
+                icon.className = 'status-icon success';
+                icon.textContent = '✓';
+            } else {
+                icon.className = 'status-icon error';
+                icon.textContent = '✗';
+            }
+            
+            statusEl.textContent = details;
+        }
+
+        function setLoading(elementId, iconId) {
+            const icon = document.getElementById(iconId);
+            const statusEl = document.getElementById(elementId);
+            
+            icon.className = 'status-icon loading';
+            icon.textContent = '⟳';
+            statusEl.textContent = 'Проверка...';
+        }
+
+        async function checkStatus() {
+            updateTimestamp();
+            
+            // Проверка Node.js (уже работает, раз страница загрузилась)
+            setStatus('node-status', 'node-icon', 'success', 'Работает', true);
+            
+            // Проверка API
+            setLoading('api-status', 'api-icon');
+            try {
+                const healthResponse = await fetch('/health');
+                if (healthResponse.ok) {
+                    const healthData = await healthResponse.json();
+                    setStatus('api-status', 'api-icon', 'success', 
+                        `API работает (${healthData.timestamp ? 'OK' : 'OK'})`, true);
+                } else {
+                    setStatus('api-status', 'api-icon', 'error', 'Ошибка API', false);
+                }
+            } catch (error) {
+                setStatus('api-status', 'api-icon', 'error', 'Недоступен', false);
+            }
+            
+            // Проверка БД
+            setLoading('db-status', 'db-icon');
+            try {
+                const dbResponse = await fetch('/api/health/db');
+                if (dbResponse.ok) {
+                    const dbData = await dbResponse.json();
+                    if (dbData.success && dbData.database === 'connected') {
+                        setStatus('db-status', 'db-icon', 'success', 
+                            `Подключена (${dbData.databaseVersion || 'MySQL'})`, true);
+                    } else {
+                        setStatus('db-status', 'db-icon', 'error', 'Ошибка подключения', false);
+                    }
+                } else {
+                    setStatus('db-status', 'db-icon', 'error', 'Не удалось проверить', false);
+                }
+            } catch (error) {
+                setStatus('db-status', 'db-icon', 'error', 'Недоступна', false);
+            }
+        }
+
+        // Проверка при загрузке страницы
+        window.addEventListener('load', () => {
+            updateTimestamp();
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,9 @@
+PassengerEnabled on
+
+PassengerNodejs /home/a/autogie1/node-v18.19.0-linux-x64/bin/node
+PassengerAppRoot /home/a/autogie1/autogie1.bget.ru/public_html
+PassengerAppType node
+PassengerStartupFile app.js
+PassengerFriendlyErrorPages on
+PassengerStartTimeout 300
+
