@@ -1747,19 +1747,206 @@ class ApiService {
 
 ## Формат ошибок
 
+Все ошибки возвращаются в формате JSON с детальной информацией для локализации проблемы.
+
+### Ошибка валидации (400)
+
 ```json
 {
   "success": false,
-  "message": "Сообщение об ошибке",
+  "message": "Ошибка валидации",
+  "timestamp": "2024-01-01T00:00:00.000Z",
   "errors": [
     {
-      "msg": "Ошибка валидации",
+      "msg": "Некорректный email",
       "param": "email",
+      "location": "body"
+    },
+    {
+      "msg": "Пароль должен быть не менее 6 символов",
+      "param": "password",
       "location": "body"
     }
   ]
 }
 ```
+
+### Ошибка базы данных (400/500)
+
+```json
+{
+  "success": false,
+  "message": "Ошибка базы данных: Duplicate entry 'user@example.com' for key 'email'",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "errorDetails": {
+    "code": "ER_DUP_ENTRY",
+    "sqlMessage": "Duplicate entry 'user@example.com' for key 'email'",
+    "sql": "INSERT INTO users ...",
+    "message": "Запись с такими данными уже существует"
+  }
+}
+```
+
+### Общая ошибка сервера (500)
+
+**В режиме разработки (NODE_ENV !== 'production'):**
+```json
+{
+  "success": false,
+  "message": "Внутренняя ошибка сервера: Cannot read property 'id' of undefined",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "error": "Cannot read property 'id' of undefined",
+  "name": "TypeError",
+  "errorDetails": {
+    "code": undefined,
+    "name": "TypeError",
+    "sql": null,
+    "sqlMessage": null,
+    "message": "Cannot read property 'id' of undefined"
+  },
+  "stack": "TypeError: Cannot read property 'id' of undefined\n    at ..."
+}
+```
+
+**В продакшене:**
+```json
+{
+  "success": false,
+  "message": "Внутренняя ошибка сервера",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "error": "Cannot read property 'id' of undefined",
+  "name": "TypeError",
+  "errorDetails": {
+    "message": "Детали ошибки доступны только в режиме разработки"
+  }
+}
+```
+
+### Ошибка авторизации (401)
+
+```json
+{
+  "success": false,
+  "message": "Неверный email или пароль",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### Ошибка JWT токена (401)
+
+```json
+{
+  "success": false,
+  "message": "Недействительный токен",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+или
+
+```json
+{
+  "success": false,
+  "message": "Токен истёк",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### Ошибка 404 (Маршрут не найден)
+
+```json
+{
+  "success": false,
+  "message": "Маршрут POST /api/auth/invalid не найден",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### Структура полей ошибки
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `success` | boolean | Всегда `false` для ошибок |
+| `message` | string | Понятное сообщение об ошибке на русском языке |
+| `timestamp` | string | ISO 8601 формат времени ошибки |
+| `errors` | array | Массив ошибок валидации (только для 400) |
+| `errorDetails` | object | Детальная информация об ошибке (код, SQL и т.д.) |
+| `error` | string | Текст ошибки (для разработки) |
+| `name` | string | Тип ошибки (TypeError, Error и т.д.) |
+| `stack` | string | Stack trace (только в режиме разработки) |
+
+### Коды ошибок базы данных
+
+| Код | Описание | HTTP код |
+|-----|----------|----------|
+| `ER_DUP_ENTRY` | Дублирующаяся запись (уникальное поле) | 409 |
+| `ER_NO_REFERENCED_ROW_2` | Ссылка на несуществующую запись (FOREIGN KEY) | 400 |
+| `ER_ROW_IS_REFERENCED_2` | Невозможно удалить, есть ссылки | 400 |
+| `ER_BAD_FIELD_ERROR` | Неизвестное поле в таблице | 400 |
+| `ER_NO_SUCH_TABLE` | Таблица не существует | 500 |
+| `ER_PARSE_ERROR` | Ошибка синтаксиса SQL | 500 |
+
+### Примеры обработки ошибок на Flutter
+
+```dart
+try {
+  final response = await dio.post(
+    '$baseUrl/auth/register',
+    data: {'email': email, 'password': password},
+  );
+  
+  if (response.data['success'] == true) {
+    // Успех
+    return response.data['data'];
+  } else {
+    // Ошибка
+    throw Exception(response.data['message']);
+  }
+} on DioException catch (e) {
+  if (e.response != null) {
+    final errorData = e.response!.data;
+    
+    // Ошибка валидации
+    if (e.response!.statusCode == 400 && errorData['errors'] != null) {
+      final errors = errorData['errors'] as List;
+      final errorMessages = errors.map((e) => e['msg']).join(', ');
+      throw Exception('Ошибка валидации: $errorMessages');
+    }
+    
+    // Ошибка базы данных
+    if (errorData['errorDetails'] != null) {
+      final details = errorData['errorDetails'];
+      final code = details['code'];
+      final sqlMessage = details['sqlMessage'];
+      
+      if (code == 'ER_DUP_ENTRY') {
+        throw Exception('Пользователь с таким email уже существует');
+      }
+      
+      // Логируем детали для отладки
+      print('❌ DB Error: $code - $sqlMessage');
+      throw Exception(errorData['message'] ?? 'Ошибка базы данных');
+    }
+    
+    // Общая ошибка
+    throw Exception(errorData['message'] ?? 'Произошла ошибка');
+  } else {
+    throw Exception('Ошибка сети: ${e.message}');
+  }
+}
+```
+
+### Логирование ошибок на сервере
+
+Все ошибки логируются на сервере с полной информацией:
+
+```
+❌ Ошибка регистрации: ER_BAD_FIELD_ERROR: Unknown column 'email_verified' in 'field list'
+❌ Stack trace: Error: ER_BAD_FIELD_ERROR: Unknown column 'email_verified' in 'field list'
+    at PoolConnection.query ...
+```
+
+Это помогает быстро локализовать проблему при разработке.
 
 ---
 

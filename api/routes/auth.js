@@ -60,45 +60,113 @@ router.post('/register', [
     const userId = generateId();
     const uid = generateId(); // Генерируем уникальный uid
 
-    // Создание пользователя (email_verified по умолчанию FALSE)
-    await pool.execute(
-      `INSERT INTO users (
-        id, email, password_hash, display_name, first_name, second_name,
-        phone_number, city, country, gender, uid, auth_type, email_verified, created_time
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, NOW())`,
-      [
-        userId,
-        email,
-        passwordHash,
-        displayName || null,
-        firstName || null,
-        secondName || null,
-        phoneNumber || null,
-        city || null,
-        country || null,
-        gender || null,
-        uid,
-        authType
-      ]
-    );
+    // Создание пользователя
+    // Проверяем, есть ли поле email_verified в таблице
+    let emailVerifiedField = '';
+    try {
+      const [columns] = await pool.execute(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = 'users' 
+         AND COLUMN_NAME = 'email_verified'`
+      );
+      if (columns.length > 0) {
+        emailVerifiedField = ', email_verified';
+      }
+    } catch (err) {
+      console.warn('⚠️ Не удалось проверить наличие поля email_verified:', err.message);
+    }
+
+    try {
+      if (emailVerifiedField) {
+        await pool.execute(
+          `INSERT INTO users (
+            id, email, password_hash, display_name, first_name, second_name,
+            phone_number, city, country, gender, uid, auth_type, email_verified, created_time
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, NOW())`,
+          [
+            userId,
+            email,
+            passwordHash,
+            displayName || null,
+            firstName || null,
+            secondName || null,
+            phoneNumber || null,
+            city || null,
+            country || null,
+            gender || null,
+            uid,
+            authType
+          ]
+        );
+      } else {
+        // Если поля email_verified нет, создаем без него
+        await pool.execute(
+          `INSERT INTO users (
+            id, email, password_hash, display_name, first_name, second_name,
+            phone_number, city, country, gender, uid, auth_type, created_time
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            userId,
+            email,
+            passwordHash,
+            displayName || null,
+            firstName || null,
+            secondName || null,
+            phoneNumber || null,
+            city || null,
+            country || null,
+            gender || null,
+            uid,
+            authType
+          ]
+        );
+      }
+    } catch (dbError) {
+      console.error('❌ Ошибка создания пользователя:', dbError);
+      return error(res, 'Ошибка при создании пользователя', 500, {
+        code: dbError.code,
+        sqlMessage: dbError.sqlMessage,
+        message: dbError.message,
+        sql: dbError.sql
+      });
+    }
 
     // Генерация кода верификации (6 цифр)
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const verificationId = generateId();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 минут
 
-    // Сохранение кода верификации в базу данных
-    await pool.execute(
-      `INSERT INTO email_verifications (
-        id, user_id, email, code, expires_at, verified, created_at
-      ) VALUES (?, ?, ?, ?, ?, FALSE, NOW())`,
-      [verificationId, userId, email, verificationCode, expiresAt]
-    );
+    // Сохранение кода верификации в базу данных (если таблица существует)
+    let emailSent = false;
+    try {
+      // Проверяем, существует ли таблица email_verifications
+      const [tables] = await pool.execute(
+        `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+         WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = 'email_verifications'`
+      );
 
-    // Отправка кода на email
-    const emailSent = await sendVerificationCode(email, verificationCode);
-    if (!emailSent) {
-      console.warn(`⚠️ Не удалось отправить код верификации на ${email}, но пользователь создан`);
+      if (tables.length > 0) {
+        await pool.execute(
+          `INSERT INTO email_verifications (
+            id, user_id, email, code, expires_at, verified, created_at
+          ) VALUES (?, ?, ?, ?, ?, FALSE, NOW())`,
+          [verificationId, userId, email, verificationCode, expiresAt]
+        );
+
+        // Отправка кода на email
+        emailSent = await sendVerificationCode(email, verificationCode);
+        if (!emailSent) {
+          console.warn(`⚠️ Не удалось отправить код верификации на ${email}, но пользователь создан`);
+        }
+      } else {
+        console.warn('⚠️ Таблица email_verifications не существует. Пропускаем отправку кода верификации.');
+      }
+    } catch (verificationError) {
+      console.error('❌ Ошибка при создании кода верификации:', verificationError);
+      // Не прерываем регистрацию, если верификация не работает
+      console.warn('⚠️ Пользователь создан, но верификация email не настроена');
     }
 
     // Генерация токена
@@ -110,22 +178,51 @@ router.post('/register', [
     });
 
     // Получение созданного пользователя
+    let selectFields = 'id, email, display_name, uid, created_time';
+    if (emailVerifiedField) {
+      selectFields += ', email_verified';
+    }
+    
     const [users] = await pool.execute(
-      'SELECT id, email, display_name, uid, email_verified, created_time FROM users WHERE id = ?',
+      `SELECT ${selectFields} FROM users WHERE id = ?`,
       [userId]
     );
 
+    const userData = users[0];
+    if (!userData) {
+      return error(res, 'Пользователь создан, но не найден в базе данных', 500, {
+        userId,
+        message: 'Критическая ошибка: пользователь не найден после создания'
+      });
+    }
+
     success(res, {
-      user: users[0],
+      user: userData,
       token,
       verificationCodeSent: emailSent,
       message: emailSent 
         ? 'Пользователь успешно зарегистрирован. Код верификации отправлен на email.'
-        : 'Пользователь успешно зарегистрирован. Не удалось отправить код верификации.'
+        : 'Пользователь успешно зарегистрирован. Верификация email не настроена.'
     }, 'Пользователь успешно зарегистрирован', 201);
   } catch (err) {
-    console.error('Ошибка регистрации:', err);
-    error(res, 'Ошибка при регистрации пользователя', 500);
+    console.error('❌ Ошибка регистрации:', err);
+    console.error('❌ Stack trace:', err.stack);
+    
+    // Детальная информация об ошибке
+    const errorDetails = {
+      message: err.message,
+      code: err.code,
+      sqlMessage: err.sqlMessage,
+      sql: err.sql
+    };
+
+    // Если это ошибка базы данных
+    if (err.code && err.code.startsWith('ER_')) {
+      return error(res, `Ошибка базы данных: ${err.sqlMessage || err.message}`, 500, errorDetails);
+    }
+
+    // Общая ошибка
+    return error(res, `Ошибка при регистрации пользователя: ${err.message}`, 500, errorDetails);
   }
 });
 

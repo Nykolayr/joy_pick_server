@@ -49,6 +49,44 @@ app.use('/participants', participantRoutes);
 app.use('/partners', partnerRoutes);
 app.use('/migration', migrationRoutes);
 
+// Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
+app.use((err, req, res, next) => {
+  // Если ответ уже отправлен, передаем ошибку дальше
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  // Всегда возвращаем JSON для API
+  const isDev = process.env.NODE_ENV !== 'production';
+  const errorResponse = {
+    success: false,
+    message: isDev ? err.message : 'Внутренняя ошибка сервера',
+    timestamp: new Date().toISOString(),
+    path: req.path,
+    method: req.method
+  };
+
+  if (isDev) {
+    errorResponse.error = err.message;
+    errorResponse.stack = err.stack;
+    errorResponse.errorDetails = {
+      code: err.code,
+      name: err.name,
+      sql: err.sql,
+      sqlMessage: err.sqlMessage
+    };
+  }
+
+  console.error('❌ API Error:', {
+    path: req.path,
+    method: req.method,
+    error: err.message,
+    stack: err.stack
+  });
+
+  res.status(err.status || 500).json(errorResponse);
+});
+
 // Базовый API маршрут
 app.get('/', (req, res) => {
   res.json({
