@@ -98,8 +98,12 @@ router.get('/:id', authenticate, async (req, res) => {
 /**
  * PUT /api/users/:id
  * Обновление данных пользователя
+ * Поддерживает загрузку аватара через multipart/form-data:
+ * - photo: файл аватара пользователя
+ * 
+ * Также поддерживает отправку photoUrl через JSON (для обратной совместимости)
  */
-router.put('/:id', authenticate, [
+router.put('/:id', authenticate, uploadUserAvatar, [
   body('displayName').optional().isString(),
   body('firstName').optional().isString(),
   body('secondName').optional().isString(),
@@ -125,6 +129,22 @@ router.put('/:id', authenticate, [
       return error(res, 'Доступ запрещен', 403);
     }
 
+    // Обработка загруженного файла аватара
+    let finalPhotoUrl = null;
+    if (req.file) {
+      finalPhotoUrl = getFileUrlFromPath(req.file.path);
+    }
+
+    // Парсим JSON данные (если отправлены как JSON)
+    let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        // Если не JSON, используем как есть
+      }
+    }
+
     const {
       displayName,
       firstName,
@@ -137,7 +157,10 @@ router.put('/:id', authenticate, [
       latitude,
       longitude,
       fcmToken
-    } = req.body;
+    } = bodyData;
+
+    // Используем загруженный файл, если есть, иначе используем photoUrl из JSON
+    const photoUrlToUse = finalPhotoUrl || photoUrl;
 
     // Проверка существования пользователя
     const [existingUsers] = await pool.execute(
@@ -181,9 +204,9 @@ router.put('/:id', authenticate, [
       updates.push('gender = ?');
       params.push(gender);
     }
-    if (photoUrl !== undefined) {
+    if (photoUrlToUse !== undefined && photoUrlToUse !== null) {
       updates.push('photo_url = ?');
-      params.push(photoUrl);
+      params.push(photoUrlToUse);
     }
     if (latitude !== undefined) {
       updates.push('latitude = ?');

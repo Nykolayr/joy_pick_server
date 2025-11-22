@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { uploadPartnerPhotos, getFileUrlFromPath } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -134,8 +135,12 @@ router.get('/:id', async (req, res) => {
 /**
  * POST /api/partners
  * Создание партнера (только для админов)
+ * Поддерживает загрузку файлов через multipart/form-data:
+ * - photos: массив файлов для фото партнера
+ * 
+ * Также поддерживает отправку URL через JSON (для обратной совместимости)
  */
-router.post('/', authenticate, requireAdmin, [
+router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
   body('name').notEmpty().withMessage('Название обязательно'),
   body('description').optional().isString(),
   body('latitude').optional().isFloat(),
@@ -148,6 +153,25 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, 'Ошибка валидации', 400, validationErrors.array());
     }
 
+    // Обработка загруженных файлов
+    const uploadedPhotos = [];
+    if (req.files && req.files.photos && Array.isArray(req.files.photos)) {
+      for (const file of req.files.photos) {
+        const fileUrl = getFileUrlFromPath(file.path);
+        if (fileUrl) uploadedPhotos.push(fileUrl);
+      }
+    }
+
+    // Парсим JSON данные (если отправлены как JSON)
+    let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        // Если не JSON, используем как есть
+      }
+    }
+
     const {
       name,
       description,
@@ -157,7 +181,10 @@ router.post('/', authenticate, requireAdmin, [
       rating = 0,
       photos = [],
       partnerTypes = []
-    } = req.body;
+    } = bodyData;
+
+    // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
+    const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photos) ? photos : []);
 
     const partnerId = generateId();
 
@@ -169,8 +196,8 @@ router.post('/', authenticate, requireAdmin, [
     );
 
     // Добавление фотографий
-    if (photos.length > 0) {
-      for (const photoUrl of photos) {
+    if (finalPhotos.length > 0) {
+      for (const photoUrl of finalPhotos) {
         await pool.execute(
           'INSERT INTO partner_photos (id, partner_id, photo_url) VALUES (?, ?, ?)',
           [generateId(), partnerId, photoUrl]

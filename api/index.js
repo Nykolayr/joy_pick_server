@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+// Инициализация Firebase Admin
+const { initializeFirebase } = require('./config/firebase');
+initializeFirebase();
+
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // Импорт маршрутов
