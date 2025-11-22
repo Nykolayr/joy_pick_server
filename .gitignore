@@ -30,3 +30,8 @@ Thumbs.db
 dist/
 build/
 
+# Firebase Service Account keys (секреты!)
+*firebase-adminsdk*.json
+*service-account*.json
+garbagedev-*.json
+
