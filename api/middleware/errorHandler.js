@@ -88,19 +88,40 @@ const errorHandler = (err, req, res, next) => {
   const errorResponse = {
     success: false,
     message: (isDev || isMigration) ? err.message : 'Внутренняя ошибка сервера',
-    error: err.message
+    timestamp: new Date().toISOString()
   };
+
+  // Всегда добавляем базовую информацию об ошибке
+  errorResponse.error = err.message;
+  errorResponse.name = err.name || 'Error';
 
   // Добавляем детали для миграции или разработки
   if (isDev || isMigration) {
-    errorResponse.code = err.code;
-    errorResponse.name = err.name;
-    errorResponse.sql = err.sql;
-    errorResponse.sqlMessage = err.sqlMessage;
+    errorResponse.errorDetails = {
+      code: err.code,
+      name: err.name,
+      sql: err.sql,
+      sqlMessage: err.sqlMessage,
+      message: err.message
+    };
     if (isDev) {
       errorResponse.stack = err.stack;
     }
+  } else {
+    // В продакшене показываем только безопасную информацию
+    errorResponse.errorDetails = {
+      message: 'Детали ошибки доступны только в режиме разработки'
+    };
   }
+
+  // Логируем полную ошибку на сервере
+  console.error('❌ Server Error:', {
+    message: err.message,
+    code: err.code,
+    sql: err.sql,
+    sqlMessage: err.sqlMessage,
+    stack: err.stack
+  });
 
   res.status(500).json(errorResponse);
 };
