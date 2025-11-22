@@ -10,6 +10,9 @@ const app = express();
 // Подключаем API ПЕРВЫМ (до статических файлов!)
 app.use('/api', apiApp);
 
+// Статические файлы - загруженные файлы (фото, аватары и т.д.)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Статические файлы из папки web
 app.use(express.static(path.join(__dirname, 'web')));
 

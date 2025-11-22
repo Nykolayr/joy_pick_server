@@ -237,8 +237,14 @@ router.get('/:id', async (req, res) => {
 /**
  * POST /api/requests
  * Создание новой заявки
+ * Поддерживает загрузку файлов через multipart/form-data:
+ * - photos: массив файлов для основных фото
+ * - photosBefore: массив файлов для фото "до"
+ * - photosAfter: массив файлов для фото "после"
+ * 
+ * Также поддерживает отправку URL через JSON (для обратной совместимости)
  */
-router.post('/', authenticate, [
+router.post('/', authenticate, uploadRequestPhotos, [
   body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Некорректная категория'),
   body('name').notEmpty().withMessage('Название обязательно'),
   body('description').optional().isString(),
@@ -250,6 +256,47 @@ router.post('/', authenticate, [
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
       return error(res, 'Ошибка валидации', 400, validationErrors.array());
+    }
+
+    // Обработка загруженных файлов
+    const uploadedPhotos = [];
+    const uploadedPhotosBefore = [];
+    const uploadedPhotosAfter = [];
+
+    if (req.files) {
+      // Обрабатываем основные фото
+      if (req.files.photos && Array.isArray(req.files.photos)) {
+        for (const file of req.files.photos) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotos.push(fileUrl);
+        }
+      }
+
+      // Обрабатываем фото "до"
+      if (req.files.photosBefore && Array.isArray(req.files.photosBefore)) {
+        for (const file of req.files.photosBefore) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosBefore.push(fileUrl);
+        }
+      }
+
+      // Обрабатываем фото "после"
+      if (req.files.photosAfter && Array.isArray(req.files.photosAfter)) {
+        for (const file of req.files.photosAfter) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosAfter.push(fileUrl);
+        }
+      }
+    }
+
+    // Парсим JSON данные (если отправлены как JSON)
+    let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        // Если не JSON, используем как есть
+      }
     }
 
     const {
@@ -275,7 +322,12 @@ router.post('/', authenticate, [
       targetAmount,
       plantTree = false,
       trashPickupOnly = false
-    } = req.body;
+    } = bodyData;
+
+    // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
+    const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photos) ? photos : []);
+    const finalPhotosBefore = uploadedPhotosBefore.length > 0 ? uploadedPhotosBefore : (Array.isArray(photosBefore) ? photosBefore : []);
+    const finalPhotosAfter = uploadedPhotosAfter.length > 0 ? uploadedPhotosAfter : (Array.isArray(photosAfter) ? photosAfter : []);
 
     const requestId = generateId();
     const userId = req.user.userId;
@@ -314,8 +366,8 @@ router.post('/', authenticate, [
     );
 
     // Добавление фотографий
-    if (photos.length > 0) {
-      for (const photoUrl of photos) {
+    if (finalPhotos.length > 0) {
+      for (const photoUrl of finalPhotos) {
         await pool.execute(
           'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
           [generateId(), requestId, photoUrl, 'photo']
@@ -323,8 +375,8 @@ router.post('/', authenticate, [
       }
     }
 
-    if (photosBefore.length > 0) {
-      for (const photoUrl of photosBefore) {
+    if (finalPhotosBefore.length > 0) {
+      for (const photoUrl of finalPhotosBefore) {
         await pool.execute(
           'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
           [generateId(), requestId, photoUrl, 'photo_before']
@@ -332,8 +384,8 @@ router.post('/', authenticate, [
       }
     }
 
-    if (photosAfter.length > 0) {
-      for (const photoUrl of photosAfter) {
+    if (finalPhotosAfter.length > 0) {
+      for (const photoUrl of finalPhotosAfter) {
         await pool.execute(
           'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
           [generateId(), requestId, photoUrl, 'photo_after']
