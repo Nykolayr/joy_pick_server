@@ -38,68 +38,312 @@ API поддерживает два способа авторизации:
 
 ---
 
+## 📋 Модели данных
+
+### Модель User (Пользователь)
+
+**Важно:** Все поля в API используют **snake_case** (как в базе данных). При отправке и получении данных используйте `snake_case` формат.
+
+#### Поля модели:
+
+| Поле (snake_case) | Тип | Обязательное | Описание |
+|------------------|-----|--------------|----------|
+| `id` | string (UUID) | Нет (автогенерация) | Уникальный идентификатор пользователя |
+| `email` | string | Да (при регистрации) | Email адрес пользователя |
+| `password` | string | Да (при регистрации) | Пароль (только при регистрации, не хранится) |
+| `display_name` | string | Нет | Отображаемое имя пользователя |
+| `first_name` | string | Нет | Имя |
+| `second_name` | string | Нет | Фамилия |
+| `phone_number` | string | Нет | Номер телефона |
+| `city` | string | Нет | Город |
+| `country` | string | Нет | Страна |
+| `gender` | string | Нет | Пол (male/female/other) |
+| `photo_url` | string | Нет | URL фотографии профиля |
+| `latitude` | float | Нет | Широта местоположения |
+| `longitude` | float | Нет | Долгота местоположения |
+| `fcm_token` | string | Нет | FCM токен для push-уведомлений |
+| `uid` | string | Нет | Firebase UID (для Firebase авторизации) |
+| `auth_type` | string | Нет | Тип авторизации (email/google/apple/github/phone) |
+| `email_verified` | boolean | Нет | Статус верификации email (только чтение) |
+| `count_performed` | integer | Нет | Количество выполненных заявок (только чтение) |
+| `count_orders` | integer | Нет | Количество созданных заявок (только чтение) |
+| `jcoins` | integer | Нет | Количество Joycoins (только чтение, обновление через отдельный эндпоинт) |
+| `coins_from_created` | integer | Нет | Монеты за созданные заявки (только чтение) |
+| `coins_from_participation` | integer | Нет | Монеты за участие (только чтение) |
+| `stripe_id` | string | Нет | Stripe ID (только чтение) |
+| `score` | integer | Нет | Рейтинг пользователя (только чтение) |
+| `admin` | boolean | Нет | Статус администратора (только чтение) |
+| `created_time` | datetime | Нет | Дата создания (только чтение) |
+
+#### Пример полной модели User (ответ от сервера):
+
+```json
+{
+  "id": "353f958d-8796-44c7-a877-3e376eca6784",
+  "email": "user@example.com",
+  "display_name": "Иван Иванов",
+  "first_name": "Иван",
+  "second_name": "Иванов",
+  "phone_number": "+1234567890",
+  "city": "Москва",
+  "country": "Россия",
+  "gender": "male",
+  "photo_url": "http://autogie1.bget.ru/uploads/avatars/uuid.jpg",
+  "latitude": 55.7558,
+  "longitude": 37.6173,
+  "fcm_token": "cqMv5gx6SKWXpMxFdRX8_3:APA91b...",
+  "uid": "firebase_uid_here",
+  "auth_type": "google",
+  "email_verified": true,
+  "count_performed": 5,
+  "count_orders": 10,
+  "jcoins": 150,
+  "coins_from_created": 50,
+  "coins_from_participation": 100,
+  "stripe_id": null,
+  "score": 85,
+  "admin": false,
+  "created_time": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+### Модель Request (Заявка)
+
+**Важно:** Все поля в API используют **snake_case** (как в базе данных). При отправке и получении данных используйте `snake_case` формат.
+
+#### Поля модели:
+
+| Поле (snake_case) | Тип | Обязательное | Описание |
+|------------------|-----|--------------|----------|
+| `id` | string (UUID) | Нет (автогенерация) | Уникальный идентификатор заявки |
+| `user_id` | string | Нет (из токена) | ID пользователя (автоматически из токена) |
+| `category` | string | Да | Тип заявки: `wasteLocation`, `speedCleanup`, `event` |
+| `name` | string | Да | Название заявки |
+| `description` | string | Нет | Описание заявки |
+| `latitude` | float | Нет | Широта местоположения |
+| `longitude` | float | Нет | Долгота местоположения |
+| `city` | string | Нет | Город |
+| `photos` | array[string] | Нет | Массив URL фотографий мусора (для всех типов) |
+| `photos_before` | array[string] | Нет | Массив URL фотографий "до" (только для Speed Clean-up) |
+| `photos_after` | array[string] | Нет | Массив URL фотографий "после" (только для Speed Clean-up) |
+| `garbage_size` | integer | Нет | Размер мусора: `1` (bag), `2` (cart), `3` (car) |
+| `waste_types` | array[string] | Нет | Массив типов отходов |
+| `only_foot` | boolean | Нет | Доступ только пешком (по умолчанию: `false`) |
+| `possible_by_car` | boolean | Нет | Доступ на машине (по умолчанию: `false`) |
+| `cost` | integer | Нет | Стоимость заявки |
+| `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
+| `start_date` | datetime | Нет | Дата начала (для Event) |
+| `end_date` | datetime | Нет | Дата окончания (для Event) |
+| `status` | string | Нет | Статус: `pending`, `approved`, `rejected`, `completed` (по умолчанию: `pending`) |
+| `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
+| `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
+| `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
+| `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
+| `is_open` | boolean | Нет | Открыта ли заявка (только чтение, по умолчанию: `true`) |
+| `created_by` | string | Нет | ID создателя (автоматически, только чтение) |
+| `taken_by` | string | Нет | ID исполнителя (только чтение) |
+| `contributors` | array[string] | Нет | Массив ID вкладчиков (только чтение) |
+| `contributions` | object | Нет | Объект вкладов {user_id: amount} (только чтение) |
+| `total_contributed` | integer | Нет | Общая сумма собранных средств (только чтение) |
+| `participants` | array[string] | Нет | Массив ID участников события (только чтение) |
+| `joined_user_id` | string | Нет | ID пользователя, присоединившегося к заявке (только чтение) |
+| `join_date` | datetime | Нет | Дата присоединения (только чтение) |
+| `completion_comment` | string | Нет | Комментарий при завершении (только чтение) |
+| `created_at` | datetime | Нет | Дата создания (только чтение) |
+| `updated_at` | datetime | Нет | Дата обновления (только чтение) |
+
+#### Пример полной модели Request (ответ от сервера):
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "353f958d-8796-44c7-a877-3e376eca6784",
+  "category": "wasteLocation",
+  "name": "Мусор в парке",
+  "description": "Большая куча мусора возле входа в парк",
+  "latitude": 55.7558,
+  "longitude": 37.6173,
+  "city": "Москва",
+  "photos": [
+    "http://autogie1.bget.ru/uploads/photos/uuid1.jpg",
+    "http://autogie1.bget.ru/uploads/photos/uuid2.jpg"
+  ],
+  "photos_before": [],
+  "photos_after": [],
+  "garbage_size": 2,
+  "waste_types": ["plastic", "paper"],
+  "only_foot": false,
+  "possible_by_car": true,
+  "cost": 500,
+  "reward_amount": null,
+  "start_date": null,
+  "end_date": null,
+  "status": "pending",
+  "priority": "medium",
+  "target_amount": null,
+  "plant_tree": false,
+  "trash_pickup_only": false,
+  "is_open": true,
+  "created_by": "353f958d-8796-44c7-a877-3e376eca6784",
+  "taken_by": null,
+  "contributors": [],
+  "contributions": {},
+  "total_contributed": 0,
+  "participants": [],
+  "joined_user_id": null,
+  "join_date": null,
+  "completion_comment": null,
+  "created_at": "2024-01-01T00:00:00.000Z",
+  "updated_at": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+### Модель Partner (Партнер)
+
+**Важно:** Все поля в API используют **snake_case** (как в базе данных). При отправке и получении данных используйте `snake_case` формат.
+
+#### Поля модели:
+
+| Поле (snake_case) | Тип | Обязательное | Описание |
+|------------------|-----|--------------|----------|
+| `id` | string (UUID) | Нет (автогенерация) | Уникальный идентификатор партнера |
+| `name` | string | Да | Название партнера |
+| `description` | string | Нет | Описание партнера |
+| `latitude` | float | Нет | Широта местоположения |
+| `longitude` | float | Нет | Долгота местоположения |
+| `city` | string | Нет | Город |
+| `photos` | array[string] | Нет | Массив URL фотографий партнера |
+| `rating` | integer | Нет | Рейтинг партнера (0-5) |
+| `partner_types` | array[string] | Нет | Массив типов партнера (например: `["recycling", "store"]`) |
+| `created_at` | datetime | Нет | Дата создания (только чтение) |
+| `updated_at` | datetime | Нет | Дата обновления (только чтение) |
+
+#### Пример полной модели Partner (ответ от сервера):
+
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440000",
+  "name": "Эко-Магазин",
+  "description": "Магазин экологически чистых товаров",
+  "latitude": 55.7558,
+  "longitude": 37.6173,
+  "city": "Москва",
+  "photos": [
+    "http://autogie1.bget.ru/uploads/photos/uuid1.jpg",
+    "http://autogie1.bget.ru/uploads/photos/uuid2.jpg"
+  ],
+  "rating": 5,
+  "partner_types": ["recycling", "store"],
+  "created_at": "2024-01-01T00:00:00.000Z",
+  "updated_at": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
 ## 🔐 Аутентификация
 
 ### Регистрация
 
 **POST** `/auth/register`
 
+**Описание:**  
+Отправка кода верификации на email. Пользователь создается только после успешной верификации кода через `/auth/verify-email`.
+
 **Тело запроса:**
 ```json
 {
   "email": "user@example.com",
   "password": "password123",
-  "displayName": "Имя пользователя",
-  "firstName": "Имя",
-  "secondName": "Фамилия",
-  "phoneNumber": "+1234567890",
+  "display_name": "Имя пользователя",
+  "first_name": "Имя",
+  "second_name": "Фамилия",
+  "phone_number": "+1234567890",
   "city": "Москва",
   "country": "Россия",
   "gender": "male"
 }
 ```
 
-**Ответ (201):**
+**Ответ (200) - успешная отправка кода:**
 ```json
 {
   "success": true,
-  "message": "Пользователь успешно зарегистрирован",
+  "message": "Код верификации отправлен на email",
   "data": {
-    "user": {
-      "id": "uuid",
-      "email": "user@example.com",
-      "display_name": "Имя пользователя",
-      "uid": "uuid",
-      "email_verified": false,
-      "created_time": "2024-01-01T00:00:00.000Z"
-    },
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "verificationCodeSent": true,
-    "message": "Пользователь успешно зарегистрирован. Код верификации отправлен на email."
+    "message": "Код верификации отправлен на email",
+    "email": "user@example.com",
+    "verificationExpiresAt": "2024-01-01T00:10:00.000Z"
+  }
+}
+```
+
+**Ответ (500) - ошибка отправки email:**
+```json
+{
+  "success": false,
+  "message": "Не удалось отправить код верификации на email",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "errorDetails": {
+    "emailError": {
+      "message": "Неверный пароль приложения Gmail...",
+      "code": "EAUTH_GMAIL_PASSWORD",
+      "response": "...",
+      "details": "..."
+    }
   }
 }
 ```
 
 **Важно:**
-- После регистрации автоматически отправляется код верификации на email (6 цифр)
+- Пользователь НЕ создается на этом этапе
+- Код верификации (6 цифр) отправляется на email
 - Код действителен в течение 10 минут
-- Для подтверждения email используйте эндпоинт `POST /auth/verify-email`
+- Данные регистрации сохраняются временно до верификации
+- После успешной верификации кода через `/auth/verify-email` создается пользователь и возвращается токен
 - Если код не пришел, используйте `POST /auth/resend-verification` для повторной отправки
 
 **Пример для Flutter:**
 ```dart
-final response = await http.post(
+// Шаг 1: Регистрация - отправка кода на email
+final registerResponse = await http.post(
   Uri.parse('$baseUrl/auth/register'),
   headers: {'Content-Type': 'application/json'},
   body: jsonEncode({
     'email': email,
     'password': password,
-    'displayName': displayName,
+    'display_name': displayName,
+    'first_name': firstName,
+    'second_name': secondName,
   }),
 );
-final data = jsonDecode(response.body);
-final token = data['data']['token'];
-// Сохраните токен в secure storage
+
+if (registerResponse.statusCode == 200) {
+  // Код отправлен, переходим к верификации
+  // Пользователь вводит код из email
+  final code = '123456'; // Код, введенный пользователем
+  
+  // Шаг 2: Верификация кода и создание пользователя
+  final verifyResponse = await http.post(
+    Uri.parse('$baseUrl/auth/verify-email'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'email': email,
+      'code': code,
+    }),
+  );
+  
+  final verifyData = jsonDecode(verifyResponse.body);
+  if (verifyResponse.statusCode == 200) {
+    final token = verifyData['data']['token'];
+    final user = verifyData['data']['user'];
+    // Сохраните токен и данные пользователя
+  }
+}
 ```
 
 ---
@@ -168,7 +412,7 @@ final token = data['data']['token'];
 **POST** `/auth/verify-email`
 
 **Описание:**  
-Проверка кода верификации, отправленного на email при регистрации.
+Проверка кода верификации и создание пользователя. После успешной верификации создается пользователь в базе данных и возвращается токен для авторизации.
 
 **Тело запроса:**
 ```json
@@ -178,7 +422,27 @@ final token = data['data']['token'];
 }
 ```
 
-**Ответ (200):**
+**Ответ (200) - для новой регистрации:**
+```json
+{
+  "success": true,
+  "message": "Email успешно подтвержден. Пользователь создан.",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "display_name": "Имя пользователя",
+      "uid": "uuid",
+      "email_verified": true,
+      "created_time": "2024-01-01T00:00:00.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "verified": true
+  }
+}
+```
+
+**Ответ (200) - для существующего пользователя:**
 ```json
 {
   "success": true,
@@ -217,7 +481,7 @@ final token = data['data']['token'];
 **POST** `/auth/resend-verification`
 
 **Описание:**  
-Повторная отправка кода верификации на email. Используйте, если код не пришел или истек.
+Повторная отправка кода верификации на email. Используйте, если код не пришел или истек. Работает как для новых регистраций (когда пользователь еще не создан), так и для существующих пользователей.
 
 **Тело запроса:**
 ```json
@@ -232,7 +496,8 @@ final token = data['data']['token'];
   "success": true,
   "message": "Код верификации отправлен",
   "data": {
-    "message": "Код верификации отправлен на email"
+    "message": "Код верификации отправлен на email",
+    "verificationExpiresAt": "2024-01-01T00:10:00.000Z"
   }
 }
 ```
@@ -327,13 +592,13 @@ final token = data['data']['token'];
 ```json
 {
   "idToken": "firebase_id_token_here",
-  "firstName": "Иван",      // опционально, рекомендуется для Apple Sign In при первом входе
-  "secondName": "Иванов"    // опционально, рекомендуется для Apple Sign In при первом входе
+  "first_name": "Иван",      // опционально, рекомендуется для Apple Sign In при первом входе
+  "second_name": "Иванов"    // опционально, рекомендуется для Apple Sign In при первом входе
 }
 ```
 
 **Примечание:**  
-Поля `firstName` и `secondName` особенно полезны для Apple Sign In, так как Apple предоставляет `givenName` и `familyName` только при первом входе и они не сохраняются в Firebase User. Рекомендуется передавать их с фронта при первой авторизации через Apple.
+Поля `first_name` и `second_name` особенно полезны для Apple Sign In, так как Apple предоставляет `givenName` и `familyName` только при первом входе и они не сохраняются в Firebase User. Рекомендуется передавать их с фронта при первой авторизации через Apple.
 
 **Ответ (200):**
 ```json
@@ -392,11 +657,11 @@ class AuthService {
   /// Авторизация через Firebase (Google Sign In, Apple Sign In и др.)
   /// Вызывайте этот метод после успешной авторизации в Firebase
   /// 
-  /// [firstName] и [secondName] - опциональны, рекомендуется для Apple Sign In
+  /// [first_name] и [second_name] - опциональны, рекомендуется для Apple Sign In
   /// при первом входе, так как Apple предоставляет эти данные только один раз
   Future<Map<String, dynamic>?> signInWithFirebase({
-    String? firstName,
-    String? secondName,
+    String? first_name,
+    String? second_name,
   }) async {
     try {
       // Получаем Firebase ID Token
@@ -410,11 +675,11 @@ class AuthService {
       
       // Формируем тело запроса
       final requestBody = {'idToken': idToken};
-      if (firstName != null && firstName.isNotEmpty) {
-        requestBody['firstName'] = firstName;
+      if (first_name != null && first_name.isNotEmpty) {
+        requestBody['first_name'] = first_name;
       }
-      if (secondName != null && secondName.isNotEmpty) {
-        requestBody['secondName'] = secondName;
+      if (second_name != null && second_name.isNotEmpty) {
+        requestBody['second_name'] = second_name;
       }
       
       // Отправляем токен на сервер
@@ -512,7 +777,7 @@ if (user != null) {
   }
 
   // ВАЖНО: Теперь отправляем Firebase токен на сервер
-  // Для Google firstName и secondName не обязательны - они будут распарсены из displayName
+  // Для Google first_name и second_name не обязательны - они будут распарсены из display_name
   final authService = AuthService();
   final serverAuthResult = await authService.signInWithFirebase();
   
@@ -588,8 +853,8 @@ while (currentUserDocument == null && attempts < 20) {
 // ВАЖНО: Отправляем Firebase токен на сервер С именами из Apple
 final authService = AuthService();
 final serverAuthResult = await authService.signInWithFirebase(
-  firstName: appleFirstName,  // Передаем имя из Apple
-  secondName: appleSecondName, // Передаем фамилию из Apple
+  first_name: appleFirstName,  // Передаем имя из Apple
+  second_name: appleSecondName, // Передаем фамилию из Apple
 );
 
 if (serverAuthResult != null) {
@@ -608,7 +873,7 @@ if (serverAuthResult != null) {
 **Важно для Apple Sign In:**
 - `givenName` и `familyName` доступны **только при первом входе** через Apple
 - Их нужно сохранить **ДО** авторизации в Firebase
-- Передайте их в `signInWithFirebase(firstName: ..., secondName: ...)`
+- Передайте их в `signInWithFirebase(first_name: ..., second_name: ...)`
 - Если не передать, сервер попытается распарсить `display_name`, но это менее надежно
 
 **Важно для Apple Sign In:**
@@ -616,7 +881,7 @@ if (serverAuthResult != null) {
 - В этом случае сервер создаст пользователя с `email = null` или использует скрытый email от Apple
 - При последующих входах email может быть предоставлен
 - Сервер автоматически обновит email, если он станет доступен
-- **`givenName` и `familyName` доступны только при первом входе** - передайте их в `firstName` и `secondName` для сохранения в базе данных
+- **`givenName` и `familyName` доступны только при первом входе** - передайте их в `first_name` и `second_name` для сохранения в базе данных
 
 **Какие данные получаются автоматически:**
 
@@ -630,15 +895,15 @@ if (serverAuthResult != null) {
 - ✅ `email_verified` - Подтвержден ли email
 
 **Через Firebase Admin SDK (дополнительно):**
-- ✅ `phoneNumber` - Номер телефона (если есть, сохраняется как `phone_number`)
+- ✅ `phone_number` - Номер телефона (если есть, сохраняется как `phone_number`)
 
 **Автоматический парсинг:**
 - ✅ `first_name` - Первое слово из `display_name` (если не передано с фронта)
 - ✅ `second_name` - Остальные слова из `display_name` (если не передано с фронта)
 
 **Рекомендуется передавать с фронта (особенно для Apple):**
-- ✅ `firstName` - Имя пользователя (для Apple - из `appleCredential.givenName`)
-- ✅ `secondName` - Фамилия пользователя (для Apple - из `appleCredential.familyName`)
+- ✅ `first_name` - Имя пользователя (для Apple - из `appleCredential.givenName`)
+- ✅ `second_name` - Фамилия пользователя (для Apple - из `appleCredential.familyName`)
 
 **Автоматически определяется:**
 - ✅ `auth_type` - Тип авторизации (`google`, `apple`, `github`, `phone`, `email`)
@@ -673,6 +938,104 @@ if (serverAuthResult != null) {
 ---
 
 ## 👤 Пользователи
+
+### Получение списка пользователей (только для админов)
+
+**GET** `/users`
+
+**Требует аутентификации и прав администратора**
+
+**Query параметры:**
+- `page` (integer, опционально) - номер страницы (по умолчанию: 1)
+- `limit` (integer, опционально) - количество записей на странице (по умолчанию: 20)
+- `search` (string, опционально) - поиск по email, display_name, first_name, second_name
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": "uuid",
+        "email": "user@example.com",
+        "display_name": "Имя пользователя",
+        "photo_url": "https://...",
+        "uid": "firebase-uid",
+        "phone_number": "+79001234567",
+        "city": "Москва",
+        "first_name": "Имя",
+        "second_name": "Фамилия",
+        "country": "Россия",
+        "gender": "male",
+        "count_performed": 5,
+        "count_orders": 3,
+        "jcoins": 1000,
+        "coins_from_created": 500,
+        "coins_from_participation": 500,
+        "stripe_id": null,
+        "score": 4.5,
+        "admin": 0,
+        "fcm_token": "token",
+        "auth_type": "email",
+        "latitude": 55.7558,
+        "longitude": 37.6173,
+        "created_time": "2025-01-01T00:00:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 100,
+      "totalPages": 5
+    }
+  }
+}
+```
+
+**Ошибки:**
+- `401` - Не авторизован
+- `403` - Нет прав администратора
+- `500` - Ошибка сервера (с детальной информацией об ошибке)
+
+**Пример использования в Flutter:**
+```dart
+Future<Map<String, dynamic>> getUsersList({
+  required String token,
+  int page = 1,
+  int limit = 20,
+  String? search,
+}) async {
+  final queryParams = <String, String>{
+    'page': page.toString(),
+    'limit': limit.toString(),
+  };
+  
+  if (search != null && search.isNotEmpty) {
+    queryParams['search'] = search;
+  }
+  
+  final uri = Uri.parse('http://autogie1.bget.ru/api/users')
+      .replace(queryParameters: queryParams);
+  
+  final response = await http.get(
+    uri,
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+  );
+  
+  if (response.statusCode == 200) {
+    return json.decode(response.body);
+  } else {
+    throw Exception('Ошибка получения списка пользователей: ${response.body}');
+  }
+}
+```
+
+---
 
 ### Получение пользователя по ID
 
@@ -715,17 +1078,17 @@ if (serverAuthResult != null) {
 **Тело запроса:**
 ```json
 {
-  "displayName": "Новое имя",
-  "firstName": "Имя",
-  "secondName": "Фамилия",
-  "phoneNumber": "+1234567890",
+  "display_name": "Новое имя",
+  "first_name": "Имя",
+  "second_name": "Фамилия",
+  "phone_number": "+1234567890",
   "city": "Санкт-Петербург",
   "country": "Россия",
   "gender": "female",
-  "photoUrl": "https://example.com/photo.jpg",
+  "photo_url": "https://example.com/photo.jpg",
   "latitude": 59.9343,
   "longitude": 30.3351,
-  "fcmToken": "fcm_token_here"
+  "fcm_token": "fcm_token_here"
 }
 ```
 
@@ -734,17 +1097,17 @@ if (serverAuthResult != null) {
 **Content-Type:** `multipart/form-data`
 
 **Поля формы:**
-- `displayName` (string, опционально)
-- `firstName` (string, опционально)
-- `secondName` (string, опционально)
-- `phoneNumber` (string, опционально)
+- `display_name` (string, опционально)
+- `first_name` (string, опционально)
+- `second_name` (string, опционально)
+- `phone_number` (string, опционально)
 - `city` (string, опционально)
 - `country` (string, опционально)
 - `gender` (string, опционально)
 - `photo` (file, опционально) - файл аватара пользователя
 - `latitude` (float, опционально)
 - `longitude` (float, опционально)
-- `fcmToken` (string, опционально)
+- `fcm_token` (string, опционально)
 
 **Ограничения для файла:**
 - Максимальный размер: 10MB
@@ -829,10 +1192,10 @@ Future<void> updateUserAvatar({
 - `latitude` (float) - широта для поиска по радиусу
 - `longitude` (float) - долгота для поиска по радиусу
 - `radius` (int, default: 10000) - радиус в метрах
-- `isOpen` (boolean) - фильтр по открытости
-- `userId` (string) - фильтр по пользователю
-- `createdBy` (string) - фильтр по создателю
-- `takenBy` (string) - фильтр по исполнителю
+- `is_open` (boolean) - фильтр по открытости
+- `user_id` (string) - фильтр по пользователю
+- `created_by` (string) - фильтр по создателю
+- `taken_by` (string) - фильтр по исполнителю
 
 **Пример запроса:**
 ```
@@ -953,22 +1316,22 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "latitude": 55.7558,
   "longitude": 37.6173,
   "city": "Москва",
-  "garbageSize": 1,
-  "onlyFoot": false,
-  "possibleByCar": true,
+  "garbage_size": 1,
+  "only_foot": false,
+  "possible_by_car": true,
   "cost": 1000,
-  "rewardAmount": null,
-  "startDate": null,
-  "endDate": null,
+  "reward_amount": null,
+  "start_date": null,
+  "end_date": null,
   "status": "pending",
   "priority": "medium",
-  "wasteTypes": ["plastic", "glass"],
+  "waste_types": ["plastic", "glass"],
   "photos": ["https://example.com/photo1.jpg", "https://example.com/photo2.jpg"],
-  "photosBefore": [],
-  "photosAfter": [],
-  "targetAmount": null,
-  "plantTree": false,
-  "trashPickupOnly": false
+  "photos_before": [],
+  "photos_after": [],
+  "target_amount": null,
+  "plant_tree": false,
+  "trash_pickup_only": false
 }
 ```
 
@@ -981,11 +1344,11 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "latitude": 55.7558,
   "longitude": 37.6173,
   "city": "Москва",
-  "garbageSize": 2,
-  "rewardAmount": 50,
-  "photosBefore": ["url1"],
-  "photosAfter": ["url2"],
-  "wasteTypes": ["plastic"]
+  "garbage_size": 2,
+  "reward_amount": 50,
+  "photos_before": ["url1"],
+  "photos_after": ["url2"],
+  "waste_types": ["plastic"]
 }
 ```
 
@@ -998,9 +1361,9 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "latitude": 55.7558,
   "longitude": 37.6173,
   "city": "Москва",
-  "startDate": "2024-02-01T10:00:00.000Z",
-  "endDate": "2024-02-01T18:00:00.000Z",
-  "plantTree": true,
+  "start_date": "2024-02-01T10:00:00.000Z",
+  "end_date": "2024-02-01T18:00:00.000Z",
+  "plant_tree": true,
   "photos": ["url1", "url2"]
 }
 ```
@@ -1016,27 +1379,27 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 - `latitude` (float, опционально) - широта
 - `longitude` (float, опционально) - долгота
 - `city` (string, опционально) - город
-- `garbageSize` (integer, опционально) - размер мусора
-- `onlyFoot` (boolean, опционально) - только пешком
-- `possibleByCar` (boolean, опционально) - доступно на машине
+- `garbage_size` (integer, опционально) - размер мусора
+- `only_foot` (boolean, опционально) - только пешком
+- `possible_by_car` (boolean, опционально) - доступно на машине
 - `cost` (integer, опционально) - стоимость
-- `rewardAmount` (integer, опционально) - размер награды
-- `startDate` (string, опционально) - дата начала
-- `endDate` (string, опционально) - дата окончания
+- `reward_amount` (integer, опционально) - размер награды
+- `start_date` (string, опционально) - дата начала
+- `end_date` (string, опционально) - дата окончания
 - `status` (string, опционально) - статус (по умолчанию: "pending")
 - `priority` (string, опционально) - приоритет (по умолчанию: "medium")
-- `wasteTypes` (string, опционально) - типы отходов через запятую (например: "plastic,glass")
-- `targetAmount` (integer, опционально) - целевая сумма
-- `plantTree` (boolean, опционально) - посадить дерево
-- `trashPickupOnly` (boolean, опционально) - только сбор мусора
+- `waste_types` (string, опционально) - типы отходов через запятую (например: "plastic,glass")
+- `target_amount` (integer, опционально) - целевая сумма
+- `plant_tree` (boolean, опционально) - посадить дерево
+- `trash_pickup_only` (boolean, опционально) - только сбор мусора
 - `photos` (file[], опционально) - массив файлов для основных фото
-- `photosBefore` (file[], опционально) - массив файлов для фото "до"
-- `photosAfter` (file[], опционально) - массив файлов для фото "после"
+- `photos_before` (file[], опционально) - массив файлов для фото "до"
+- `photos_after` (file[], опционально) - массив файлов для фото "после"
 
 **Ограничения:**
 - Максимальный размер файла: 10MB
 - Разрешенные форматы: JPEG, PNG, GIF, WebP
-- Максимум 10 файлов в каждом поле (photos, photosBefore, photosAfter)
+- Максимум 10 файлов в каждом поле (photos, photos_before, photos_after)
 
 **Пример для Flutter (multipart/form-data):**
 
@@ -1050,8 +1413,8 @@ Future<void> createRequestWithPhotos({
   required String name,
   required String category,
   required List<File> photos,
-  List<File>? photosBefore,
-  List<File>? photosAfter,
+  List<File>? photos_before,
+  List<File>? photos_after,
 }) async {
   final uri = Uri.parse('http://autogie1.bget.ru/api/requests');
   final request = http.MultipartRequest('POST', uri);
@@ -1081,12 +1444,12 @@ Future<void> createRequestWithPhotos({
   }
   
   // Файлы - фото "до"
-  if (photosBefore != null) {
-    for (var photo in photosBefore) {
+  if (photos_before != null) {
+    for (var photo in photos_before) {
       final fileStream = http.ByteStream(photo.openRead());
       final length = await photo.length();
       final multipartFile = http.MultipartFile(
-        'photosBefore',
+        'photos_before',
         fileStream,
         length,
         filename: path.basename(photo.path),
@@ -1096,12 +1459,12 @@ Future<void> createRequestWithPhotos({
   }
   
   // Файлы - фото "после"
-  if (photosAfter != null) {
-    for (var photo in photosAfter) {
+  if (photos_after != null) {
+    for (var photo in photos_after) {
       final fileStream = http.ByteStream(photo.openRead());
       final length = await photo.length();
       final multipartFile = http.MultipartFile(
-        'photosAfter',
+        'photos_after',
         fileStream,
         length,
         filename: path.basename(photo.path),
@@ -1159,7 +1522,7 @@ Future<void> createRequestWithPhotos({
   "name": "Обновленное название",
   "description": "Обновленное описание",
   "status": "completed",
-  "completionComment": "Заявка выполнена"
+  "completion_comment": "Заявка выполнена"
 }
 ```
 
@@ -1238,7 +1601,7 @@ Future<void> createRequestWithPhotos({
 **Query параметры:**
 - `page`, `limit` - пагинация
 - `requestId` - фильтр по заявке
-- `userId` - фильтр по пользователю
+- `user_id` - фильтр по пользователю
 
 **Ответ (200):**
 ```json
@@ -1387,7 +1750,7 @@ Future<void> createRequestWithPhotos({
   "city": "Москва",
   "rating": 4.5,
   "photos": ["https://example.com/photo1.jpg"],
-  "partnerTypes": ["recycling", "store"]
+  "partner_types": ["recycling", "store"]
 }
 ```
 
@@ -1403,7 +1766,7 @@ Future<void> createRequestWithPhotos({
 - `city` (string, опционально) - город
 - `rating` (float, опционально) - рейтинг
 - `photos` (file[], опционально) - массив файлов для фото партнера
-- `partnerTypes` (string, опционально) - типы партнера через запятую
+- `partner_types` (string, опционально) - типы партнера через запятую
 
 **Ограничения для файлов:**
 - Максимальный размер файла: 10MB
@@ -1491,7 +1854,7 @@ Future<void> createRequestWithPhotos({
   "city": "Москва",
   "rating": 4.5,
   "photos": ["https://example.com/photo1.jpg"],
-  "partnerTypes": ["recycling", "store"]
+  "partner_types": ["recycling", "store"]
 }
 ```
 
@@ -1507,7 +1870,7 @@ Future<void> createRequestWithPhotos({
 - `city` (string, опционально) - город
 - `rating` (float, опционально) - рейтинг
 - `photos` (file[], опционально) - массив файлов для фото партнера
-- `partnerTypes` (string, опционально) - типы партнера через запятую
+- `partner_types` (string, опционально) - типы партнера через запятую
 
 **Ограничения для файлов:**
 - Максимальный размер файла: 10MB
@@ -1618,12 +1981,12 @@ class ApiService {
   Future<Map<String, dynamic>> register({
     required String email,
     required String password,
-    String? displayName,
+    String? display_name,
   }) async {
     final response = await _request('POST', '/auth/register', body: {
       'email': email,
       'password': password,
-      'displayName': displayName,
+      'display_name': display_name,
     });
     
     if (response['success'] == true) {
@@ -1691,7 +2054,7 @@ class ApiService {
     double? longitude,
     String? city,
     List<String>? photos,
-    List<String>? wasteTypes,
+    List<String>? waste_types,
   }) async {
     return await _request('POST', '/requests', body: {
       'category': category,
@@ -1701,7 +2064,7 @@ class ApiService {
       'longitude': longitude,
       'city': city,
       'photos': photos ?? [],
-      'wasteTypes': wasteTypes ?? [],
+      'waste_types': waste_types ?? [],
     }, requiresAuth: true);
   }
 

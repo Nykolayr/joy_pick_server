@@ -11,7 +11,7 @@ require('dotenv').config();
 function createTransporter() {
   // Способ 1: SMTP (Gmail, Outlook, Yandex и т.д.)
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return nodemailer.createTransport({
+    const config = {
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true', // true для 465, false для других портов
@@ -19,7 +19,19 @@ function createTransporter() {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-    });
+    };
+    
+    // Для Gmail добавляем дополнительные настройки
+    if (process.env.SMTP_HOST.includes('gmail.com')) {
+      config.requireTLS = true;
+      config.secure = false; // Для порта 587 должно быть false
+      config.tls = {
+        ciphers: 'SSLv3',
+        rejectUnauthorized: false
+      };
+    }
+    
+    return nodemailer.createTransport(config);
   }
 
   // Способ 2: Gmail OAuth2 (если используется)
@@ -75,8 +87,16 @@ const transporter = createTransporter();
  */
 async function sendVerificationCode(email, code) {
   if (!transporter) {
-    console.error('❌ Email транспортер не настроен. Код верификации не отправлен.');
-    return false;
+    return {
+      success: false,
+      error: 'Email транспортер не настроен',
+      message: 'Проверьте переменные окружения SMTP_HOST, SMTP_USER, SMTP_PASS в .env файле',
+      details: {
+        smtpHost: process.env.SMTP_HOST || 'не указан',
+        smtpUser: process.env.SMTP_USER ? process.env.SMTP_USER.substring(0, 3) + '***' : 'не указан',
+        smtpPass: process.env.SMTP_PASS ? 'указан' : 'не указан'
+      }
+    };
   }
 
   const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@joypick.com';
@@ -136,12 +156,30 @@ async function sendVerificationCode(email, code) {
   };
 
   try {
+    console.log('📤 Отправка email...');
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email с кодом верификации отправлен:', info.messageId);
-    return true;
+    console.log('✅ Email с кодом верификации отправлен успешно!');
+    console.log('✅ Message ID:', info.messageId);
+    console.log('✅ Response:', info.response);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Ошибка отправки email:', error);
-    return false;
+    console.error('❌ Ошибка отправки email:');
+    console.error('❌ Код ошибки:', error.code);
+    console.error('❌ Сообщение:', error.message);
+    console.error('❌ Команда:', error.command);
+    console.error('❌ Response:', error.response);
+    console.error('❌ Response Code:', error.responseCode);
+    console.error('❌ Stack:', error.stack);
+    
+    // Возвращаем детальную информацию об ошибке
+    return {
+      success: false,
+      error: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    };
   }
 }
 
