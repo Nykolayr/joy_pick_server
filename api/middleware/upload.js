@@ -59,12 +59,12 @@ const upload = multer({
 
 /**
  * Middleware для загрузки фотографий заявок
- * Поддерживает множественную загрузку для photos, photosBefore, photosAfter
+ * Поддерживает множественную загрузку для photos, photos_before, photos_after
  */
 const uploadRequestPhotos = upload.fields([
   { name: 'photos', maxCount: 10 },
-  { name: 'photosBefore', maxCount: 10 },
-  { name: 'photosAfter', maxCount: 10 }
+  { name: 'photos_before', maxCount: 10 },
+  { name: 'photos_after', maxCount: 10 }
 ]);
 
 /**

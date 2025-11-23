@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { uploadUserAvatar, getFileUrlFromPath } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения пользователей:', err);
-    error(res, 'Ошибка при получении списка пользователей', 500);
+    error(res, 'Ошибка при получении списка пользователей', 500, err);
   }
 });
 
@@ -91,7 +92,7 @@ router.get('/:id', authenticate, async (req, res) => {
     success(res, { user: users[0] });
   } catch (err) {
     console.error('Ошибка получения пользователя:', err);
-    error(res, 'Ошибка при получении данных пользователя', 500);
+    error(res, 'Ошибка при получении данных пользователя', 500, err);
   }
 });
 
@@ -104,17 +105,17 @@ router.get('/:id', authenticate, async (req, res) => {
  * Также поддерживает отправку photoUrl через JSON (для обратной совместимости)
  */
 router.put('/:id', authenticate, uploadUserAvatar, [
-  body('displayName').optional().isString(),
-  body('firstName').optional().isString(),
-  body('secondName').optional().isString(),
-  body('phoneNumber').optional().isString(),
+  body('display_name').optional().isString(),
+  body('first_name').optional().isString(),
+  body('second_name').optional().isString(),
+  body('phone_number').optional().isString(),
   body('city').optional().isString(),
   body('country').optional().isString(),
   body('gender').optional().isString(),
-  body('photoUrl').optional().isURL(),
+  body('photo_url').optional().isURL(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
-  body('fcmToken').optional().isString()
+  body('fcm_token').optional().isString()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -146,21 +147,21 @@ router.put('/:id', authenticate, uploadUserAvatar, [
     }
 
     const {
-      displayName,
-      firstName,
-      secondName,
-      phoneNumber,
+      display_name,
+      first_name,
+      second_name,
+      phone_number,
       city,
       country,
       gender,
-      photoUrl,
+      photo_url,
       latitude,
       longitude,
-      fcmToken
+      fcm_token
     } = bodyData;
 
-    // Используем загруженный файл, если есть, иначе используем photoUrl из JSON
-    const photoUrlToUse = finalPhotoUrl || photoUrl;
+    // Используем загруженный файл, если есть, иначе используем photo_url из JSON
+    const photoUrlToUse = finalPhotoUrl || photo_url;
 
     // Проверка существования пользователя
     const [existingUsers] = await pool.execute(
@@ -176,21 +177,21 @@ router.put('/:id', authenticate, uploadUserAvatar, [
     const updates = [];
     const params = [];
 
-    if (displayName !== undefined) {
+    if (display_name !== undefined) {
       updates.push('display_name = ?');
-      params.push(displayName);
+      params.push(display_name);
     }
-    if (firstName !== undefined) {
+    if (first_name !== undefined) {
       updates.push('first_name = ?');
-      params.push(firstName);
+      params.push(first_name);
     }
-    if (secondName !== undefined) {
+    if (second_name !== undefined) {
       updates.push('second_name = ?');
-      params.push(secondName);
+      params.push(second_name);
     }
-    if (phoneNumber !== undefined) {
+    if (phone_number !== undefined) {
       updates.push('phone_number = ?');
-      params.push(phoneNumber);
+      params.push(phone_number);
     }
     if (city !== undefined) {
       updates.push('city = ?');
@@ -216,9 +217,9 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       updates.push('longitude = ?');
       params.push(longitude);
     }
-    if (fcmToken !== undefined) {
+    if (fcm_token !== undefined) {
       updates.push('fcm_token = ?');
-      params.push(fcmToken);
+      params.push(fcm_token);
     }
 
     if (updates.length === 0) {
@@ -246,7 +247,7 @@ router.put('/:id', authenticate, uploadUserAvatar, [
     success(res, { user: users[0] }, 'Данные пользователя обновлены');
   } catch (err) {
     console.error('Ошибка обновления пользователя:', err);
-    error(res, 'Ошибка при обновлении данных пользователя', 500);
+    error(res, 'Ошибка при обновлении данных пользователя', 500, err);
   }
 });
 
@@ -301,7 +302,7 @@ router.put('/:id/jcoins', authenticate, requireAdmin, [
     success(res, { jcoins: newJcoins }, 'Joycoins обновлены');
   } catch (err) {
     console.error('Ошибка обновления Joycoins:', err);
-    error(res, 'Ошибка при обновлении Joycoins', 500);
+    error(res, 'Ошибка при обновлении Joycoins', 500, err);
   }
 });
 
@@ -328,7 +329,7 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
     success(res, null, 'Пользователь удален');
   } catch (err) {
     console.error('Ошибка удаления пользователя:', err);
-    error(res, 'Ошибка при удалении пользователя', 500);
+    error(res, 'Ошибка при удалении пользователя', 500, err);
   }
 });
 

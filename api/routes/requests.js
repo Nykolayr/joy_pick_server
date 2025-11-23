@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -157,7 +158,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения заявок:', err);
-    error(res, 'Ошибка при получении списка заявок', 500);
+    error(res, 'Ошибка при получении списка заявок', 500, err);
   }
 });
 
@@ -230,7 +231,7 @@ router.get('/:id', async (req, res) => {
     success(res, { request });
   } catch (err) {
     console.error('Ошибка получения заявки:', err);
-    error(res, 'Ошибка при получении заявки', 500);
+    error(res, 'Ошибка при получении заявки', 500, err);
   }
 });
 
@@ -239,8 +240,8 @@ router.get('/:id', async (req, res) => {
  * Создание новой заявки
  * Поддерживает загрузку файлов через multipart/form-data:
  * - photos: массив файлов для основных фото
- * - photosBefore: массив файлов для фото "до"
- * - photosAfter: массив файлов для фото "после"
+ * - photos_before: массив файлов для фото "до"
+ * - photos_after: массив файлов для фото "после"
  * 
  * Также поддерживает отправку URL через JSON (для обратной совместимости)
  */
@@ -273,16 +274,16 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
 
       // Обрабатываем фото "до"
-      if (req.files.photosBefore && Array.isArray(req.files.photosBefore)) {
-        for (const file of req.files.photosBefore) {
+      if (req.files.photos_before && Array.isArray(req.files.photos_before)) {
+        for (const file of req.files.photos_before) {
           const fileUrl = getFileUrlFromPath(file.path);
           if (fileUrl) uploadedPhotosBefore.push(fileUrl);
         }
       }
 
       // Обрабатываем фото "после"
-      if (req.files.photosAfter && Array.isArray(req.files.photosAfter)) {
-        for (const file of req.files.photosAfter) {
+      if (req.files.photos_after && Array.isArray(req.files.photos_after)) {
+        for (const file of req.files.photos_after) {
           const fileUrl = getFileUrlFromPath(file.path);
           if (fileUrl) uploadedPhotosAfter.push(fileUrl);
         }
@@ -306,28 +307,28 @@ router.post('/', authenticate, uploadRequestPhotos, [
       latitude,
       longitude,
       city,
-      garbageSize,
-      onlyFoot = false,
-      possibleByCar = false,
+      garbage_size,
+      only_foot = false,
+      possible_by_car = false,
       cost,
-      rewardAmount,
-      startDate,
-      endDate,
+      reward_amount,
+      start_date,
+      end_date,
       status = 'pending',
       priority = 'medium',
-      wasteTypes = [],
+      waste_types = [],
       photos = [],
-      photosBefore = [],
-      photosAfter = [],
-      targetAmount,
-      plantTree = false,
-      trashPickupOnly = false
+      photos_before = [],
+      photos_after = [],
+      target_amount,
+      plant_tree = false,
+      trash_pickup_only = false
     } = bodyData;
 
     // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
     const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photos) ? photos : []);
-    const finalPhotosBefore = uploadedPhotosBefore.length > 0 ? uploadedPhotosBefore : (Array.isArray(photosBefore) ? photosBefore : []);
-    const finalPhotosAfter = uploadedPhotosAfter.length > 0 ? uploadedPhotosAfter : (Array.isArray(photosAfter) ? photosAfter : []);
+    const finalPhotosBefore = uploadedPhotosBefore.length > 0 ? uploadedPhotosBefore : (Array.isArray(photos_before) ? photos_before : []);
+    const finalPhotosAfter = uploadedPhotosAfter.length > 0 ? uploadedPhotosAfter : (Array.isArray(photos_after) ? photos_after : []);
 
     const requestId = generateId();
     const userId = req.user.userId;
@@ -349,19 +350,19 @@ router.post('/', authenticate, uploadRequestPhotos, [
         latitude || null,
         longitude || null,
         city || null,
-        garbageSize || null,
-        onlyFoot,
-        possibleByCar,
+        garbage_size || null,
+        only_foot,
+        possible_by_car,
         cost || null,
-        rewardAmount || null,
-        startDate || null,
-        endDate || null,
+        reward_amount || null,
+        start_date || null,
+        end_date || null,
         status,
         priority,
         userId, // created_by использует тот же userId
-        targetAmount || null,
-        plantTree,
-        trashPickupOnly
+        target_amount || null,
+        plant_tree,
+        trash_pickup_only
       ]
     );
 
@@ -394,8 +395,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
     }
 
     // Добавление типов отходов
-    if (wasteTypes.length > 0) {
-      for (const wasteType of wasteTypes) {
+    if (waste_types.length > 0) {
+      for (const wasteType of waste_types) {
         await pool.execute(
           'INSERT INTO request_waste_types (id, request_id, waste_type) VALUES (?, ?, ?)',
           [generateId(), requestId, wasteType]
@@ -468,20 +469,20 @@ router.put('/:id', authenticate, async (req, res) => {
       latitude,
       longitude,
       city,
-      garbageSize,
-      onlyFoot,
-      possibleByCar,
+      garbage_size,
+      only_foot,
+      possible_by_car,
       cost,
-      rewardAmount,
-      startDate,
-      endDate,
+      reward_amount,
+      start_date,
+      end_date,
       status,
       priority,
-      isOpen,
-      targetAmount,
-      plantTree,
-      trashPickupOnly,
-      completionComment
+      is_open,
+      target_amount,
+      plant_tree,
+      trash_pickup_only,
+      completion_comment
     } = req.body;
 
     const updates = [];
@@ -507,33 +508,33 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('city = ?');
       params.push(city);
     }
-    if (garbageSize !== undefined) {
+    if (garbage_size !== undefined) {
       updates.push('garbage_size = ?');
-      params.push(garbageSize);
+      params.push(garbage_size);
     }
-    if (onlyFoot !== undefined) {
+    if (only_foot !== undefined) {
       updates.push('only_foot = ?');
-      params.push(onlyFoot);
+      params.push(only_foot);
     }
-    if (possibleByCar !== undefined) {
+    if (possible_by_car !== undefined) {
       updates.push('possible_by_car = ?');
-      params.push(possibleByCar);
+      params.push(possible_by_car);
     }
     if (cost !== undefined) {
       updates.push('cost = ?');
       params.push(cost);
     }
-    if (rewardAmount !== undefined) {
+    if (reward_amount !== undefined) {
       updates.push('reward_amount = ?');
-      params.push(rewardAmount);
+      params.push(reward_amount);
     }
-    if (startDate !== undefined) {
+    if (start_date !== undefined) {
       updates.push('start_date = ?');
-      params.push(startDate);
+      params.push(start_date);
     }
-    if (endDate !== undefined) {
+    if (end_date !== undefined) {
       updates.push('end_date = ?');
-      params.push(endDate);
+      params.push(end_date);
     }
     if (status !== undefined) {
       updates.push('status = ?');
@@ -543,25 +544,25 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('priority = ?');
       params.push(priority);
     }
-    if (isOpen !== undefined) {
+    if (is_open !== undefined) {
       updates.push('is_open = ?');
-      params.push(isOpen);
+      params.push(is_open);
     }
-    if (targetAmount !== undefined) {
+    if (target_amount !== undefined) {
       updates.push('target_amount = ?');
-      params.push(targetAmount);
+      params.push(target_amount);
     }
-    if (plantTree !== undefined) {
+    if (plant_tree !== undefined) {
       updates.push('plant_tree = ?');
-      params.push(plantTree);
+      params.push(plant_tree);
     }
-    if (trashPickupOnly !== undefined) {
+    if (trash_pickup_only !== undefined) {
       updates.push('trash_pickup_only = ?');
-      params.push(trashPickupOnly);
+      params.push(trash_pickup_only);
     }
-    if (completionComment !== undefined) {
+    if (completion_comment !== undefined) {
       updates.push('completion_comment = ?');
-      params.push(completionComment);
+      params.push(completion_comment);
     }
 
     if (updates.length === 0) {
@@ -602,7 +603,7 @@ router.put('/:id', authenticate, async (req, res) => {
     success(res, { request }, 'Заявка обновлена');
   } catch (err) {
     console.error('Ошибка обновления заявки:', err);
-    error(res, 'Ошибка при обновлении заявки', 500);
+    error(res, 'Ошибка при обновлении заявки', 500, err);
   }
 });
 
@@ -635,7 +636,7 @@ router.delete('/:id', authenticate, async (req, res) => {
     success(res, null, 'Заявка удалена');
   } catch (err) {
     console.error('Ошибка удаления заявки:', err);
-    error(res, 'Ошибка при удалении заявки', 500);
+    error(res, 'Ошибка при удалении заявки', 500, err);
   }
 });
 
@@ -686,7 +687,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
     success(res, null, 'Вы присоединились к заявке');
   } catch (err) {
     console.error('Ошибка присоединения к заявке:', err);
-    error(res, 'Ошибка при присоединении к заявке', 500);
+    error(res, 'Ошибка при присоединении к заявке', 500, err);
   }
 });
 
@@ -732,7 +733,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     success(res, null, 'Вы присоединились к событию');
   } catch (err) {
     console.error('Ошибка участия в событии:', err);
-    error(res, 'Ошибка при участии в событии', 500);
+    error(res, 'Ошибка при участии в событии', 500, err);
   }
 });
 
@@ -753,7 +754,7 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     success(res, null, 'Вы отменили участие в событии');
   } catch (err) {
     console.error('Ошибка отмены участия:', err);
-    error(res, 'Ошибка при отмене участия', 500);
+    error(res, 'Ошибка при отмене участия', 500, err);
   }
 });
 

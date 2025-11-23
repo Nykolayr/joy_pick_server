@@ -93,7 +93,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения партнеров:', err);
-    error(res, 'Ошибка при получении списка партнеров', 500);
+    error(res, 'Ошибка при получении списка партнеров', 500, err);
   }
 });
 
@@ -128,7 +128,7 @@ router.get('/:id', async (req, res) => {
     success(res, { partner });
   } catch (err) {
     console.error('Ошибка получения партнера:', err);
-    error(res, 'Ошибка при получении партнера', 500);
+    error(res, 'Ошибка при получении партнера', 500, err);
   }
 });
 
@@ -180,7 +180,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
       city,
       rating = 0,
       photos = [],
-      partnerTypes = []
+      partner_types = []
     } = bodyData;
 
     // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
@@ -206,8 +206,8 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
     }
 
     // Добавление типов
-    if (partnerTypes.length > 0) {
-      for (const typeName of partnerTypes) {
+    if (partner_types.length > 0) {
+      for (const typeName of partner_types) {
         await pool.execute(
           'INSERT INTO partner_types (id, partner_id, type_name) VALUES (?, ?, ?)',
           [generateId(), partnerId, typeName]
@@ -235,7 +235,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
     success(res, { partner }, 'Партнер создан', 201);
   } catch (err) {
     console.error('Ошибка создания партнера:', err);
-    error(res, 'Ошибка при создании партнера', 500);
+    error(res, 'Ошибка при создании партнера', 500, err);
   }
 });
 
@@ -246,7 +246,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
 router.put('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, latitude, longitude, city, rating, photos, partnerTypes } = req.body;
+    const { name, description, latitude, longitude, city, rating, photos, partner_types } = req.body;
 
     // Проверка существования
     const [existing] = await pool.execute('SELECT id FROM partners WHERE id = ?', [id]);
@@ -301,10 +301,10 @@ router.put('/:id', authenticate, requireAdmin, async (req, res) => {
       }
     }
 
-    if (partnerTypes !== undefined) {
+    if (partner_types !== undefined) {
       await pool.execute('DELETE FROM partner_types WHERE partner_id = ?', [id]);
-      if (partnerTypes.length > 0) {
-        for (const typeName of partnerTypes) {
+      if (partner_types.length > 0) {
+        for (const typeName of partner_types) {
           await pool.execute(
             'INSERT INTO partner_types (id, partner_id, type_name) VALUES (?, ?, ?)',
             [generateId(), id, typeName]
@@ -333,7 +333,7 @@ router.put('/:id', authenticate, requireAdmin, async (req, res) => {
     success(res, { partner }, 'Партнер обновлен');
   } catch (err) {
     console.error('Ошибка обновления партнера:', err);
-    error(res, 'Ошибка при обновлении партнера', 500);
+    error(res, 'Ошибка при обновлении партнера', 500, err);
   }
 });
 
@@ -355,7 +355,7 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
     success(res, null, 'Партнер удален');
   } catch (err) {
     console.error('Ошибка удаления партнера:', err);
-    error(res, 'Ошибка при удалении партнера', 500);
+    error(res, 'Ошибка при удалении партнера', 500, err);
   }
 });
 
