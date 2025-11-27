@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { sendDonationNotification } = require('../services/pushNotification');
 
 const router = express.Router();
 
@@ -125,7 +126,7 @@ router.post('/', authenticate, [
 
     // Проверка существования заявки
     const [requests] = await pool.execute(
-      'SELECT id, total_contributed FROM requests WHERE id = ?',
+      'SELECT id, name, category, created_by, total_contributed FROM requests WHERE id = ?',
       [requestId]
     );
 
@@ -133,6 +134,7 @@ router.post('/', authenticate, [
       return error(res, 'Заявка не найдена', 404);
     }
 
+    const request = requests[0];
     const donationId = generateId();
 
     // Создание доната
@@ -142,7 +144,7 @@ router.post('/', authenticate, [
     );
 
     // Обновление суммы вкладов в заявке
-    const newTotalContributed = (requests[0].total_contributed || 0) + amount;
+    const newTotalContributed = (request.total_contributed || 0) + amount;
     await pool.execute(
       'UPDATE requests SET total_contributed = ?, updated_at = NOW() WHERE id = ?',
       [newTotalContributed, requestId]
@@ -165,6 +167,20 @@ router.post('/', authenticate, [
         'UPDATE request_contributors SET amount = amount + ? WHERE request_id = ? AND user_id = ?',
         [amount, requestId, userId]
       );
+    }
+
+    // Отправка push-уведомления создателю заявки (асинхронно)
+    if (request.created_by) {
+      sendDonationNotification({
+        requestId: requestId,
+        requestName: request.name || 'Request',
+        requestCategory: request.category,
+        creatorId: request.created_by,
+        donorId: userId,
+        amount: amount,
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при донате:', err);
+      });
     }
 
     // Получение созданного доната
