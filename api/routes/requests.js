@@ -29,7 +29,10 @@ router.get('/', async (req, res) => {
       takenBy
     } = req.query;
 
-    const offset = (page - 1) * limit;
+    // Валидация и преобразование параметров пагинации
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offset = (pageNum - 1) * limitNum;
     let query = `
       SELECT r.*,
        GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
@@ -97,8 +100,8 @@ router.get('/', async (req, res) => {
       query += ' WHERE ' + conditions.join(' AND ');
     }
 
-    query += ' GROUP BY r.id ORDER BY r.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` GROUP BY r.id ORDER BY r.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [requests] = await pool.execute(query, params);
 
@@ -125,35 +128,41 @@ router.get('/', async (req, res) => {
     // Получение общего количества
     let countQuery = 'SELECT COUNT(DISTINCT r.id) as total FROM requests r';
     const countParams = [];
+    const countConditions = [];
     
+    // Строим условия для COUNT запроса, исключая условие радиуса
     if (conditions.length > 0) {
-      // Убираем условие радиуса для подсчета
-      const countConditions = conditions.filter((c, i) => {
-        const paramIndex = Math.floor(i / 2);
-        return !c.includes('6371000');
-      });
+      let paramIndex = 0;
+      for (let i = 0; i < conditions.length; i++) {
+        const condition = conditions[i];
+        // Пропускаем условие радиуса (оно содержит '6371000')
+        if (!condition.includes('6371000')) {
+          countConditions.push(condition);
+          // Добавляем соответствующий параметр
+          countParams.push(params[paramIndex]);
+          paramIndex++;
+        } else {
+          // Условие радиуса использует 4 параметра (latitude, longitude, latitude, radius)
+          // Пропускаем их все
+          paramIndex += 4;
+        }
+      }
       
       if (countConditions.length > 0) {
         countQuery += ' WHERE ' + countConditions.join(' AND ');
-        // Добавляем параметры без радиуса
-        params.slice(0, -2).forEach((p, i) => {
-          if (!conditions[i].includes('6371000')) {
-            countParams.push(p);
-          }
-        });
       }
     }
     
-    const [countResult] = await pool.execute(countQuery, countParams.length > 0 ? countParams : []);
+    const [countResult] = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
     success(res, {
       requests: processedRequests,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitNum)
       }
     });
   } catch (err) {

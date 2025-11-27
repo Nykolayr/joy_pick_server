@@ -14,7 +14,11 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     const { page = 1, limit = 20, requestId, userId } = req.query;
-    const offset = (page - 1) * limit;
+    
+    // Валидация и преобразование параметров пагинации
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offset = (pageNum - 1) * limitNum;
 
     let query = `
       SELECT d.*, u.display_name as user_name, u.email as user_email,
@@ -36,8 +40,8 @@ router.get('/', authenticate, async (req, res) => {
       params.push(userId);
     }
 
-    query += ' ORDER BY d.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY d.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [donations] = await pool.execute(query, params);
 
@@ -60,10 +64,10 @@ router.get('/', authenticate, async (req, res) => {
     success(res, {
       donations,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitNum)
       }
     });
   } catch (err) {
