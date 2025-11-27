@@ -8,6 +8,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { verifyFirebaseToken } = require('../config/firebase');
 const { sendVerificationCode } = require('../config/email');
+const { verifyPassword, hashPassword } = require('../utils/password');
 
 const router = express.Router();
 
@@ -192,22 +193,79 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    // Поиск пользователя
+    // Поиск пользователя (включая auth_type для определения способа регистрации)
     const [users] = await pool.execute(
-      'SELECT id, email, password_hash, display_name, uid, admin FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, display_name, uid, admin, auth_type FROM users WHERE email = ?',
       [email]
     );
 
     if (users.length === 0) {
-      return error(res, 'Неверный email или пароль', 401);
+      return error(res, 'Пользователь с таким email не найден', 401, {
+        errorCode: 'USER_NOT_FOUND',
+        suggestion: 'Проверьте правильность email или зарегистрируйтесь'
+      });
     }
 
     const user = users[0];
 
-    // Проверка пароля
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    if (!isPasswordValid) {
-      return error(res, 'Неверный email или пароль', 401);
+    // Проверка: если у пользователя нет пароля (password_hash = NULL), значит он зарегистрирован через OAuth (Google/Apple)
+    if (!user.password_hash) {
+      const authType = user.auth_type || 'google';
+      const authTypeName = authType === 'google' ? 'Google' : 
+                          authType === 'apple' ? 'Apple' : 
+                          authType === 'github' ? 'GitHub' : 
+                          'OAuth';
+      
+      return error(res, `Этот аккаунт зарегистрирован через ${authTypeName} авторизацию`, 401, {
+        errorCode: 'OAUTH_ACCOUNT',
+        authType: authType,
+        message: `Для входа используйте ${authTypeName} авторизацию через эндпоинт /api/auth/firebase`,
+        suggestion: `Используйте POST /api/auth/firebase с Firebase ID Token вместо email/password`
+      });
+    }
+
+    // Проверка пароля с поддержкой разных форматов (bcrypt, старые форматы)
+    // Передаем email для возможной проверки через Firebase (если нужно)
+    const passwordResult = await verifyPassword(password, user.password_hash, user.email);
+    
+    if (!passwordResult.valid) {
+      // Детальная информация об ошибке проверки пароля
+      const errorDetails = {
+        errorCode: 'INVALID_PASSWORD',
+        checkedFormats: [passwordResult.format],
+        message: passwordResult.message || 'Неверный пароль',
+        checkedViaFirebase: passwordResult.checkedViaFirebase || false
+      };
+
+      // Если проверяли через Firebase Auth, добавляем информацию
+      if (passwordResult.format === 'firebase_auth' || passwordResult.checkedViaFirebase) {
+        errorDetails.message = passwordResult.message || 'Пароль не прошел проверку через Firebase Auth';
+        errorDetails.suggestion = 'Пароль был проверен через Firebase Auth, но не совпал. Возможно, пароль был изменен в Firebase или аккаунт был удален';
+        if (passwordResult.firebaseError) {
+          errorDetails.firebaseError = passwordResult.firebaseError;
+        }
+      } else if (passwordResult.format === 'bcrypt') {
+        errorDetails.message = 'Пароль не прошел проверку через bcrypt';
+        errorDetails.suggestion = 'Проверьте правильность пароля. Если это старый пароль из Firebase, он будет проверен автоматически';
+      }
+
+      return error(res, 'Неверный email или пароль', 401, errorDetails);
+    }
+
+    // Если пароль верный, но нужно обновить хеш (старый формат из Firebase)
+    if (passwordResult.needsUpgrade) {
+      try {
+        const newHash = await hashPassword(password);
+        await pool.execute(
+          'UPDATE users SET password_hash = ? WHERE id = ?',
+          [newHash, user.id]
+        );
+        // Пароль успешно обновлен с Firebase формата на bcrypt
+      } catch (err) {
+        // Логируем ошибку, но не прерываем процесс входа
+        // Пароль верный, просто не удалось обновить хеш
+        // В следующий раз пользователь сможет войти через bcrypt
+      }
     }
 
     // Генерация токена

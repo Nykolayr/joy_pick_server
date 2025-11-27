@@ -15,7 +15,11 @@ const router = express.Router();
 router.get('/', authenticate, requireAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 20, search = '' } = req.query;
-    const offset = (page - 1) * limit;
+    
+    // Валидация и преобразование параметров пагинации
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offset = (pageNum - 1) * limitNum;
 
     let query = `
       SELECT id, email, display_name, photo_url, uid, phone_number, city,
@@ -32,8 +36,8 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    query += ` ORDER BY created_time DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY created_time DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [users] = await pool.execute(query, params);
 
@@ -51,10 +55,10 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
     success(res, {
       users,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitNum)
       }
     });
   } catch (err) {
