@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
+const { sendRequestCreatedNotification, sendJoinNotification } = require('../services/pushNotification');
 
 const router = express.Router();
 
@@ -440,6 +441,22 @@ router.post('/', authenticate, uploadRequestPhotos, [
     request.contributions = {};
     request.donations = [];
 
+    // Отправка push-уведомлений пользователям рядом (асинхронно, не блокируем ответ)
+    if (latitude && longitude) {
+      sendRequestCreatedNotification({
+        id: requestId,
+        category,
+        name,
+        created_by: userId,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        photos: finalPhotos,
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомлений при создании заявки:', err);
+        // Не прерываем выполнение, просто логируем ошибку
+      });
+    }
+
     success(res, { request }, 'Заявка создана', 201);
   } catch (err) {
     console.error('Ошибка создания заявки:', err);
@@ -660,7 +677,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
 
     // Проверка существования заявки
     const [requests] = await pool.execute(
-      'SELECT category, joined_user_id, join_date FROM requests WHERE id = ?',
+      'SELECT id, category, name, created_by, joined_user_id, join_date FROM requests WHERE id = ?',
       [id]
     );
 
@@ -693,6 +710,20 @@ router.post('/:id/join', authenticate, async (req, res) => {
       [userId, id]
     );
 
+    // Отправка push-уведомления создателю заявки (асинхронно)
+    if (request.created_by) {
+      sendJoinNotification({
+        requestId: id,
+        requestName: request.name || 'Request',
+        requestCategory: request.category,
+        creatorId: request.created_by,
+        actionUserId: userId,
+        actionType: 'joined',
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при присоединении:', err);
+      });
+    }
+
     success(res, null, 'Вы присоединились к заявке');
   } catch (err) {
     console.error('Ошибка присоединения к заявке:', err);
@@ -711,7 +742,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
 
     // Проверка существования заявки
     const [requests] = await pool.execute(
-      'SELECT category FROM requests WHERE id = ?',
+      'SELECT id, category, name, created_by FROM requests WHERE id = ?',
       [id]
     );
 
@@ -719,7 +750,9 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       return error(res, 'Заявка не найдена', 404);
     }
 
-    if (requests[0].category !== 'event') {
+    const request = requests[0];
+
+    if (request.category !== 'event') {
       return error(res, 'Это не событие', 400);
     }
 
@@ -738,6 +771,20 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       'INSERT INTO request_participants (id, request_id, user_id) VALUES (?, ?, ?)',
       [generateId(), id, userId]
     );
+
+    // Отправка push-уведомления создателю заявки (асинхронно)
+    if (request.created_by) {
+      sendJoinNotification({
+        requestId: id,
+        requestName: request.name || 'Event',
+        requestCategory: request.category,
+        creatorId: request.created_by,
+        actionUserId: userId,
+        actionType: 'participated',
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при участии:', err);
+      });
+    }
 
     success(res, null, 'Вы присоединились к событию');
   } catch (err) {
