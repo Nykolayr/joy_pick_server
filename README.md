@@ -83,7 +83,6 @@ mysql -u autogie1_joypick -p autogie1_joypick < database/schema.sql
 - `users` - Пользователи
 - `requests` - Заявки (wasteLocation, speedCleanup, event)
 - `request_photos` - Фотографии заявок
-- `request_waste_types` - Типы отходов
 - `request_participants` - Участники событий
 - `request_contributors` - Вкладчики
 - `donations` - Донаты
