@@ -5,7 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
-const { sendRequestCreatedNotification, sendJoinNotification } = require('../services/pushNotification');
+const { sendRequestCreatedNotification, sendJoinNotification, sendSpeedCleanupNotification } = require('../services/pushNotification');
 
 const router = express.Router();
 
@@ -598,10 +598,13 @@ router.put('/:id', authenticate, async (req, res) => {
     let requestRewardAmount = null;
     let oldStatus = null;
 
+    let speedCleanupApproved = false;
+    let speedCleanupEarnedCoin = false;
+
     if (status !== undefined) {
       // Получаем текущие данные заявки перед обновлением
       const [currentRequest] = await pool.execute(
-        'SELECT category, status, created_by, reward_amount FROM requests WHERE id = ?',
+        'SELECT category, status, created_by, reward_amount, start_date, end_date FROM requests WHERE id = ?',
         [id]
       );
 
@@ -613,9 +616,29 @@ router.put('/:id', authenticate, async (req, res) => {
 
         // Проверяем, меняется ли статус на approved для speedCleanup
         if (status === 'approved' && oldStatus !== 'approved' && requestCategory === 'speedCleanup') {
-          shouldAwardCoins = true;
-          // Автоматически переводим в completed после одобрения
-          status = 'completed';
+          speedCleanupApproved = true;
+          const startDate = currentRequest[0].start_date;
+          const endDate = currentRequest[0].end_date;
+
+          // Проверяем разницу между start_date и end_date
+          if (startDate && endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffMinutes = (end - start) / (1000 * 60); // Разница в минутах
+
+            if (diffMinutes >= 20) {
+              // Если >= 20 минут - начисляем коин
+              shouldAwardCoins = true;
+              speedCleanupEarnedCoin = true;
+            } else {
+              // Если < 20 минут - не начисляем коин
+              speedCleanupEarnedCoin = false;
+            }
+          } else {
+            // Если даты отсутствуют - не начисляем коин
+            speedCleanupEarnedCoin = false;
+          }
+          // НЕ переводим в completed автоматически
         }
 
         // Проверяем, меняется ли статус на completed для всех категорий кроме speedCleanup
@@ -668,38 +691,109 @@ router.put('/:id', authenticate, async (req, res) => {
       params
     );
 
-    // Начисление коинов при одобрении speedCleanup заявки
-    if (shouldAwardCoins && requestCreatedBy) {
+    // Обработка одобрения speedCleanup заявки (только для создателя)
+    if (speedCleanupApproved && requestCreatedBy) {
       try {
-        const coinsToAward = 1; // Всем по 1 коину
+        // Начисление коинов только создателю, если заработан (>= 20 минут)
+        if (speedCleanupEarnedCoin) {
+          const coinsToAward = 1;
 
-        // Начисляем коины создателю
-        await pool.execute(
-          'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
-          [coinsToAward, coinsToAward, requestCreatedBy]
-        );
-        console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id}`);
+          // Начисляем коины только создателю
+          await pool.execute(
+            'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+            [coinsToAward, coinsToAward, requestCreatedBy]
+          );
+          console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id}`);
+        }
 
-        // Получаем всех донатеров для этой заявки
-        const [donations] = await pool.execute(
-          'SELECT DISTINCT user_id, SUM(amount) as total_amount FROM donations WHERE request_id = ? GROUP BY user_id',
+        // Отправляем push-уведомление только создателю
+        sendSpeedCleanupNotification({
+          userIds: [requestCreatedBy],
+          earnedCoin: speedCleanupEarnedCoin,
+        }).catch(err => {
+          console.error('❌ Ошибка отправки push-уведомления для speedCleanup:', err);
+        });
+      } catch (coinError) {
+        console.error('❌ Ошибка обработки одобрения speedCleanup заявки:', coinError);
+        // Не прерываем выполнение, только логируем ошибку
+      }
+    }
+
+    // Проверка автоматического перевода speedCleanup в completed через сутки после end_date
+    // Начисление коинов и отправка пуша донатерам
+    if (requestCategory === 'speedCleanup') {
+      try {
+        const [requestData] = await pool.execute(
+          'SELECT status, end_date, created_by FROM requests WHERE id = ?',
           [id]
         );
 
-        // Начисляем коины донатерам (по 1 коину каждому)
-        if (donations.length > 0) {
-          for (const donation of donations) {
-            if (donation.user_id && donation.user_id !== requestCreatedBy) {
-              await pool.execute(
-                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                [coinsToAward, coinsToAward, donation.user_id]
-              );
-              console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${id}`);
+        if (requestData.length > 0 && requestData[0].status === 'approved' && requestData[0].end_date) {
+          const endDate = new Date(requestData[0].end_date);
+          const now = new Date();
+          const diffHours = (now - endDate) / (1000 * 60 * 60); // Разница в часах
+
+          // Если прошло 24 часа (сутки) с end_date, переводим в completed
+          if (diffHours >= 24) {
+            await pool.execute(
+              'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+              ['completed', id]
+            );
+            console.log(`✅ Автоматически переведена speedCleanup заявка ${id} в completed (прошло ${Math.floor(diffHours)} часов с end_date)`);
+
+            // Убеждаемся, что донатеры в таблице donations
+            // Получаем донатеров из request_contributors
+            const [contributors] = await pool.execute(
+              'SELECT user_id, amount FROM request_contributors WHERE request_id = ?',
+              [id]
+            );
+
+            const donorUserIds = [];
+
+            if (contributors.length > 0) {
+              const coinsToAward = 1;
+
+              for (const contributor of contributors) {
+                // Проверяем, есть ли уже донат в таблице donations
+                const [existingDonation] = await pool.execute(
+                  'SELECT id FROM donations WHERE request_id = ? AND user_id = ?',
+                  [id, contributor.user_id]
+                );
+
+                // Если доната нет, создаем его (без payment_intent_id, так как это не реальный платеж)
+                if (existingDonation.length === 0) {
+                  await pool.execute(
+                    'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id) VALUES (?, ?, ?, ?, ?)',
+                    [generateId(), id, contributor.user_id, contributor.amount || 0, null]
+                  );
+                  console.log(`✅ Перенесен донатер ${contributor.user_id} в таблицу donations для заявки ${id}`);
+                }
+
+                // Начисляем коины донатерам (по 1 коину каждому)
+                if (contributor.user_id && contributor.user_id !== requestData[0].created_by) {
+                  await pool.execute(
+                    'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+                    [coinsToAward, coinsToAward, contributor.user_id]
+                  );
+                  console.log(`✅ Начислено ${coinsToAward} коин донатеру ${contributor.user_id} за заявку ${id} (через сутки)`);
+                  donorUserIds.push(contributor.user_id);
+                }
+              }
+            }
+
+            // Отправляем push-уведомление донатерам (если они есть)
+            if (donorUserIds.length > 0) {
+              sendSpeedCleanupNotification({
+                userIds: donorUserIds,
+                earnedCoin: true, // Донатеры всегда получают коин через сутки
+              }).catch(err => {
+                console.error('❌ Ошибка отправки push-уведомления донатерам speedCleanup:', err);
+              });
             }
           }
         }
-      } catch (coinError) {
-        console.error('❌ Ошибка начисления коинов при одобрении заявки:', coinError);
+      } catch (autoCompleteError) {
+        console.error('❌ Ошибка автоматического перевода в completed:', autoCompleteError);
         // Не прерываем выполнение, только логируем ошибку
       }
     }

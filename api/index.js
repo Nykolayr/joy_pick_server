@@ -18,6 +18,7 @@ const partnerRoutes = require('./routes/partners');
 const migrationRoutes = require('./routes/migration');
 const notificationRoutes = require('./routes/notifications');
 const wasteTypesRoutes = require('./routes/wasteTypes');
+const cronRoutes = require('./routes/cron');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use('/partners', partnerRoutes);
 app.use('/migration', migrationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/waste-types', wasteTypesRoutes);
+app.use('/cron', cronRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {
@@ -132,6 +134,7 @@ app.get('/info', (req, res) => {
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
+      cron: '/api/cron',
       info: '/api/info',
       health: '/api/health',
       healthDb: '/api/health/db'
