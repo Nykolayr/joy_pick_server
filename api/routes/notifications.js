@@ -52,6 +52,28 @@ router.post('/send', authenticate, requireAdmin, [
       data: data || {},
     });
 
+    // Проверяем результат отправки
+    if (result.successCount === 0 && result.failureCount > 0) {
+      // Если ничего не отправилось, возвращаем ошибку
+      return error(res, result.errorMessage || 'Не удалось отправить уведомления', 400, {
+        sent: result.successCount,
+        failed: result.failureCount,
+        total: user_ids.length,
+        reason: result.reason || 'Неизвестная ошибка',
+      });
+    }
+
+    if (result.successCount === 0 && result.failureCount === 0) {
+      // Если нет токенов или другие проблемы
+      return error(res, result.errorMessage || 'Не удалось отправить уведомления: у пользователей нет FCM токенов', 400, {
+        sent: 0,
+        failed: user_ids.length,
+        total: user_ids.length,
+        reason: result.reason || 'У пользователей отсутствуют FCM токены',
+      });
+    }
+
+    // Если хотя бы одно уведомление отправилось, возвращаем успех
     success(res, {
       sent: result.successCount,
       failed: result.failureCount,
