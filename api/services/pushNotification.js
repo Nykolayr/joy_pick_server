@@ -97,6 +97,7 @@ async function sendPushNotifications({ title, body, tokens, imageUrl = null, sou
 
   let totalSuccess = 0;
   let totalFailure = 0;
+  const result = { successCount: 0, failureCount: 0 };
 
   // Отправляем батчами по 500 токенов (лимит FCM)
   const batchSize = 500;
@@ -138,28 +139,75 @@ async function sendPushNotifications({ title, body, tokens, imageUrl = null, sou
       totalSuccess += response.successCount;
       totalFailure += response.failureCount;
 
-      // Логируем невалидные токены для последующего удаления
+      // Логируем невалидные токены и автоматически удаляем их из БД
+      const invalidTokens = [];
+      const errorMessages = [];
       if (response.responses) {
-        response.responses.forEach((resp, idx) => {
+        for (let idx = 0; idx < response.responses.length; idx++) {
+          const resp = response.responses[idx];
           if (!resp.success && resp.error) {
-            if (resp.error.code === 'messaging/invalid-registration-token' || 
-                resp.error.code === 'messaging/registration-token-not-registered') {
-              console.log(`⚠️ Невалидный токен: ${tokensBatch[idx]}`);
-              // В будущем можно добавить удаление невалидных токенов из БД
+            const errorCode = resp.error.code;
+            const errorMessage = resp.error.message || 'Unknown error';
+            const token = tokensBatch[idx];
+            errorMessages.push(`Токен ${token.substring(0, 20)}...: ${errorCode} - ${errorMessage}`);
+            
+            if (errorCode === 'messaging/invalid-registration-token' || 
+                errorCode === 'messaging/registration-token-not-registered') {
+              invalidTokens.push(token);
+              console.log(`⚠️ Невалидный токен обнаружен: ${token.substring(0, 30)}... (${errorCode})`);
+              
+              // Автоматически удаляем невалидный токен из БД
+              try {
+                const [updateResult] = await pool.execute(
+                  'UPDATE users SET fcm_token = NULL WHERE fcm_token = ?',
+                  [token]
+                );
+                if (updateResult.affectedRows > 0) {
+                  console.log(`✅ Невалидный токен удален из БД (затронуто пользователей: ${updateResult.affectedRows})`);
+                } else {
+                  console.log(`ℹ️ Токен не найден в БД для удаления (возможно, уже удален)`);
+                }
+              } catch (dbError) {
+                console.error(`❌ Ошибка удаления невалидного токена из БД:`, dbError);
+              }
+            } else {
+              console.log(`⚠️ Ошибка отправки токена ${token.substring(0, 30)}...: ${errorCode} - ${errorMessage}`);
             }
           }
-        });
+        }
+      }
+      
+      // Сохраняем информацию об ошибках для возврата
+      if (errorMessages.length > 0 && i === 0) {
+        // Если это первый батч и есть ошибки, сохраняем причины
+        if (!result.reason) {
+          let reasonText = errorMessages.slice(0, 3).join('; '); // Первые 3 ошибки
+          if (errorMessages.length > 3) {
+            reasonText += ` и еще ${errorMessages.length - 3} ошибок`;
+          }
+          // Добавляем информацию о том, что невалидные токены были удалены
+          if (invalidTokens.length > 0) {
+            reasonText += `. Невалидные токены автоматически удалены из БД (${invalidTokens.length} шт.)`;
+          }
+          result.reason = reasonText;
+        }
       }
 
       console.log(`✅ Отправлено ${response.successCount} из ${tokensBatch.length} уведомлений (батч ${Math.floor(i / batchSize) + 1})`);
     } catch (error) {
       console.error(`❌ Ошибка отправки батча уведомлений:`, error);
       totalFailure += tokensBatch.length;
+      if (!result.reason) {
+        result.reason = `Ошибка при отправке через FCM: ${error.message}`;
+      }
     }
   }
 
+  result.successCount = totalSuccess;
+  result.failureCount = totalFailure;
+  
   console.log(`📱 Всего отправлено: ${totalSuccess} успешно, ${totalFailure} с ошибками из ${tokens.length} токенов`);
-  return { successCount: totalSuccess, failureCount: totalFailure };
+  return result;
 }
 
 /**
@@ -280,7 +328,12 @@ async function sendRequestCreatedNotification(requestData) {
 async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, sound = 'default', data = {} }) {
   if (!userIds || userIds.length === 0) {
     console.log('ℹ️ Нет пользователей для отправки уведомлений');
-    return { successCount: 0, failureCount: 0 };
+    return { 
+      successCount: 0, 
+      failureCount: 0,
+      errorMessage: 'Не указаны пользователи для отправки уведомлений',
+      reason: 'userIds пустой или не указан'
+    };
   }
 
   try {
@@ -288,8 +341,32 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
     const tokens = await getFcmTokensByUserIds(userIds);
 
     if (tokens.length === 0) {
-      console.log('ℹ️ Нет FCM токенов для указанных пользователей');
-      return { successCount: 0, failureCount: 0 };
+      console.log(`⚠️ Нет FCM токенов для указанных пользователей (${userIds.length} пользователей)`);
+      // Проверяем, существуют ли пользователи в БД
+      const placeholders = userIds.map(() => '?').join(',');
+      const [users] = await pool.execute(
+        `SELECT id, email, display_name, fcm_token FROM users WHERE id IN (${placeholders})`,
+        userIds
+      );
+      
+      const usersWithoutTokens = users.filter(u => !u.fcm_token || u.fcm_token.trim() === '');
+      const usersNotFound = userIds.filter(id => !users.find(u => u.id === id));
+      
+      let reason = 'У пользователей отсутствуют FCM токены';
+      if (usersNotFound.length > 0) {
+        reason += `. Пользователи не найдены: ${usersNotFound.join(', ')}`;
+      }
+      if (usersWithoutTokens.length > 0) {
+        const emails = usersWithoutTokens.map(u => u.email || u.id).join(', ');
+        reason += `. Пользователи без токенов: ${emails}`;
+      }
+      
+      return { 
+        successCount: 0, 
+        failureCount: userIds.length,
+        errorMessage: 'Не удалось отправить уведомления: у пользователей нет FCM токенов',
+        reason: reason
+      };
     }
 
     console.log(`📱 Найдено ${tokens.length} FCM токенов для ${userIds.length} пользователей`);
@@ -304,10 +381,21 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
       data,
     });
 
+    // Если ничего не отправилось, добавляем информацию об ошибке
+    if (result.successCount === 0 && result.failureCount > 0) {
+      result.errorMessage = 'Не удалось отправить уведомления: все токены невалидны или произошла ошибка при отправке';
+      result.reason = result.reason || 'Ошибка при отправке через FCM';
+    }
+
     return result;
   } catch (error) {
     console.error('❌ Ошибка отправки уведомлений пользователям:', error);
-    return { successCount: 0, failureCount: 0 };
+    return { 
+      successCount: 0, 
+      failureCount: userIds.length,
+      errorMessage: `Ошибка при отправке уведомлений: ${error.message}`,
+      reason: error.message
+    };
   }
 }
 
