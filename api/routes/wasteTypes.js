@@ -222,12 +222,12 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
       return error(res, 'Тип отходов не найден', 404);
     }
 
-    const wasteTypeName = existing[0].name;
-
     // Проверка использования в заявках
-    // В таблице request_waste_types хранится строка waste_type, которая должна совпадать с name
+    // В таблице requests поле waste_types хранится как JSON массив названий
+    const wasteTypeName = existing[0].name;
     const [usedInRequests] = await pool.execute(
-      'SELECT COUNT(*) as count FROM request_waste_types WHERE waste_type = ?',
+      `SELECT COUNT(*) as count FROM requests 
+       WHERE JSON_CONTAINS(waste_types, JSON_QUOTE(?))`,
       [wasteTypeName]
     );
 

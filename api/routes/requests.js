@@ -38,13 +38,11 @@ router.get('/', async (req, res) => {
       SELECT r.*,
        GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
        GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after,
-       GROUP_CONCAT(DISTINCT rwt.waste_type) as waste_types
+       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
       FROM requests r
       LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
       LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
       LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      LEFT JOIN request_waste_types rwt ON r.id = rwt.request_id
     `;
 
     const conditions = [];
@@ -114,7 +112,18 @@ router.get('/', async (req, res) => {
       result.photos = request.photos ? request.photos.split(',') : [];
       result.photos_before = request.photos_before ? request.photos_before.split(',') : [];
       result.photos_after = request.photos_after ? request.photos_after.split(',') : [];
-      result.waste_types = request.waste_types ? request.waste_types.split(',') : [];
+      // Обработка waste_types из JSON поля
+      if (request.waste_types) {
+        try {
+          result.waste_types = typeof request.waste_types === 'string' 
+            ? JSON.parse(request.waste_types) 
+            : request.waste_types;
+        } catch (e) {
+          result.waste_types = [];
+        }
+      } else {
+        result.waste_types = [];
+      }
       
       // Преобразование булевых значений
       result.only_foot = Boolean(result.only_foot);
@@ -184,13 +193,11 @@ router.get('/:id', async (req, res) => {
       `SELECT r.*,
        GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
        GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after,
-       GROUP_CONCAT(DISTINCT rwt.waste_type) as waste_types
+       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
       FROM requests r
       LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
       LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
       LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      LEFT JOIN request_waste_types rwt ON r.id = rwt.request_id
       WHERE r.id = ?
       GROUP BY r.id`,
       [id]
@@ -231,7 +238,18 @@ router.get('/:id', async (req, res) => {
     request.photos = request.photos ? request.photos.split(',') : [];
     request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
     request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
-    request.waste_types = request.waste_types ? request.waste_types.split(',') : [];
+    // Обработка waste_types из JSON поля
+    if (request.waste_types) {
+      try {
+        request.waste_types = typeof request.waste_types === 'string' 
+          ? JSON.parse(request.waste_types) 
+          : request.waste_types;
+      } catch (e) {
+        request.waste_types = [];
+      }
+    } else {
+      request.waste_types = [];
+    }
     request.only_foot = Boolean(request.only_foot);
     request.possible_by_car = Boolean(request.possible_by_car);
     request.is_open = Boolean(request.is_open);
@@ -404,14 +422,12 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     }
 
-    // Добавление типов отходов
-    if (waste_types.length > 0) {
-      for (const wasteType of waste_types) {
-        await pool.execute(
-          'INSERT INTO request_waste_types (id, request_id, waste_type) VALUES (?, ?, ?)',
-          [generateId(), requestId, wasteType]
-        );
-      }
+    // Сохранение типов отходов как JSON массив названий
+    if (waste_types && Array.isArray(waste_types) && waste_types.length > 0) {
+      await pool.execute(
+        'UPDATE requests SET waste_types = ? WHERE id = ?',
+        [JSON.stringify(waste_types), requestId]
+      );
     }
 
     // Получение созданной заявки
@@ -419,13 +435,11 @@ router.post('/', authenticate, uploadRequestPhotos, [
       `SELECT r.*,
        GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
        GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after,
-       GROUP_CONCAT(DISTINCT rwt.waste_type) as waste_types
+       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
       FROM requests r
       LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
       LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
       LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      LEFT JOIN request_waste_types rwt ON r.id = rwt.request_id
       WHERE r.id = ?
       GROUP BY r.id`,
       [requestId]
@@ -435,7 +449,19 @@ router.post('/', authenticate, uploadRequestPhotos, [
     request.photos = request.photos ? request.photos.split(',') : [];
     request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
     request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
-    request.waste_types = request.waste_types ? request.waste_types.split(',') : [];
+    
+    // Обработка waste_types из JSON поля
+    if (request.waste_types) {
+      try {
+        request.waste_types = typeof request.waste_types === 'string' 
+          ? JSON.parse(request.waste_types) 
+          : request.waste_types;
+      } catch (e) {
+        request.waste_types = [];
+      }
+    } else {
+      request.waste_types = [];
+    }
     request.participants = [];
     request.contributors = [];
     request.contributions = {};
@@ -508,7 +534,8 @@ router.put('/:id', authenticate, async (req, res) => {
       target_amount,
       plant_tree,
       trash_pickup_only,
-      completion_comment
+      completion_comment,
+      waste_types
     } = req.body;
 
     const updates = [];
@@ -562,7 +589,41 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('end_date = ?');
       params.push(end_date);
     }
+    // Проверка изменения статуса на approved для speedCleanup
+    let shouldAwardCoins = false;
+    // Проверка изменения статуса на completed для всех категорий кроме speedCleanup
+    let shouldAwardCoinsForCompleted = false;
+    let requestCategory = null;
+    let requestCreatedBy = null;
+    let requestRewardAmount = null;
+    let oldStatus = null;
+
     if (status !== undefined) {
+      // Получаем текущие данные заявки перед обновлением
+      const [currentRequest] = await pool.execute(
+        'SELECT category, status, created_by, reward_amount FROM requests WHERE id = ?',
+        [id]
+      );
+
+      if (currentRequest.length > 0) {
+        requestCategory = currentRequest[0].category;
+        oldStatus = currentRequest[0].status;
+        requestCreatedBy = currentRequest[0].created_by;
+        requestRewardAmount = currentRequest[0].reward_amount;
+
+        // Проверяем, меняется ли статус на approved для speedCleanup
+        if (status === 'approved' && oldStatus !== 'approved' && requestCategory === 'speedCleanup') {
+          shouldAwardCoins = true;
+          // Автоматически переводим в completed после одобрения
+          status = 'completed';
+        }
+
+        // Проверяем, меняется ли статус на completed для всех категорий кроме speedCleanup
+        if (status === 'completed' && oldStatus !== 'completed' && requestCategory !== 'speedCleanup') {
+          shouldAwardCoinsForCompleted = true;
+        }
+      }
+
       updates.push('status = ?');
       params.push(status);
     }
@@ -590,6 +651,10 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('completion_comment = ?');
       params.push(completion_comment);
     }
+    if (waste_types !== undefined) {
+      updates.push('waste_types = ?');
+      params.push(Array.isArray(waste_types) ? JSON.stringify(waste_types) : null);
+    }
 
     if (updates.length === 0) {
       return error(res, 'Нет данных для обновления', 400);
@@ -603,18 +668,123 @@ router.put('/:id', authenticate, async (req, res) => {
       params
     );
 
+    // Начисление коинов при одобрении speedCleanup заявки
+    if (shouldAwardCoins && requestCreatedBy) {
+      try {
+        const coinsToAward = 1; // Всем по 1 коину
+
+        // Начисляем коины создателю
+        await pool.execute(
+          'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+          [coinsToAward, coinsToAward, requestCreatedBy]
+        );
+        console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id}`);
+
+        // Получаем всех донатеров для этой заявки
+        const [donations] = await pool.execute(
+          'SELECT DISTINCT user_id, SUM(amount) as total_amount FROM donations WHERE request_id = ? GROUP BY user_id',
+          [id]
+        );
+
+        // Начисляем коины донатерам (по 1 коину каждому)
+        if (donations.length > 0) {
+          for (const donation of donations) {
+            if (donation.user_id && donation.user_id !== requestCreatedBy) {
+              await pool.execute(
+                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+                [coinsToAward, coinsToAward, donation.user_id]
+              );
+              console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${id}`);
+            }
+          }
+        }
+      } catch (coinError) {
+        console.error('❌ Ошибка начисления коинов при одобрении заявки:', coinError);
+        // Не прерываем выполнение, только логируем ошибку
+      }
+    }
+
+    // Начисление коинов при завершении заявки (completed) для всех категорий кроме speedCleanup
+    if (shouldAwardCoinsForCompleted && requestCreatedBy) {
+      try {
+        const coinsToAward = 1; // Всем по 1 коину
+
+        // Начисляем коины создателю
+        await pool.execute(
+          'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+          [coinsToAward, coinsToAward, requestCreatedBy]
+        );
+        console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id} (completed)`);
+
+        // Получаем всех донатеров для этой заявки
+        const [donations] = await pool.execute(
+          'SELECT DISTINCT user_id, SUM(amount) as total_amount FROM donations WHERE request_id = ? GROUP BY user_id',
+          [id]
+        );
+
+        // Начисляем коины донатерам (по 1 коину каждому)
+        const awardedUserIds = new Set([requestCreatedBy]); // Чтобы не начислять дважды
+        if (donations.length > 0) {
+          for (const donation of donations) {
+            if (donation.user_id && !awardedUserIds.has(donation.user_id)) {
+              await pool.execute(
+                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+                [coinsToAward, coinsToAward, donation.user_id]
+              );
+              awardedUserIds.add(donation.user_id);
+              console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${id} (completed)`);
+            }
+          }
+        }
+
+        // Получаем участников в зависимости от типа заявки
+        if (requestCategory === 'wasteLocation') {
+          // Для wasteLocation - получаем joined_user_id
+          const [joinedUser] = await pool.execute(
+            'SELECT joined_user_id FROM requests WHERE id = ? AND joined_user_id IS NOT NULL',
+            [id]
+          );
+          if (joinedUser.length > 0 && joinedUser[0].joined_user_id && !awardedUserIds.has(joinedUser[0].joined_user_id)) {
+            await pool.execute(
+              'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+              [coinsToAward, coinsToAward, joinedUser[0].joined_user_id]
+            );
+            awardedUserIds.add(joinedUser[0].joined_user_id);
+            console.log(`✅ Начислено ${coinsToAward} коин присоединившемуся пользователю ${joinedUser[0].joined_user_id} за заявку ${id} (completed)`);
+          }
+        } else if (requestCategory === 'event') {
+          // Для event - получаем всех участников из request_participants
+          const [participants] = await pool.execute(
+            'SELECT user_id FROM request_participants WHERE request_id = ?',
+            [id]
+          );
+          for (const participant of participants) {
+            if (participant.user_id && !awardedUserIds.has(participant.user_id)) {
+              await pool.execute(
+                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+                [coinsToAward, coinsToAward, participant.user_id]
+              );
+              awardedUserIds.add(participant.user_id);
+              console.log(`✅ Начислено ${coinsToAward} коин участнику ${participant.user_id} за заявку ${id} (completed)`);
+            }
+          }
+        }
+      } catch (coinError) {
+        console.error('❌ Ошибка начисления коинов при завершении заявки:', coinError);
+        // Не прерываем выполнение, только логируем ошибку
+      }
+    }
+
     // Получение обновленной заявки
     const [requests] = await pool.execute(
       `SELECT r.*,
        GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
        GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after,
-       GROUP_CONCAT(DISTINCT rwt.waste_type) as waste_types
+       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
       FROM requests r
       LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
       LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
       LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      LEFT JOIN request_waste_types rwt ON r.id = rwt.request_id
       WHERE r.id = ?
       GROUP BY r.id`,
       [id]
@@ -624,7 +794,18 @@ router.put('/:id', authenticate, async (req, res) => {
     request.photos = request.photos ? request.photos.split(',') : [];
     request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
     request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
-    request.waste_types = request.waste_types ? request.waste_types.split(',') : [];
+    // Обработка waste_types из JSON поля
+    if (request.waste_types) {
+      try {
+        request.waste_types = typeof request.waste_types === 'string' 
+          ? JSON.parse(request.waste_types) 
+          : request.waste_types;
+      } catch (e) {
+        request.waste_types = [];
+      }
+    } else {
+      request.waste_types = [];
+    }
 
     success(res, { request }, 'Заявка обновлена');
   } catch (err) {
