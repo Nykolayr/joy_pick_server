@@ -565,12 +565,38 @@ async function sendDonationNotification({ requestId, requestName, requestCategor
   }
 }
 
+/**
+ * Отправка push-уведомления для speedCleanup заявки
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей (создатель + донатеры)
+ * @param {boolean} options.earnedCoin - Заработан ли коин (true) или нет (false)
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendSpeedCleanupNotification({ userIds, earnedCoin }) {
+  const title = 'Thank you!';
+  const body = earnedCoin 
+    ? 'You\'ve earned a coin for your cleanup work!'
+    : 'Try to work a bit longer next time to earn a coin.';
+
+  return await sendNotificationToUsers({
+    title,
+    body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'speedCleanup',
+      earnedCoin: earnedCoin,
+    },
+  });
+}
+
 module.exports = {
   sendPushNotifications,
   sendRequestCreatedNotification,
   sendNotificationToUsers,
   sendJoinNotification,
   sendDonationNotification,
+  sendSpeedCleanupNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
 };

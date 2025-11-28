@@ -134,9 +134,9 @@ API поддерживает два способа авторизации:
 | `possible_by_car` | boolean | Нет | Доступ на машине (по умолчанию: `false`) |
 | `cost` | integer | Нет | Стоимость заявки |
 | `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
-| `start_date` | datetime | Нет | Дата начала (для Event) |
-| `end_date` | datetime | Нет | Дата окончания (для Event) |
-| `status` | string | Нет | Статус: `pending`, `approved`, `rejected`, `completed` (по умолчанию: `pending`). **Важно:** Для заявок типа `speedCleanup` при установке статуса `approved` автоматически переводится в `completed` и начисляются коины. |
+| `start_date` | datetime | **Да (для speedCleanup)** | Дата начала работы. **Обязательно для `speedCleanup`**, опционально для `event` |
+| `end_date` | datetime | **Да (для speedCleanup)** | Дата окончания работы. **Обязательно для `speedCleanup`**, опционально для `event` |
+| `status` | string | Нет | Статус: `pending`, `approved`, `rejected`, `completed` (по умолчанию: `pending`). **Важно:** Для заявок типа `speedCleanup` при установке статуса `approved` проверяется разница между `start_date` и `end_date`. Если разница >= 20 минут, начисляется коин создателю. Через 24 часа после `end_date` заявка автоматически переводится в `completed` и начисляются коины донатерам. |
 | `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
@@ -1346,11 +1346,18 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "city": "Москва",
   "garbage_size": 2,
   "reward_amount": 50,
+  "start_date": "2024-02-01T10:00:00.000Z",
+  "end_date": "2024-02-01T10:25:00.000Z",
   "photos_before": ["url1"],
   "photos_after": ["url2"],
   "waste_types": ["plastic"]
 }
 ```
+
+**Важно для Speed Cleanup:**
+- Поля `start_date` и `end_date` **обязательны** для заявок типа `speedCleanup`
+- Разница между `start_date` и `end_date` должна быть минимум 20 минут для начисления коина создателю при одобрении
+- Формат дат: ISO 8601 (например: `"2024-02-01T10:00:00.000Z"`)
 
 **Для Event:**
 ```json
@@ -1384,8 +1391,8 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 - `possible_by_car` (boolean, опционально) - доступно на машине
 - `cost` (integer, опционально) - стоимость
 - `reward_amount` (integer, опционально) - размер награды
-- `start_date` (string, опционально) - дата начала
-- `end_date` (string, опционально) - дата окончания
+- `start_date` (string, **обязательно для speedCleanup**, опционально для event) - дата начала работы
+- `end_date` (string, **обязательно для speedCleanup**, опционально для event) - дата окончания работы
 - `status` (string, опционально) - статус (по умолчанию: "pending"). **Важно:** Для заявок типа `speedCleanup` при установке статуса `approved` автоматически переводится в `completed` и начисляются коины.
 - `priority` (string, опционально) - приоритет (по умолчанию: "medium")
 - `waste_types` (array[string], опционально) - массив названий типов отходов (например: `["plastic", "glass"]`)
@@ -1529,9 +1536,25 @@ Future<void> createRequestWithPhotos({
 **Важно о начислении коинов:**
 
 1. **Для заявок типа `speedCleanup`:**
-   - При установке статуса `approved` заявка автоматически переводится в статус `completed`
-   - Начисляется по 1 коину создателю заявки и всем донатерам (если есть)
+   - **При установке статуса `approved`:**
+     - Проверяется разница между `start_date` и `end_date`
+     - Если разница >= 20 минут:
+       - Начисляется 1 коин **только создателю** заявки
+       - Отправляется push-уведомление создателю: "Thank you! You've earned a coin for your cleanup work!"
+     - Если разница < 20 минут:
+       - Коин не начисляется
+       - Отправляется push-уведомление создателю: "Thank you! Try to work a bit longer next time to earn a coin."
+     - Заявка **НЕ переводится** в статус `completed` автоматически
+   - **Через 24 часа после `end_date`:**
+     - Заявка автоматически переводится в статус `completed` (при следующем обновлении заявки или запросе)
+     - Начисляется по 1 коину **всем донатерам** (если они есть)
+     - Отправляется push-уведомление донатерам: "Thank you! You've earned a coin for your cleanup work!"
+     - Донатеры из таблицы `request_contributors` автоматически переносятся в таблицу `donations`
    - Коины начисляются в поля `jcoins`, `coins_from_created` (создателю) и `coins_from_participation` (донатерам)
+   - **Автоматический перевод в `completed` через 24 часа:**
+     - В текущей реализации проверка происходит при каждом обновлении заявки (PUT `/api/requests/:id`)
+     - Если прошло 24 часа с момента `end_date` и статус `approved`, заявка автоматически переводится в `completed`
+     - Для более точного и своевременного перевода рекомендуется настроить cron job или scheduled task на сервере, который будет периодически проверять все заявки типа `speedCleanup` со статусом `approved` и переводить их в `completed` при необходимости
 
 2. **Для всех остальных типов заявок (`wasteLocation`, `event`):**
    - При установке статуса `completed` начисляется по 1 коину:
@@ -2775,6 +2798,92 @@ class ApiService {
     }, requiresAuth: true);
   }
 }
+```
+
+---
+
+## ⏰ Cron задачи (только для админов)
+
+Cron задачи выполняются автоматически через `node-cron` при запуске сервера. Администраторы могут проверять статус и запускать задачи вручную через API.
+
+### Проверка статуса cron задач
+
+**GET** `/api/cron/status`
+
+**Требует аутентификации и прав администратора**
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "status": "running",
+    "isRunning": true,
+    "lastRun": "2025-11-28T14:11:20.278Z",
+    "hoursSinceLastRun": 0.5,
+    "lastRunInfo": {
+      "lastRun": "2025-11-28T14:11:20.278Z",
+      "results": {
+        "autoCompleteSpeedCleanup": {
+          "processed": 0,
+          "errors": 0
+        }
+      },
+      "status": "success"
+    },
+    "fileExists": true,
+    "message": "Cron задачи работают нормально"
+  }
+}
+```
+
+**Статусы:**
+- `running` - последний запуск был менее 2 часов назад (cron работает нормально)
+- `warning` - последний запуск был 2-24 часа назад (возможно, cron не работает)
+- `stopped` - последний запуск был более 24 часов назад (cron не работает)
+- `never_run` - cron задачи еще не запускались
+
+**Ошибка (403):**
+```json
+{
+  "success": false,
+  "message": "Доступ запрещен"
+}
+```
+
+---
+
+### Ручной запуск cron задач
+
+**POST** `/api/cron/run`
+
+**Требует аутентификации и прав администратора**
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Cron задачи запущены",
+    "note": "Задачи выполняются в фоновом режиме. Проверьте статус через /api/cron/status"
+  }
+}
+```
+
+**Примечание:** Задачи запускаются асинхронно в фоновом режиме. Для проверки результатов используйте `/api/cron/status`.
+
+---
+
+### Текущие cron задачи
+
+1. **autoCompleteSpeedCleanup** - автоматический перевод `speedCleanup` заявок в `completed` через 24 часа после `end_date`
+   - Начисление коинов донатерам
+   - Отправка push-уведомлений донатерам
+   - Перенос донатеров из `request_contributors` в `donations`
+
+**Расписание:** По умолчанию каждые 5 минут (для тестирования). Для продакшена измените в `.env`:
+```env
+CRON_SCHEDULE=0 * * * *  # Каждый час
 ```
 
 ---
