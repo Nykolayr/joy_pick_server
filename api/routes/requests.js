@@ -5,7 +5,14 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
-const { sendRequestCreatedNotification, sendJoinNotification, sendSpeedCleanupNotification } = require('../services/pushNotification');
+const { 
+  sendRequestCreatedNotification, 
+  sendJoinNotification, 
+  sendSpeedCleanupNotification,
+  sendRequestSubmittedNotification,
+  sendRequestApprovedNotification,
+  sendRequestRejectedNotification
+} = require('../services/pushNotification');
 
 const router = express.Router();
 
@@ -123,6 +130,18 @@ router.get('/', async (req, res) => {
         }
       } else {
         result.waste_types = [];
+      }
+      // Обработка actual_participants из JSON поля
+      if (request.actual_participants) {
+        try {
+          result.actual_participants = typeof request.actual_participants === 'string' 
+            ? JSON.parse(request.actual_participants) 
+            : request.actual_participants;
+        } catch (e) {
+          result.actual_participants = [];
+        }
+      } else {
+        result.actual_participants = [];
       }
       
       // Преобразование булевых значений
@@ -250,6 +269,18 @@ router.get('/:id', async (req, res) => {
     } else {
       request.waste_types = [];
     }
+    // Обработка actual_participants из JSON поля
+    if (request.actual_participants) {
+      try {
+        request.actual_participants = typeof request.actual_participants === 'string' 
+          ? JSON.parse(request.actual_participants) 
+          : request.actual_participants;
+      } catch (e) {
+        request.actual_participants = [];
+      }
+    } else {
+      request.actual_participants = [];
+    }
     request.only_foot = Boolean(request.only_foot);
     request.possible_by_car = Boolean(request.possible_by_car);
     request.is_open = Boolean(request.is_open);
@@ -342,7 +373,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       reward_amount,
       start_date,
       end_date,
-      status = 'pending',
+      status, // Статус может быть передан явно (для speedCleanup при переходе на страницу выполнения)
       priority = 'medium',
       waste_types = [],
       photos = [],
@@ -360,6 +391,16 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     const requestId = generateId();
     const userId = req.user.userId;
+
+    // Определяем статус по умолчанию согласно новой концепции
+    let defaultStatus = 'new'; // По умолчанию статус 'new'
+    if (category === 'event') {
+      // Для event статус сразу 'inProgress'
+      defaultStatus = 'inProgress';
+    } else if (status) {
+      // Если статус передан явно (например, для speedCleanup при переходе на страницу выполнения)
+      defaultStatus = status;
+    }
 
     // Создание заявки
     await pool.execute(
@@ -385,7 +426,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         reward_amount || null,
         start_date || null,
         end_date || null,
-        status,
+        defaultStatus,
         priority,
         userId, // created_by использует тот же userId
         target_amount || null,
@@ -393,6 +434,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
         trash_pickup_only
       ]
     );
+
+    // Для event: создатель автоматически становится участником
+    if (category === 'event') {
+      await pool.execute(
+        'INSERT INTO request_participants (id, request_id, user_id) VALUES (?, ?, ?)',
+        [generateId(), requestId, userId]
+      );
+    }
 
     // Добавление фотографий
     if (finalPhotos.length > 0) {
@@ -461,6 +510,18 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     } else {
       request.waste_types = [];
+    }
+    // Обработка actual_participants из JSON поля
+    if (request.actual_participants) {
+      try {
+        request.actual_participants = typeof request.actual_participants === 'string' 
+          ? JSON.parse(request.actual_participants) 
+          : request.actual_participants;
+      } catch (e) {
+        request.actual_participants = [];
+      }
+    } else {
+      request.actual_participants = [];
     }
     request.participants = [];
     request.contributors = [];
@@ -535,7 +596,10 @@ router.put('/:id', authenticate, async (req, res) => {
       plant_tree,
       trash_pickup_only,
       completion_comment,
-      waste_types
+      waste_types,
+      rejection_reason,
+      rejection_message,
+      actual_participants
     } = req.body;
 
     const updates = [];
@@ -589,22 +653,20 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('end_date = ?');
       params.push(end_date);
     }
-    // Проверка изменения статуса на approved для speedCleanup
-    let shouldAwardCoins = false;
-    // Проверка изменения статуса на completed для всех категорий кроме speedCleanup
-    let shouldAwardCoinsForCompleted = false;
+    // Переменные для обработки изменения статуса
     let requestCategory = null;
     let requestCreatedBy = null;
-    let requestRewardAmount = null;
+    let requestJoinedUserId = null;
     let oldStatus = null;
-
-    let speedCleanupApproved = false;
+    let statusChangedToPending = false;
+    let statusChangedToApproved = false;
+    let statusChangedToRejected = false;
     let speedCleanupEarnedCoin = false;
 
     if (status !== undefined) {
       // Получаем текущие данные заявки перед обновлением
       const [currentRequest] = await pool.execute(
-        'SELECT category, status, created_by, reward_amount, start_date, end_date FROM requests WHERE id = ?',
+        'SELECT category, status, created_by, joined_user_id, start_date, end_date FROM requests WHERE id = ?',
         [id]
       );
 
@@ -612,38 +674,33 @@ router.put('/:id', authenticate, async (req, res) => {
         requestCategory = currentRequest[0].category;
         oldStatus = currentRequest[0].status;
         requestCreatedBy = currentRequest[0].created_by;
-        requestRewardAmount = currentRequest[0].reward_amount;
+        requestJoinedUserId = currentRequest[0].joined_user_id;
 
-        // Проверяем, меняется ли статус на approved для speedCleanup
-        if (status === 'approved' && oldStatus !== 'approved' && requestCategory === 'speedCleanup') {
-          speedCleanupApproved = true;
-          const startDate = currentRequest[0].start_date;
-          const endDate = currentRequest[0].end_date;
-
-          // Проверяем разницу между start_date и end_date
-          if (startDate && endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const diffMinutes = (end - start) / (1000 * 60); // Разница в минутах
-
-            if (diffMinutes >= 20) {
-              // Если >= 20 минут - начисляем коин
-              shouldAwardCoins = true;
-              speedCleanupEarnedCoin = true;
-            } else {
-              // Если < 20 минут - не начисляем коин
-              speedCleanupEarnedCoin = false;
-            }
-          } else {
-            // Если даты отсутствуют - не начисляем коин
-            speedCleanupEarnedCoin = false;
-          }
-          // НЕ переводим в completed автоматически
+        // Проверяем изменение статуса на pending (отправка на рассмотрение)
+        if (status === 'pending' && oldStatus !== 'pending') {
+          statusChangedToPending = true;
         }
 
-        // Проверяем, меняется ли статус на completed для всех категорий кроме speedCleanup
-        if (status === 'completed' && oldStatus !== 'completed' && requestCategory !== 'speedCleanup') {
-          shouldAwardCoinsForCompleted = true;
+        // Проверяем изменение статуса на approved (одобрение)
+        if (status === 'approved' && oldStatus !== 'approved') {
+          statusChangedToApproved = true;
+          
+          // Для speedCleanup проверяем разницу между start_date и end_date
+          if (requestCategory === 'speedCleanup') {
+            const startDate = currentRequest[0].start_date;
+            const endDate = currentRequest[0].end_date;
+            if (startDate && endDate) {
+              const start = new Date(startDate);
+              const end = new Date(endDate);
+              const diffMinutes = (end - start) / (1000 * 60);
+              speedCleanupEarnedCoin = diffMinutes >= 20;
+            }
+          }
+        }
+
+        // Проверяем изменение статуса на rejected (отклонение)
+        if (status === 'rejected' && oldStatus !== 'rejected') {
+          statusChangedToRejected = true;
         }
       }
 
@@ -678,6 +735,18 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('waste_types = ?');
       params.push(Array.isArray(waste_types) ? JSON.stringify(waste_types) : null);
     }
+    if (rejection_reason !== undefined) {
+      updates.push('rejection_reason = ?');
+      params.push(rejection_reason || null);
+    }
+    if (rejection_message !== undefined) {
+      updates.push('rejection_message = ?');
+      params.push(rejection_message || null);
+    }
+    if (actual_participants !== undefined) {
+      updates.push('actual_participants = ?');
+      params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
+    }
 
     if (updates.length === 0) {
       return error(res, 'Нет данных для обновления', 400);
@@ -691,183 +760,50 @@ router.put('/:id', authenticate, async (req, res) => {
       params
     );
 
-    // Обработка одобрения speedCleanup заявки (только для создателя)
-    if (speedCleanupApproved && requestCreatedBy) {
+    // ========== ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА ==========
+    
+    // 1. Обработка отправки на рассмотрение (pending)
+    if (statusChangedToPending && requestCreatedBy) {
       try {
-        // Начисление коинов только создателю, если заработан (>= 20 минут)
-        if (speedCleanupEarnedCoin) {
-          const coinsToAward = 1;
-
-          // Начисляем коины только создателю
-          await pool.execute(
-            'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
-            [coinsToAward, coinsToAward, requestCreatedBy]
-          );
-          console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id}`);
-        }
-
-        // Отправляем push-уведомление только создателю
-        sendSpeedCleanupNotification({
+        // Отправляем пуш-уведомление создателю
+        sendRequestSubmittedNotification({
           userIds: [requestCreatedBy],
-          earnedCoin: speedCleanupEarnedCoin,
+          requestId: id,
         }).catch(err => {
-          console.error('❌ Ошибка отправки push-уведомления для speedCleanup:', err);
+          console.error('❌ Ошибка отправки push-уведомления при отправке на рассмотрение:', err);
         });
-      } catch (coinError) {
-        console.error('❌ Ошибка обработки одобрения speedCleanup заявки:', coinError);
-        // Не прерываем выполнение, только логируем ошибку
+      } catch (error) {
+        console.error('❌ Ошибка обработки отправки на рассмотрение:', error);
       }
     }
 
-    // Проверка автоматического перевода speedCleanup в completed через сутки после end_date
-    // Начисление коинов и отправка пуша донатерам
-    if (requestCategory === 'speedCleanup') {
+    // 2. Обработка одобрения заявки (approved)
+    if (statusChangedToApproved) {
       try {
-        const [requestData] = await pool.execute(
-          'SELECT status, end_date, created_by FROM requests WHERE id = ?',
-          [id]
-        );
-
-        if (requestData.length > 0 && requestData[0].status === 'approved' && requestData[0].end_date) {
-          const endDate = new Date(requestData[0].end_date);
-          const now = new Date();
-          const diffHours = (now - endDate) / (1000 * 60 * 60); // Разница в часах
-
-          // Если прошло 24 часа (сутки) с end_date, переводим в completed
-          if (diffHours >= 24) {
-            await pool.execute(
-              'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-              ['completed', id]
-            );
-            console.log(`✅ Автоматически переведена speedCleanup заявка ${id} в completed (прошло ${Math.floor(diffHours)} часов с end_date)`);
-
-            // Убеждаемся, что донатеры в таблице donations
-            // Получаем донатеров из request_contributors
-            const [contributors] = await pool.execute(
-              'SELECT user_id, amount FROM request_contributors WHERE request_id = ?',
-              [id]
-            );
-
-            const donorUserIds = [];
-
-            if (contributors.length > 0) {
-              const coinsToAward = 1;
-
-              for (const contributor of contributors) {
-                // Проверяем, есть ли уже донат в таблице donations
-                const [existingDonation] = await pool.execute(
-                  'SELECT id FROM donations WHERE request_id = ? AND user_id = ?',
-                  [id, contributor.user_id]
-                );
-
-                // Если доната нет, создаем его (без payment_intent_id, так как это не реальный платеж)
-                if (existingDonation.length === 0) {
-                  await pool.execute(
-                    'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id) VALUES (?, ?, ?, ?, ?)',
-                    [generateId(), id, contributor.user_id, contributor.amount || 0, null]
-                  );
-                  console.log(`✅ Перенесен донатер ${contributor.user_id} в таблицу donations для заявки ${id}`);
-                }
-
-                // Начисляем коины донатерам (по 1 коину каждому)
-                if (contributor.user_id && contributor.user_id !== requestData[0].created_by) {
-                  await pool.execute(
-                    'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                    [coinsToAward, coinsToAward, contributor.user_id]
-                  );
-                  console.log(`✅ Начислено ${coinsToAward} коин донатеру ${contributor.user_id} за заявку ${id} (через сутки)`);
-                  donorUserIds.push(contributor.user_id);
-                }
-              }
-            }
-
-            // Отправляем push-уведомление донатерам (если они есть)
-            if (donorUserIds.length > 0) {
-              sendSpeedCleanupNotification({
-                userIds: donorUserIds,
-                earnedCoin: true, // Донатеры всегда получают коин через сутки
-              }).catch(err => {
-                console.error('❌ Ошибка отправки push-уведомления донатерам speedCleanup:', err);
-              });
-            }
-          }
-        }
-      } catch (autoCompleteError) {
-        console.error('❌ Ошибка автоматического перевода в completed:', autoCompleteError);
-        // Не прерываем выполнение, только логируем ошибку
-      }
-    }
-
-    // Начисление коинов при завершении заявки (completed) для всех категорий кроме speedCleanup
-    if (shouldAwardCoinsForCompleted && requestCreatedBy) {
-      try {
-        const coinsToAward = 1; // Всем по 1 коину
-
-        // Начисляем коины создателю
-        await pool.execute(
-          'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
-          [coinsToAward, coinsToAward, requestCreatedBy]
-        );
-        console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${id} (completed)`);
-
-        // Получаем всех донатеров для этой заявки
-        const [donations] = await pool.execute(
-          'SELECT DISTINCT user_id, SUM(amount) as total_amount FROM donations WHERE request_id = ? GROUP BY user_id',
-          [id]
-        );
-
-        // Начисляем коины донатерам (по 1 коину каждому)
-        const awardedUserIds = new Set([requestCreatedBy]); // Чтобы не начислять дважды
-        if (donations.length > 0) {
-          for (const donation of donations) {
-            if (donation.user_id && !awardedUserIds.has(donation.user_id)) {
-              await pool.execute(
-                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                [coinsToAward, coinsToAward, donation.user_id]
-              );
-              awardedUserIds.add(donation.user_id);
-              console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${id} (completed)`);
-            }
-          }
-        }
-
-        // Получаем участников в зависимости от типа заявки
         if (requestCategory === 'wasteLocation') {
-          // Для wasteLocation - получаем joined_user_id
-          const [joinedUser] = await pool.execute(
-            'SELECT joined_user_id FROM requests WHERE id = ? AND joined_user_id IS NOT NULL',
-            [id]
-          );
-          if (joinedUser.length > 0 && joinedUser[0].joined_user_id && !awardedUserIds.has(joinedUser[0].joined_user_id)) {
-            await pool.execute(
-              'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-              [coinsToAward, coinsToAward, joinedUser[0].joined_user_id]
-            );
-            awardedUserIds.add(joinedUser[0].joined_user_id);
-            console.log(`✅ Начислено ${coinsToAward} коин присоединившемуся пользователю ${joinedUser[0].joined_user_id} за заявку ${id} (completed)`);
-          }
+          // Для waste: начислить коины, перевести деньги исполнителю, отправить пуши, статус -> completed
+          await handleWasteApproval(id, requestCreatedBy, requestJoinedUserId);
         } else if (requestCategory === 'event') {
-          // Для event - получаем всех участников из request_participants
-          const [participants] = await pool.execute(
-            'SELECT user_id FROM request_participants WHERE request_id = ?',
-            [id]
-          );
-          for (const participant of participants) {
-            if (participant.user_id && !awardedUserIds.has(participant.user_id)) {
-              await pool.execute(
-                'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                [coinsToAward, coinsToAward, participant.user_id]
-              );
-              awardedUserIds.add(participant.user_id);
-              console.log(`✅ Начислено ${coinsToAward} коин участнику ${participant.user_id} за заявку ${id} (completed)`);
-            }
-          }
+          // Для event: начислить коины (только реальным участникам), перевести деньги заказчику, отправить пуши, статус -> completed
+          await handleEventApproval(id, requestCreatedBy);
+        } else if (requestCategory === 'speedCleanup') {
+          // Для speedCleanup: начислить коин создателю (если >= 20 минут), отправить пуш, статус остается approved
+          await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
         }
-      } catch (coinError) {
-        console.error('❌ Ошибка начисления коинов при завершении заявки:', coinError);
-        // Не прерываем выполнение, только логируем ошибку
+      } catch (error) {
+        console.error('❌ Ошибка обработки одобрения заявки:', error);
       }
     }
+
+    // 3. Обработка отклонения заявки (rejected)
+    if (statusChangedToRejected) {
+      try {
+        await handleRequestRejection(id, requestCategory, requestCreatedBy, rejection_reason, rejection_message);
+      } catch (error) {
+        console.error('❌ Ошибка обработки отклонения заявки:', error);
+      }
+    }
+
 
     // Получение обновленной заявки
     const [requests] = await pool.execute(
@@ -899,6 +835,18 @@ router.put('/:id', authenticate, async (req, res) => {
       }
     } else {
       request.waste_types = [];
+    }
+    // Обработка actual_participants из JSON поля
+    if (request.actual_participants) {
+      try {
+        request.actual_participants = typeof request.actual_participants === 'string' 
+          ? JSON.parse(request.actual_participants) 
+          : request.actual_participants;
+      } catch (e) {
+        request.actual_participants = [];
+      }
+    } else {
+      request.actual_participants = [];
     }
 
     success(res, { request }, 'Заявка обновлена');
@@ -967,6 +915,18 @@ router.post('/:id/join', authenticate, async (req, res) => {
       return error(res, 'К этому типу заявки нельзя присоединиться', 400);
     }
 
+    // Проверка статуса заявки (можно присоединиться только к заявкам со статусом 'new')
+    const [currentRequest] = await pool.execute(
+      'SELECT status FROM requests WHERE id = ?',
+      [id]
+    );
+    if (currentRequest.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+    if (currentRequest[0].status !== 'new') {
+      return error(res, 'К этой заявке нельзя присоединиться', 400);
+    }
+
     // Проверка, не присоединился ли уже кто-то
     if (request.joined_user_id && request.joined_user_id !== userId) {
       // Проверка истечения срока (1 день)
@@ -979,10 +939,10 @@ router.post('/:id/join', authenticate, async (req, res) => {
       }
     }
 
-    // Присоединение
+    // Присоединение: меняем статус на 'inProgress' и сохраняем joined_user_id
     await pool.execute(
-      'UPDATE requests SET joined_user_id = ?, join_date = NOW(), updated_at = NOW() WHERE id = ?',
-      [userId, id]
+      'UPDATE requests SET joined_user_id = ?, join_date = NOW(), status = ?, updated_at = NOW() WHERE id = ?',
+      [userId, 'inProgress', id]
     );
 
     // Отправка push-уведомления создателю заявки (асинхронно)
@@ -1003,6 +963,105 @@ router.post('/:id/join', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Ошибка присоединения к заявке:', err);
     error(res, 'Ошибка при присоединении к заявке', 500, err);
+  }
+});
+
+/**
+ * PUT /api/requests/:id/close-event
+ * Закрытие события (для event)
+ * Принимает photos_after и actual_participants, меняет статус на pending
+ */
+router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    // Проверка существования заявки
+    const [requests] = await pool.execute(
+      'SELECT id, category, status, created_by, start_date FROM requests WHERE id = ?',
+      [id]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверка типа заявки
+    if (request.category !== 'event') {
+      return error(res, 'Это не событие', 400);
+    }
+
+    // Проверка прав доступа (только создатель может закрыть)
+    if (request.created_by !== userId && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен', 403);
+    }
+
+    // Проверка статуса
+    if (request.status !== 'inProgress') {
+      return error(res, 'Событие уже закрыто или не началось', 400);
+    }
+
+    // Проверка времени (событие должно начаться)
+    if (request.start_date) {
+      const startDate = new Date(request.start_date);
+      const now = new Date();
+      if (now < startDate) {
+        return error(res, 'Событие еще не началось', 400);
+      }
+    }
+
+    const { actual_participants, photos_after = [] } = req.body;
+
+    // Обработка загруженных файлов photos_after
+    const uploadedPhotosAfter = [];
+    if (req.files && req.files.photos_after && Array.isArray(req.files.photos_after)) {
+      for (const file of req.files.photos_after) {
+        const fileUrl = getFileUrlFromPath(file.path);
+        if (fileUrl) uploadedPhotosAfter.push(fileUrl);
+      }
+    }
+
+    // Объединяем загруженные файлы с URL из JSON
+    const finalPhotosAfter = uploadedPhotosAfter.length > 0 
+      ? uploadedPhotosAfter 
+      : (Array.isArray(photos_after) ? photos_after : []);
+
+    // Добавляем фото "после" если есть
+    if (finalPhotosAfter.length > 0) {
+      for (const photoUrl of finalPhotosAfter) {
+        await pool.execute(
+          'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
+          [generateId(), id, photoUrl, 'photo_after']
+        );
+      }
+    }
+
+    // Сохраняем actual_participants
+    const updates = [];
+    const params = [];
+    
+    if (actual_participants !== undefined) {
+      updates.push('actual_participants = ?');
+      params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
+    }
+
+    // Меняем статус на pending
+    updates.push('status = ?');
+    params.push('pending');
+    updates.push('updated_at = NOW()');
+    params.push(id);
+
+    await pool.execute(
+      `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+
+    success(res, null, 'Событие отправлено на рассмотрение');
+  } catch (err) {
+    console.error('Ошибка закрытия события:', err);
+    error(res, 'Ошибка при закрытии события', 500, err);
   }
 });
 
@@ -1088,6 +1147,252 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     error(res, 'Ошибка при отмене участия', 500, err);
   }
 });
+
+/**
+ * Обработка одобрения заявки типа wasteLocation
+ */
+async function handleWasteApproval(requestId, creatorId, executorId) {
+  const coinsToAward = 1;
+  const awardedUserIds = new Set();
+
+  // 1. Начисляем коины создателю
+  if (creatorId) {
+    await pool.execute(
+      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+      [coinsToAward, coinsToAward, creatorId]
+    );
+    awardedUserIds.add(creatorId);
+    console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
+  }
+
+  // 2. Начисляем коины исполнителю
+  if (executorId && !awardedUserIds.has(executorId)) {
+    await pool.execute(
+      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+      [coinsToAward, coinsToAward, executorId]
+    );
+    awardedUserIds.add(executorId);
+    console.log(`✅ Начислено ${coinsToAward} коин исполнителю заявки ${requestId}`);
+  }
+
+  // 3. Начисляем коины донатерам
+  const [donations] = await pool.execute(
+    'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
+    [requestId]
+  );
+  const donorUserIds = [];
+  for (const donation of donations) {
+    if (donation.user_id && !awardedUserIds.has(donation.user_id)) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, donation.user_id]
+      );
+      awardedUserIds.add(donation.user_id);
+      donorUserIds.push(donation.user_id);
+      console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${requestId}`);
+    }
+  }
+
+  // 4. Переводим деньги исполнителю (cost + donations - комиссия)
+  // TODO: Реализовать перевод денег через платежную систему
+  const [requestData] = await pool.execute(
+    'SELECT cost FROM requests WHERE id = ?',
+    [requestId]
+  );
+  const totalDonations = donations.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
+  const commission = totalAmount * 0.1; // 10% комиссия
+  const amountToTransfer = totalAmount - commission;
+  console.log(`💰 Переведено ${amountToTransfer} исполнителю заявки ${requestId} (из ${totalAmount}, комиссия ${commission})`);
+
+  // 5. Отправляем push-уведомления
+  if (creatorId) {
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator' }).catch(console.error);
+  }
+  if (executorId) {
+    sendRequestApprovedNotification({ userIds: [executorId], requestId, messageType: 'executor' }).catch(console.error);
+  }
+  if (donorUserIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor' }).catch(console.error);
+  }
+
+  // 6. Меняем статус на completed
+  await pool.execute(
+    'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+    ['completed', requestId]
+  );
+  console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+}
+
+/**
+ * Обработка одобрения заявки типа event
+ */
+async function handleEventApproval(requestId, creatorId) {
+  const coinsToAward = 1;
+  const awardedUserIds = new Set();
+
+  // 1. Получаем actual_participants из заявки
+  const [requestData] = await pool.execute(
+    'SELECT actual_participants, cost FROM requests WHERE id = ?',
+    [requestId]
+  );
+  let actualParticipants = [];
+  if (requestData[0]?.actual_participants) {
+    try {
+      actualParticipants = typeof requestData[0].actual_participants === 'string'
+        ? JSON.parse(requestData[0].actual_participants)
+        : requestData[0].actual_participants;
+    } catch (e) {
+      console.error('Ошибка парсинга actual_participants:', e);
+    }
+  }
+
+  // 2. Начисляем коины заказчику
+  if (creatorId) {
+    await pool.execute(
+      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+      [coinsToAward, coinsToAward, creatorId]
+    );
+    awardedUserIds.add(creatorId);
+    console.log(`✅ Начислено ${coinsToAward} коин заказчику заявки ${requestId}`);
+  }
+
+  // 3. Начисляем коины реальным участникам (только из actual_participants)
+  const participantUserIds = [];
+  for (const participantId of actualParticipants) {
+    if (participantId && !awardedUserIds.has(participantId)) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, participantId]
+      );
+      awardedUserIds.add(participantId);
+      participantUserIds.push(participantId);
+      console.log(`✅ Начислено ${coinsToAward} коин участнику ${participantId} за заявку ${requestId}`);
+    }
+  }
+
+  // 4. Начисляем коины донатерам
+  const [donations] = await pool.execute(
+    'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
+    [requestId]
+  );
+  const donorUserIds = [];
+  for (const donation of donations) {
+    if (donation.user_id && !awardedUserIds.has(donation.user_id)) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, donation.user_id]
+      );
+      awardedUserIds.add(donation.user_id);
+      donorUserIds.push(donation.user_id);
+      console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${requestId}`);
+    }
+  }
+
+  // 5. Переводим деньги заказчику (cost + donations - комиссия)
+  // TODO: Реализовать перевод денег через платежную систему
+  const totalDonations = donations.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
+  const commission = totalAmount * 0.1; // 10% комиссия
+  const amountToTransfer = totalAmount - commission;
+  console.log(`💰 Переведено ${amountToTransfer} заказчику заявки ${requestId} (из ${totalAmount}, комиссия ${commission})`);
+
+  // 6. Отправляем push-уведомления
+  if (creatorId) {
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator' }).catch(console.error);
+  }
+  if (participantUserIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant' }).catch(console.error);
+  }
+  if (donorUserIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor' }).catch(console.error);
+  }
+
+  // 7. Меняем статус на completed
+  await pool.execute(
+    'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+    ['completed', requestId]
+  );
+  console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+}
+
+/**
+ * Обработка одобрения заявки типа speedCleanup
+ */
+async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
+  // 1. Начисляем коин создателю только если >= 20 минут
+  if (earnedCoin && creatorId) {
+    const coinsToAward = 1;
+    await pool.execute(
+      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
+      [coinsToAward, coinsToAward, creatorId]
+    );
+    console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
+  }
+
+  // 2. Отправляем push-уведомление создателю
+  if (creatorId) {
+    sendSpeedCleanupNotification({
+      userIds: [creatorId],
+      earnedCoin: earnedCoin,
+    }).catch(console.error);
+  }
+
+  // 3. Статус остается approved (не меняем на completed)
+  console.log(`✅ Заявка ${requestId} одобрена, статус остается approved`);
+}
+
+/**
+ * Обработка отклонения заявки
+ */
+async function handleRequestRejection(requestId, category, creatorId, rejectionReason, rejectionMessage) {
+  // 1. Определяем сообщение об отклонении
+  const finalMessage = rejectionMessage || rejectionReason || 'Request was rejected by moderator';
+
+  // 2. Возвращаем деньги создателю (если была платная заявка)
+  const [requestData] = await pool.execute(
+    'SELECT cost FROM requests WHERE id = ?',
+    [requestId]
+  );
+  if (requestData[0]?.cost && requestData[0].cost > 0) {
+    // TODO: Реализовать возврат денег через платежную систему
+    console.log(`💰 Возвращено ${requestData[0].cost} создателю заявки ${requestId}`);
+  }
+
+  // 3. Возвращаем деньги донатерам
+  const [donations] = await pool.execute(
+    'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
+    [requestId]
+  );
+  const donorUserIds = [];
+  for (const donation of donations) {
+    if (donation.amount && donation.amount > 0) {
+      // TODO: Реализовать возврат денег через платежную систему
+      console.log(`💰 Возвращено ${donation.amount} донатеру ${donation.user_id} заявки ${requestId}`);
+      donorUserIds.push(donation.user_id);
+    }
+  }
+
+  // 4. Отправляем push-уведомления
+  if (creatorId) {
+    sendRequestRejectedNotification({
+      userIds: [creatorId],
+      requestId,
+      messageType: 'creator',
+      rejectionMessage: finalMessage,
+    }).catch(console.error);
+  }
+  if (donorUserIds.length > 0) {
+    sendRequestRejectedNotification({
+      userIds: donorUserIds,
+      requestId,
+      messageType: 'donor',
+      rejectionMessage: finalMessage,
+    }).catch(console.error);
+  }
+
+  console.log(`✅ Заявка ${requestId} отклонена`);
+}
 
 module.exports = router;
 

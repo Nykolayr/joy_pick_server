@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendNotificationToUsers } = require('../services/pushNotification');
@@ -82,6 +83,168 @@ router.post('/send', authenticate, requireAdmin, [
   } catch (err) {
     console.error('Ошибка массовой рассылки уведомлений:', err);
     error(res, 'Ошибка при отправке уведомлений', 500, err);
+  }
+});
+
+/**
+ * GET /api/notifications
+ * Получение списка push-уведомлений текущего пользователя
+ * Требует аутентификации
+ * 
+ * Query параметры:
+ * - page (int, default: 1) - номер страницы
+ * - limit (int, default: 20) - количество на странице
+ * - read (boolean, опционально) - фильтр по прочитанности (true - только прочитанные, false - только непрочитанные)
+ */
+router.get('/', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      page = 1,
+      limit = 20,
+      read
+    } = req.query;
+
+    // Валидация и преобразование параметров пагинации
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offset = (pageNum - 1) * limitNum;
+
+    let query = 'SELECT * FROM push_notifications WHERE user_id = ?';
+    const params = [userId];
+
+    // Фильтр по прочитанности
+    if (read !== undefined) {
+      query += ' AND `read` = ?';
+      params.push(read === 'true');
+    }
+
+    // Сортировка по дате создания (новые сначала)
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limitNum, offset);
+
+    const [notifications] = await pool.execute(query, params);
+
+    // Обработка JSON поля data
+    const processedNotifications = notifications.map(notification => {
+      const result = Object.assign({}, notification);
+      if (notification.data) {
+        try {
+          result.data = typeof notification.data === 'string' 
+            ? JSON.parse(notification.data) 
+            : notification.data;
+        } catch (e) {
+          result.data = {};
+        }
+      } else {
+        result.data = {};
+      }
+      result.read = Boolean(notification.read);
+      return result;
+    });
+
+    // Получение общего количества
+    let countQuery = 'SELECT COUNT(*) as total FROM push_notifications WHERE user_id = ?';
+    const countParams = [userId];
+    if (read !== undefined) {
+      countQuery += ' AND `read` = ?';
+      countParams.push(read === 'true');
+    }
+    const [countResult] = await pool.execute(countQuery, countParams);
+    const total = countResult[0].total;
+
+    success(res, {
+      notifications: processedNotifications,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (err) {
+    console.error('Ошибка получения уведомлений:', err);
+    error(res, 'Ошибка при получении списка уведомлений', 500, err);
+  }
+});
+
+/**
+ * PUT /api/notifications/:id/read
+ * Отметить уведомление как прочитанное
+ * Требует аутентификации
+ */
+router.put('/:id/read', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    // Проверка существования уведомления и принадлежности пользователю
+    const [notifications] = await pool.execute(
+      'SELECT id FROM push_notifications WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (notifications.length === 0) {
+      return error(res, 'Уведомление не найдено', 404);
+    }
+
+    // Отмечаем как прочитанное
+    await pool.execute(
+      'UPDATE push_notifications SET `read` = TRUE, updated_at = NOW() WHERE id = ?',
+      [id]
+    );
+
+    success(res, null, 'Уведомление отмечено как прочитанное');
+  } catch (err) {
+    console.error('Ошибка отметки уведомления:', err);
+    error(res, 'Ошибка при отметке уведомления', 500, err);
+  }
+});
+
+/**
+ * PUT /api/notifications/read-all
+ * Отметить все уведомления пользователя как прочитанные
+ * Требует аутентификации
+ */
+router.put('/read-all', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Отмечаем все уведомления как прочитанные
+    const [result] = await pool.execute(
+      'UPDATE push_notifications SET `read` = TRUE, updated_at = NOW() WHERE user_id = ? AND `read` = FALSE',
+      [userId]
+    );
+
+    success(res, {
+      updated: result.affectedRows
+    }, `Отмечено ${result.affectedRows} уведомлений как прочитанных`);
+  } catch (err) {
+    console.error('Ошибка отметки всех уведомлений:', err);
+    error(res, 'Ошибка при отметке уведомлений', 500, err);
+  }
+});
+
+/**
+ * GET /api/notifications/unread-count
+ * Получить количество непрочитанных уведомлений
+ * Требует аутентификации
+ */
+router.get('/unread-count', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const [result] = await pool.execute(
+      'SELECT COUNT(*) as count FROM push_notifications WHERE user_id = ? AND `read` = FALSE',
+      [userId]
+    );
+
+    success(res, {
+      unreadCount: result[0].count
+    });
+  } catch (err) {
+    console.error('Ошибка получения количества непрочитанных уведомлений:', err);
+    error(res, 'Ошибка при получении количества уведомлений', 500, err);
   }
 });
 
