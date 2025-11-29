@@ -1,5 +1,27 @@
 const { admin } = require('../config/firebase');
 const pool = require('../config/database');
+const { generateId } = require('../utils/uuid');
+
+/**
+ * Сохранение push-уведомления в базу данных
+ * @param {string} userId - ID пользователя
+ * @param {string} title - Заголовок уведомления
+ * @param {string} body - Текст уведомления
+ * @param {Object} data - Дополнительные данные (опционально)
+ * @returns {Promise<void>}
+ */
+async function saveNotificationToDatabase(userId, title, body, data = {}) {
+  try {
+    const notificationId = generateId();
+    await pool.execute(
+      'INSERT INTO push_notifications (id, user_id, title, body, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+      [notificationId, userId, title, body, JSON.stringify(data)]
+    );
+  } catch (error) {
+    console.error(`❌ Ошибка сохранения уведомления в БД для пользователя ${userId}:`, error);
+    // Не прерываем выполнение, только логируем ошибку
+  }
+}
 
 /**
  * Получение FCM токенов пользователей по их ID
@@ -381,6 +403,12 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
       data,
     });
 
+    // Сохраняем уведомления в БД для всех пользователей (даже если FCM отправка не удалась)
+    // Это нужно для истории уведомлений
+    for (const userId of userIds) {
+      await saveNotificationToDatabase(userId, title, body, data);
+    }
+
     // Если ничего не отправилось, добавляем информацию об ошибке
     if (result.successCount === 0 && result.failureCount > 0) {
       result.errorMessage = 'Не удалось отправить уведомления: все токены невалидны или произошла ошибка при отправке';
@@ -590,6 +618,182 @@ async function sendSpeedCleanupNotification({ userIds, earnedCoin }) {
   });
 }
 
+/**
+ * Отправка уведомления о том, что заявка отправлена на рассмотрение
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей (создатель)
+ * @param {string} options.requestId - ID заявки
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendRequestSubmittedNotification({ userIds, requestId }) {
+  const title = 'Request Submitted';
+  const body = 'Your request has been submitted for review!';
+
+  return await sendNotificationToUsers({
+    title,
+    body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'requestSubmitted',
+      requestId: requestId,
+    },
+  });
+}
+
+/**
+ * Отправка уведомления об одобрении заявки
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.messageType - Тип сообщения: 'creator', 'executor', 'donor', 'participant'
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendRequestApprovedNotification({ userIds, requestId, messageType = 'creator' }) {
+  const messages = {
+    creator: { title: 'Thank you!', body: 'Thank you for your initiative!' },
+    executor: { title: 'Thank you!', body: 'Thank you for completing the request!' },
+    donor: { title: 'Thank you!', body: 'Thank you for your donation!' },
+    participant: { title: 'Thank you!', body: 'Thank you for participating in the event!' },
+  };
+
+  const message = messages[messageType] || messages.creator;
+
+  return await sendNotificationToUsers({
+    title: message.title,
+    body: message.body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'requestApproved',
+      requestId: requestId,
+      messageType: messageType,
+    },
+  });
+}
+
+/**
+ * Отправка уведомления об отклонении заявки
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.messageType - Тип сообщения: 'creator', 'donor'
+ * @param {string} options.rejectionMessage - Сообщение об отклонении
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendRequestRejectedNotification({ userIds, requestId, messageType = 'creator', rejectionMessage = null }) {
+  let title = 'Request Rejected';
+  let body = 'Your request was rejected';
+  
+  if (messageType === 'donor') {
+    body = rejectionMessage 
+      ? `Request you donated to was rejected: ${rejectionMessage}`
+      : 'Request you donated to was rejected';
+  } else {
+    body = rejectionMessage || 'Your request was rejected';
+  }
+
+  return await sendNotificationToUsers({
+    title,
+    body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'requestRejected',
+      requestId: requestId,
+      messageType: messageType,
+    },
+  });
+}
+
+/**
+ * Отправка напоминания исполнителю за 2 часа до окончания срока
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей (исполнитель)
+ * @param {string} options.requestId - ID заявки
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendReminderNotification({ userIds, requestId }) {
+  const title = 'Reminder';
+  const body = 'You have 2 hours left to complete the request!';
+
+  return await sendNotificationToUsers({
+    title,
+    body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'reminder',
+      requestId: requestId,
+    },
+  });
+}
+
+/**
+ * Отправка уведомления о том, что заявка не выполнена в срок
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.messageType - Тип сообщения: 'executor', 'creator'
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendRequestExpiredNotification({ userIds, requestId, messageType = 'executor' }) {
+  const messages = {
+    executor: { 
+      title: 'Request Expired', 
+      body: 'You didn\'t complete the request on time. Please try to be more responsible next time.' 
+    },
+    creator: { 
+      title: 'Request Expired', 
+      body: 'The request was not completed on time and is now available for everyone again.' 
+    },
+  };
+
+  const message = messages[messageType] || messages.executor;
+
+  return await sendNotificationToUsers({
+    title: message.title,
+    body: message.body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'requestExpired',
+      requestId: requestId,
+      messageType: messageType,
+    },
+  });
+}
+
+/**
+ * Отправка уведомления о времени до события (для event)
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей (участники или заказчик)
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.messageType - Тип сообщения: '24hours', '2hours', 'start'
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendEventTimeNotification({ userIds, requestId, messageType = '24hours' }) {
+  const messages = {
+    '24hours': { title: 'Event Reminder', body: 'Event starts in 24 hours!' },
+    '2hours': { title: 'Event Reminder', body: 'Event starts in 2 hours!' },
+    'start': { title: 'Event Started', body: 'Time to start the event!' },
+  };
+
+  const message = messages[messageType] || messages['24hours'];
+
+  return await sendNotificationToUsers({
+    title: message.title,
+    body: message.body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'eventTime',
+      requestId: requestId,
+      messageType: messageType,
+    },
+  });
+}
+
 module.exports = {
   sendPushNotifications,
   sendRequestCreatedNotification,
@@ -597,6 +801,12 @@ module.exports = {
   sendJoinNotification,
   sendDonationNotification,
   sendSpeedCleanupNotification,
+  sendRequestSubmittedNotification,
+  sendRequestApprovedNotification,
+  sendRequestRejectedNotification,
+  sendReminderNotification,
+  sendRequestExpiredNotification,
+  sendEventTimeNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
 };

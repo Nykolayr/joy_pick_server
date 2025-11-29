@@ -136,11 +136,14 @@ API поддерживает два способа авторизации:
 | `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
 | `start_date` | datetime | **Да (для speedCleanup)** | Дата начала работы. **Обязательно для `speedCleanup`**, опционально для `event` |
 | `end_date` | datetime | **Да (для speedCleanup)** | Дата окончания работы. **Обязательно для `speedCleanup`**, опционально для `event` |
-| `status` | string | Нет | Статус: `pending`, `approved`, `rejected`, `completed` (по умолчанию: `pending`). **Важно:** Для заявок типа `speedCleanup` при установке статуса `approved` проверяется разница между `start_date` и `end_date`. Если разница >= 20 минут, начисляется коин создателю. Через 24 часа после `end_date` заявка автоматически переводится в `completed` и начисляются коины донатерам. |
+| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `completed` - завершена<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 24 часа после одобрения заявка автоматически переводится в `completed`<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники |
 | `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
 | `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
+| `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
+| `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
+| `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события) |
 | `is_open` | boolean | Нет | Открыта ли заявка (только чтение, по умолчанию: `true`) |
 | `created_by` | string | Нет | ID создателя (автоматически, только чтение) |
 | `taken_by` | string | Нет | ID исполнителя (только чтение) |
@@ -1187,7 +1190,7 @@ Future<void> updateUserAvatar({
 - `page` (int, default: 1) - номер страницы
 - `limit` (int, default: 20) - количество на странице
 - `category` (string) - фильтр: `wasteLocation`, `speedCleanup`, `event`
-- `status` (string) - фильтр: `pending`, `approved`, `rejected`, `completed`
+- `status` (string) - фильтр: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`
 - `city` (string) - фильтр по городу
 - `latitude` (float) - широта для поиска по радиусу
 - `longitude` (float) - долгота для поиска по радиусу
@@ -1225,7 +1228,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
         "is_open": true,
         "start_date": null,
         "end_date": null,
-        "status": "pending",
+        "status": "new",
         "priority": "medium",
         "assigned_to": null,
         "created_by": "uuid",
@@ -1323,7 +1326,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "reward_amount": null,
   "start_date": null,
   "end_date": null,
-  "status": "pending",
+  "status": "new",
   "priority": "medium",
   "waste_types": ["plastic", "glass"],
   "photos": ["https://example.com/photo1.jpg", "https://example.com/photo2.jpg"],
@@ -1393,7 +1396,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 - `reward_amount` (integer, опционально) - размер награды
 - `start_date` (string, **обязательно для speedCleanup**, опционально для event) - дата начала работы
 - `end_date` (string, **обязательно для speedCleanup**, опционально для event) - дата окончания работы
-- `status` (string, опционально) - статус (по умолчанию: "pending"). **Важно:** Для заявок типа `speedCleanup` при установке статуса `approved` автоматически переводится в `completed` и начисляются коины.
+- `status` (string, опционально) - статус. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании, создатель автоматически добавляется в участники)
 - `priority` (string, опционально) - приоритет (по умолчанию: "medium")
 - `waste_types` (array[string], опционально) - массив названий типов отходов (например: `["plastic", "glass"]`)
 - `target_amount` (integer, опционально) - целевая сумма
@@ -1523,20 +1526,64 @@ Future<void> createRequestWithPhotos({
 
 **Требует аутентификации** (только создатель или админ)
 
+**Описание:**
+Обновление заявки. При изменении статуса автоматически выполняются соответствующие действия (начисление коинов, перевод денег, отправка push-уведомлений).
+
 **Тело запроса:** (все поля опциональны)
 ```json
 {
   "name": "Обновленное название",
   "description": "Обновленное описание",
-  "status": "completed",
-  "completion_comment": "Заявка выполнена"
+  "status": "pending",
+  "completion_comment": "Заявка выполнена",
+  "rejection_reason": "Причина отклонения",
+  "rejection_message": "Кастомное сообщение от модератора",
+  "actual_participants": ["user_id_1", "user_id_2"],
+  "waste_types": ["plastic", "glass"]
 }
 ```
 
-**Важно о начислении коинов:**
+**Поля для модерации:**
+- `rejection_reason` (string) - стандартная причина отклонения
+- `rejection_message` (string) - кастомное сообщение от модератора (используется вместо стандартного, если указано)
+- `status` (string) - изменение статуса (`pending`, `approved`, `rejected`, `completed`)
 
-1. **Для заявок типа `speedCleanup`:**
-   - **При установке статуса `approved`:**
+**Важно:**
+- При изменении статуса на `pending` (отправка на рассмотрение) отправляется push-уведомление создателю
+- При изменении статуса на `approved` (одобрение) автоматически выполняются действия согласно типу заявки (см. раздел "Важно о начислении коинов")
+- При изменении статуса на `rejected` (отклонение) возвращаются деньги и отправляются push-уведомления
+
+**Важно о начислении коинов и логике статусов:**
+
+### Логика статусов заявок
+
+**Статусы:**
+- `new` - создана, ожидает присоединения
+- `inProgress` - в процессе выполнения
+- `pending` - ожидает рассмотрения модератором
+- `approved` - одобрена модератором
+- `rejected` - отклонена модератором
+- `completed` - завершена
+
+**Логика по типам заявок:**
+
+1. **Для заявок типа `wasteLocation`:**
+   - При создании: статус `new`
+   - При присоединении исполнителя (`POST /api/requests/:id/join`): статус меняется на `inProgress`
+   - При отправке на рассмотрение: статус меняется на `pending`
+   - При одобрении (`approved`):
+     - Начисляется по 1 коину: создателю, исполнителю (`joined_user_id`), всем донатерам
+     - Деньги (cost + donations - комиссия) переводятся исполнителю
+     - Статус автоматически меняется на `completed`
+     - Отправляются push-уведомления всем участникам
+   - При отклонении (`rejected`):
+     - Возвращаются деньги создателю и донатерам
+     - Отправляются push-уведомления с причиной отклонения
+
+2. **Для заявок типа `speedCleanup`:**
+   - При создании: статус `new` или `inProgress` (если передано явно)
+   - При отправке на рассмотрение: статус меняется на `pending`
+   - При одобрении (`approved`):
      - Проверяется разница между `start_date` и `end_date`
      - Если разница >= 20 минут:
        - Начисляется 1 коин **только создателю** заявки
@@ -1544,24 +1591,34 @@ Future<void> createRequestWithPhotos({
      - Если разница < 20 минут:
        - Коин не начисляется
        - Отправляется push-уведомление создателю: "Thank you! Try to work a bit longer next time to earn a coin."
-     - Заявка **НЕ переводится** в статус `completed` автоматически
-   - **Через 24 часа после `end_date`:**
-     - Заявка автоматически переводится в статус `completed` (при следующем обновлении заявки или запросе)
+     - Заявка **НЕ переводится** в статус `completed` автоматически, остается в `approved`
+   - **Через 24 часа после одобрения (updated_at):**
+     - Заявка автоматически переводится в статус `completed` (через cron job)
      - Начисляется по 1 коину **всем донатерам** (если они есть)
-     - Отправляется push-уведомление донатерам: "Thank you! You've earned a coin for your cleanup work!"
+     - Отправляется push-уведомление донатерам
      - Донатеры из таблицы `request_contributors` автоматически переносятся в таблицу `donations`
-   - Коины начисляются в поля `jcoins`, `coins_from_created` (создателю) и `coins_from_participation` (донатерам)
-   - **Автоматический перевод в `completed` через 24 часа:**
-     - В текущей реализации проверка происходит при каждом обновлении заявки (PUT `/api/requests/:id`)
-     - Если прошло 24 часа с момента `end_date` и статус `approved`, заявка автоматически переводится в `completed`
-     - Для более точного и своевременного перевода рекомендуется настроить cron job или scheduled task на сервере, который будет периодически проверять все заявки типа `speedCleanup` со статусом `approved` и переводить их в `completed` при необходимости
+   - При отклонении (`rejected`):
+     - Возвращаются деньги донатерам (если были)
+     - Отправляются push-уведомления с причиной отклонения
 
-2. **Для всех остальных типов заявок (`wasteLocation`, `event`):**
-   - При установке статуса `completed` начисляется по 1 коину:
-     - Создателю заявки
-     - Всем донатерам (если есть)
-     - Всем участникам (для `wasteLocation` - присоединившемуся пользователю, для `event` - всем участникам события)
-   - Коины начисляются в поля `jcoins`, `coins_from_created` (создателю) и `coins_from_participation` (участникам и донатерам)
+3. **Для заявок типа `event`:**
+   - При создании: статус автоматически `inProgress`, создатель автоматически добавляется в участники
+   - При закрытии события (`PUT /api/requests/:id/close-event`): статус меняется на `pending`
+   - При одобрении (`approved`):
+     - Начисляется по 1 коину: заказчику, **реальным участникам** (из `actual_participants`), всем донатерам
+     - Деньги (cost + donations - комиссия) переводятся заказчику
+     - Статус автоматически меняется на `completed`
+     - Отправляются push-уведомления всем участникам
+   - При отклонении (`rejected`):
+     - Возвращаются деньги заказчику и донатерам
+     - Отправляются push-уведомления с причиной отклонения
+
+**Автоматические задачи (Cron Jobs):**
+- Проверка напоминаний для waste (за 2 часа до окончания срока) - каждые 5-10 минут
+- Проверка истекших присоединений для waste (24 часа) - каждые 5-10 минут
+- Удаление неактивных заявок (7 дней без присоединения) - каждые 24 часа
+- Проверка времени до события для event (24 часа, 2 часа, начало) - каждые 5-10 минут
+- Автоматический перевод speedCleanup в completed (24 часа после одобрения) - каждые 5-10 минут
 
 ---
 
@@ -1587,11 +1644,30 @@ Future<void> createRequestWithPhotos({
 
 **Требует аутентификации**
 
+**Описание:**
+Присоединение к заявке типа `wasteLocation`. При присоединении:
+- Статус заявки автоматически меняется на `inProgress`
+- Сохраняется `joined_user_id` и `join_date`
+- Отправляется push-уведомление создателю заявки
+
+**Важно:**
+- К заявке можно присоединиться только если статус `new`
+- К заявке может присоединиться только один человек
+- Если исполнитель не завершил заявку в течение 24 часов, заявка возвращается в статус `new` и становится доступной для присоединения снова
+
 **Ответ (200):**
 ```json
 {
   "success": true,
   "message": "Вы присоединились к заявке"
+}
+```
+
+**Ошибка (400):**
+```json
+{
+  "success": false,
+  "message": "К этой заявке нельзя присоединиться"
 }
 ```
 
@@ -1611,6 +1687,9 @@ Future<void> createRequestWithPhotos({
 
 **Требует аутентификации**
 
+**Описание:**
+Присоединение к событию типа `event`. Пользователь добавляется в список участников (`participants`).
+
 **Ответ (200):**
 ```json
 {
@@ -1624,6 +1703,57 @@ Future<void> createRequestWithPhotos({
 **DELETE** `/requests/:id/participate`
 
 **Требует аутентификации**
+
+---
+
+### Закрытие события (event)
+
+**PUT** `/requests/:id/close-event`
+
+**Требует аутентификации** (только создатель события или админ)
+
+**Описание:**
+Закрытие события заказчиком. При закрытии:
+- Загружаются фото после уборки (`photos_after`)
+- Указываются реальные участники (`actual_participants`)
+- Статус меняется на `pending` (отправка на рассмотрение)
+
+**Важно:**
+- Событие можно закрыть только после времени начала (`start_date`)
+- До времени начала события кнопка "Завершить" должна быть неактивна
+
+**Поддерживает два способа отправки:**
+
+1. **JSON с URL фотографий**
+2. **multipart/form-data с файлами** (рекомендуется)
+
+**Тело запроса (JSON):**
+```json
+{
+  "actual_participants": ["user_id_1", "user_id_2", "user_id_3"],
+  "photos_after": ["https://example.com/photo1.jpg", "https://example.com/photo2.jpg"]
+}
+```
+
+**Поля формы (multipart/form-data):**
+- `actual_participants` (string, JSON массив) - массив ID реальных участников события
+- `photos_after` (file[] или string[]) - массив файлов или URL фотографий после уборки
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Событие отправлено на рассмотрение"
+}
+```
+
+**Ошибка (400):**
+```json
+{
+  "success": false,
+  "message": "Событие еще не началось"
+}
+```
 
 ---
 
@@ -2535,6 +2665,236 @@ Future<Map<String, dynamic>> sendNotificationToUsers({
   }
 }
 ```
+
+### Получение списка уведомлений
+
+Все отправленные push-уведомления автоматически сохраняются в базе данных. Пользователи могут просматривать историю своих уведомлений через API.
+
+#### Получение списка уведомлений
+
+**Эндпоинт:** `GET /api/notifications`
+
+**Требования:**
+- Аутентификация: Да
+- Метод: `GET`
+
+**Query параметры:**
+
+| Параметр | Тип | Обязательное | Описание |
+|----------|-----|--------------|----------|
+| `page` | integer | Нет | Номер страницы (по умолчанию: 1) |
+| `limit` | integer | Нет | Количество на странице (по умолчанию: 20, максимум: 100) |
+| `read` | boolean | Нет | Фильтр по прочитанности (`true` - только прочитанные, `false` - только непрочитанные) |
+
+**Успешный ответ (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "user_id": "353f958d-8796-44c7-a877-3e376eca6784",
+        "title": "Thank you!",
+        "body": "You've earned a coin for your cleanup work!",
+        "data": {
+          "type": "speedCleanup",
+          "earnedCoin": true,
+          "requestId": "660e8400-e29b-41d4-a716-446655440000"
+        },
+        "read": false,
+        "created_at": "2024-01-01T10:00:00.000Z",
+        "updated_at": "2024-01-01T10:00:00.000Z"
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440001",
+        "user_id": "353f958d-8796-44c7-a877-3e376eca6784",
+        "title": "Someone joined your request",
+        "body": "Петр Петров joined your request \"Уборка парка\"",
+        "data": {
+          "type": "join",
+          "requestId": "660e8400-e29b-41d4-a716-446655440001",
+          "actionType": "joined"
+        },
+        "read": true,
+        "created_at": "2024-01-01T09:00:00.000Z",
+        "updated_at": "2024-01-01T09:05:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 45,
+      "totalPages": 3
+    }
+  }
+}
+```
+
+**Примеры запросов:**
+
+```
+GET /api/notifications
+GET /api/notifications?page=2&limit=10
+GET /api/notifications?read=false
+GET /api/notifications?read=true&page=1&limit=50
+```
+
+#### Отметить уведомление как прочитанное
+
+**Эндпоинт:** `PUT /api/notifications/:id/read`
+
+**Требования:**
+- Аутентификация: Да
+- Метод: `PUT`
+
+**Параметры пути:**
+- `id` (UUID) - ID уведомления
+
+**Успешный ответ (200):**
+
+```json
+{
+  "success": true,
+  "message": "Уведомление отмечено как прочитанное"
+}
+```
+
+**Ошибка (404):**
+
+```json
+{
+  "success": false,
+  "message": "Уведомление не найдено"
+}
+```
+
+#### Отметить все уведомления как прочитанные
+
+**Эндпоинт:** `PUT /api/notifications/read-all`
+
+**Требования:**
+- Аутентификация: Да
+- Метод: `PUT`
+
+**Успешный ответ (200):**
+
+```json
+{
+  "success": true,
+  "message": "Отмечено 5 уведомлений как прочитанных",
+  "data": {
+    "updated": 5
+  }
+}
+```
+
+#### Получить количество непрочитанных уведомлений
+
+**Эндпоинт:** `GET /api/notifications/unread-count`
+
+**Требования:**
+- Аутентификация: Да
+- Метод: `GET`
+
+**Успешный ответ (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "unreadCount": 3
+  }
+}
+```
+
+**Пример запроса (Flutter):**
+
+```dart
+Future<List<Map<String, dynamic>>> getNotifications({
+  int page = 1,
+  int limit = 20,
+  bool? read,
+}) async {
+  final token = await getToken();
+  final queryParams = {
+    'page': page.toString(),
+    'limit': limit.toString(),
+    if (read != null) 'read': read.toString(),
+  };
+  
+  final uri = Uri.parse('$baseUrl/notifications').replace(
+    queryParameters: queryParams,
+  );
+  
+  final response = await http.get(
+    uri,
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+  
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    return List<Map<String, dynamic>>.from(data['data']['notifications']);
+  } else {
+    throw Exception('Ошибка получения уведомлений: ${response.body}');
+  }
+}
+
+Future<void> markNotificationAsRead(String notificationId) async {
+  final token = await getToken();
+  final response = await http.put(
+    Uri.parse('$baseUrl/notifications/$notificationId/read'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+  
+  if (response.statusCode != 200) {
+    throw Exception('Ошибка отметки уведомления: ${response.body}');
+  }
+}
+
+Future<void> markAllNotificationsAsRead() async {
+  final token = await getToken();
+  final response = await http.put(
+    Uri.parse('$baseUrl/notifications/read-all'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+  
+  if (response.statusCode != 200) {
+    throw Exception('Ошибка отметки всех уведомлений: ${response.body}');
+  }
+}
+
+Future<int> getUnreadCount() async {
+  final token = await getToken();
+  final response = await http.get(
+    Uri.parse('$baseUrl/notifications/unread-count'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+  
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    return data['data']['unreadCount'] as int;
+  } else {
+    throw Exception('Ошибка получения количества уведомлений: ${response.body}');
+  }
+}
+```
+
+**Важно:**
+- Все отправленные push-уведомления автоматически сохраняются в базе данных
+- Уведомления сохраняются даже если FCM отправка не удалась (для истории)
+- Поле `data` содержит дополнительные данные для навигации (type, requestId и т.д.)
+- Уведомления сортируются по дате создания (новые сначала)
+- Пользователь может видеть только свои уведомления
 
 ### Технические детали
 
