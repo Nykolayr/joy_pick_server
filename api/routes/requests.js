@@ -11,7 +11,8 @@ const {
   sendSpeedCleanupNotification,
   sendRequestSubmittedNotification,
   sendRequestApprovedNotification,
-  sendRequestRejectedNotification
+  sendRequestRejectedNotification,
+  sendModerationNotification
 } = require('../services/pushNotification');
 
 const router = express.Router();
@@ -42,14 +43,8 @@ router.get('/', async (req, res) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
     const offset = (pageNum - 1) * limitNum;
     let query = `
-      SELECT r.*,
-       GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
-       GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
+      SELECT r.*
       FROM requests r
-      LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
-      LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
-      LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
     `;
 
     const conditions = [];
@@ -107,7 +102,7 @@ router.get('/', async (req, res) => {
     }
 
     // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
-    query += ` GROUP BY r.id ORDER BY r.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    query += ` ORDER BY r.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [requests] = await pool.execute(query, params);
 
@@ -115,10 +110,31 @@ router.get('/', async (req, res) => {
     const processedRequests = requests.map(request => {
       const result = Object.assign({}, request);
       
-      // Преобразование фотографий
-      result.photos = request.photos ? request.photos.split(',') : [];
-      result.photos_before = request.photos_before ? request.photos_before.split(',') : [];
-      result.photos_after = request.photos_after ? request.photos_after.split(',') : [];
+      // Обработка photos_before из JSON поля
+      if (request.photos_before) {
+        try {
+          result.photos_before = typeof request.photos_before === 'string' 
+            ? JSON.parse(request.photos_before) 
+            : request.photos_before;
+        } catch (e) {
+          result.photos_before = [];
+        }
+      } else {
+        result.photos_before = [];
+      }
+      
+      // Обработка photos_after из JSON поля
+      if (request.photos_after) {
+        try {
+          result.photos_after = typeof request.photos_after === 'string' 
+            ? JSON.parse(request.photos_after) 
+            : request.photos_after;
+        } catch (e) {
+          result.photos_after = [];
+        }
+      } else {
+        result.photos_after = [];
+      }
       // Обработка waste_types из JSON поля
       if (request.waste_types) {
         try {
@@ -142,6 +158,19 @@ router.get('/', async (req, res) => {
         }
       } else {
         result.actual_participants = [];
+      }
+      
+      // Обработка registered_participants из JSON поля (для event)
+      if (request.registered_participants) {
+        try {
+          result.registered_participants = typeof request.registered_participants === 'string' 
+            ? JSON.parse(request.registered_participants) 
+            : request.registered_participants;
+        } catch (e) {
+          result.registered_participants = [];
+        }
+      } else {
+        result.registered_participants = [];
       }
       
       // Преобразование булевых значений
@@ -209,16 +238,9 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
     const [requests] = await pool.execute(
-      `SELECT r.*,
-       GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
-       GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
+      `SELECT r.*
       FROM requests r
-      LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
-      LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
-      LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      WHERE r.id = ?
-      GROUP BY r.id`,
+      WHERE r.id = ?`,
       [id]
     );
 
@@ -228,23 +250,12 @@ router.get('/:id', async (req, res) => {
 
     const request = requests[0];
     
-    // Получение участников
-    const [participants] = await pool.execute(
-      'SELECT user_id FROM request_participants WHERE request_id = ?',
-      [id]
-    );
-    request.participants = participants.map(p => p.user_id);
-
-    // Получение вкладчиков
-    const [contributors] = await pool.execute(
-      'SELECT user_id, amount FROM request_contributors WHERE request_id = ?',
-      [id]
-    );
-    request.contributors = contributors.map(c => c.user_id);
+    // Участники для event хранятся в JSON поле actual_participants (только реальные участники)
+    // Для получения всех участников (включая зарегистрированных) нужно использовать таблицу donations или другой механизм
+    // Пока оставляем пустым, так как участники event теперь хранятся в actual_participants
+    request.participants = [];
+    request.contributors = [];
     request.contributions = {};
-    contributors.forEach(c => {
-      request.contributions[c.user_id] = c.amount;
-    });
 
     // Получение донатов
     const [donations] = await pool.execute(
@@ -318,20 +329,11 @@ router.post('/', authenticate, uploadRequestPhotos, [
       return error(res, 'Ошибка валидации', 400, validationErrors.array());
     }
 
-    // Обработка загруженных файлов
-    const uploadedPhotos = [];
+    // Обработка загруженных файлов (только файлы, URL не принимаем)
     const uploadedPhotosBefore = [];
     const uploadedPhotosAfter = [];
 
     if (req.files) {
-      // Обрабатываем основные фото
-      if (req.files.photos && Array.isArray(req.files.photos)) {
-        for (const file of req.files.photos) {
-          const fileUrl = getFileUrlFromPath(file.path);
-          if (fileUrl) uploadedPhotos.push(fileUrl);
-        }
-      }
-
       // Обрабатываем фото "до"
       if (req.files.photos_before && Array.isArray(req.files.photos_before)) {
         for (const file of req.files.photos_before) {
@@ -376,18 +378,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
       status, // Статус может быть передан явно (для speedCleanup при переходе на страницу выполнения)
       priority = 'medium',
       waste_types = [],
-      photos = [],
-      photos_before = [],
-      photos_after = [],
       target_amount,
       plant_tree = false,
       trash_pickup_only = false
     } = bodyData;
 
-    // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
-    const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photos) ? photos : []);
-    const finalPhotosBefore = uploadedPhotosBefore.length > 0 ? uploadedPhotosBefore : (Array.isArray(photos_before) ? photos_before : []);
-    const finalPhotosAfter = uploadedPhotosAfter.length > 0 ? uploadedPhotosAfter : (Array.isArray(photos_after) ? photos_after : []);
+    // Используем только загруженные файлы (URL не принимаем)
+    const finalPhotosBefore = uploadedPhotosBefore;
+    const finalPhotosAfter = uploadedPhotosAfter;
 
     const requestId = generateId();
     const userId = req.user.userId;
@@ -402,14 +400,20 @@ router.post('/', authenticate, uploadRequestPhotos, [
       defaultStatus = status;
     }
 
-    // Создание заявки
+    // Для event: создатель автоматически становится участником
+    let registeredParticipants = null;
+    if (category === 'event') {
+      registeredParticipants = JSON.stringify([userId]);
+    }
+
+    // Создание заявки с фото в JSON полях
     await pool.execute(
       `INSERT INTO requests (
         id, user_id, category, name, description, latitude, longitude, city,
         garbage_size, only_foot, possible_by_car, cost, reward_amount,
         start_date, end_date, status, priority, created_by, target_amount,
-        plant_tree, trash_pickup_only, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        plant_tree, trash_pickup_only, photos_before, photos_after, waste_types, registered_participants, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         requestId,
         userId,
@@ -431,73 +435,49 @@ router.post('/', authenticate, uploadRequestPhotos, [
         userId, // created_by использует тот же userId
         target_amount || null,
         plant_tree,
-        trash_pickup_only
+        trash_pickup_only,
+        finalPhotosBefore.length > 0 ? JSON.stringify(finalPhotosBefore) : null,
+        finalPhotosAfter.length > 0 ? JSON.stringify(finalPhotosAfter) : null,
+        waste_types && Array.isArray(waste_types) && waste_types.length > 0 ? JSON.stringify(waste_types) : null,
+        registeredParticipants
       ]
     );
 
-    // Для event: создатель автоматически становится участником
-    if (category === 'event') {
-      await pool.execute(
-        'INSERT INTO request_participants (id, request_id, user_id) VALUES (?, ?, ?)',
-        [generateId(), requestId, userId]
-      );
-    }
-
-    // Добавление фотографий
-    if (finalPhotos.length > 0) {
-      for (const photoUrl of finalPhotos) {
-        await pool.execute(
-          'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
-          [generateId(), requestId, photoUrl, 'photo']
-        );
-      }
-    }
-
-    if (finalPhotosBefore.length > 0) {
-      for (const photoUrl of finalPhotosBefore) {
-        await pool.execute(
-          'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
-          [generateId(), requestId, photoUrl, 'photo_before']
-        );
-      }
-    }
-
-    if (finalPhotosAfter.length > 0) {
-      for (const photoUrl of finalPhotosAfter) {
-        await pool.execute(
-          'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
-          [generateId(), requestId, photoUrl, 'photo_after']
-        );
-      }
-    }
-
-    // Сохранение типов отходов как JSON массив названий
-    if (waste_types && Array.isArray(waste_types) && waste_types.length > 0) {
-      await pool.execute(
-        'UPDATE requests SET waste_types = ? WHERE id = ?',
-        [JSON.stringify(waste_types), requestId]
-      );
-    }
-
     // Получение созданной заявки
     const [requests] = await pool.execute(
-      `SELECT r.*,
-       GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
-       GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
+      `SELECT r.*
       FROM requests r
-      LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
-      LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
-      LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      WHERE r.id = ?
-      GROUP BY r.id`,
+      WHERE r.id = ?`,
       [requestId]
     );
 
     const request = requests[0];
-    request.photos = request.photos ? request.photos.split(',') : [];
-    request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
-    request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
+    
+    // Обработка photos_before из JSON поля
+    if (request.photos_before) {
+      try {
+        request.photos_before = typeof request.photos_before === 'string' 
+          ? JSON.parse(request.photos_before) 
+          : request.photos_before;
+      } catch (e) {
+        request.photos_before = [];
+      }
+    } else {
+      request.photos_before = [];
+    }
+    
+    // Обработка photos_after из JSON поля
+    if (request.photos_after) {
+      try {
+        request.photos_after = typeof request.photos_after === 'string' 
+          ? JSON.parse(request.photos_after) 
+          : request.photos_after;
+      } catch (e) {
+        request.photos_after = [];
+      }
+    } else {
+      request.photos_after = [];
+    }
     
     // Обработка waste_types из JSON поля
     if (request.waste_types) {
@@ -560,6 +540,28 @@ router.put('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
+
+    // Обработка загруженных файлов (только файлы, URL не принимаем)
+    const uploadedPhotosBefore = [];
+    const uploadedPhotosAfter = [];
+
+    if (req.files) {
+      // Обрабатываем фото "до"
+      if (req.files.photos_before && Array.isArray(req.files.photos_before)) {
+        for (const file of req.files.photos_before) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosBefore.push(fileUrl);
+        }
+      }
+
+      // Обрабатываем фото "после"
+      if (req.files.photos_after && Array.isArray(req.files.photos_after)) {
+        for (const file of req.files.photos_after) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosAfter.push(fileUrl);
+        }
+      }
+    }
 
     // Проверка прав доступа
     const [existingRequests] = await pool.execute(
@@ -747,6 +749,18 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('actual_participants = ?');
       params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
     }
+    
+    // Обновление photos_before (только если загружены файлы)
+    if (uploadedPhotosBefore.length > 0) {
+      updates.push('photos_before = ?');
+      params.push(JSON.stringify(uploadedPhotosBefore));
+    }
+    
+    // Обновление photos_after (только если загружены файлы)
+    if (uploadedPhotosAfter.length > 0) {
+      updates.push('photos_after = ?');
+      params.push(JSON.stringify(uploadedPhotosAfter));
+    }
 
     if (updates.length === 0) {
       return error(res, 'Нет данных для обновления', 400);
@@ -765,13 +779,36 @@ router.put('/:id', authenticate, async (req, res) => {
     // 1. Обработка отправки на рассмотрение (pending)
     if (statusChangedToPending && requestCreatedBy) {
       try {
-        // Отправляем пуш-уведомление создателю
-        sendRequestSubmittedNotification({
-          userIds: [requestCreatedBy],
-          requestId: id,
-        }).catch(err => {
-          console.error('❌ Ошибка отправки push-уведомления при отправке на рассмотрение:', err);
-        });
+        // Получаем данные заявки для уведомлений
+        const [requestData] = await pool.execute(
+          `SELECT r.name, r.category, u.display_name as creator_name 
+           FROM requests r 
+           LEFT JOIN users u ON r.created_by = u.id 
+           WHERE r.id = ?`,
+          [id]
+        );
+
+        if (requestData.length > 0) {
+          const requestInfo = requestData[0];
+          
+          // Отправляем пуш-уведомление создателю
+          sendRequestSubmittedNotification({
+            userIds: [requestCreatedBy],
+            requestId: id,
+          }).catch(err => {
+            console.error('❌ Ошибка отправки push-уведомления при отправке на рассмотрение:', err);
+          });
+
+          // Отправляем пуш-уведомление всем модераторам
+          sendModerationNotification({
+            requestId: id,
+            requestName: requestInfo.name || 'Unnamed Request',
+            requestCategory: requestInfo.category || requestCategory,
+            creatorName: requestInfo.creator_name || 'Unknown User',
+          }).catch(err => {
+            console.error('❌ Ошибка отправки push-уведомления модераторам:', err);
+          });
+        }
       } catch (error) {
         console.error('❌ Ошибка обработки отправки на рассмотрение:', error);
       }
@@ -807,23 +844,39 @@ router.put('/:id', authenticate, async (req, res) => {
 
     // Получение обновленной заявки
     const [requests] = await pool.execute(
-      `SELECT r.*,
-       GROUP_CONCAT(DISTINCT rp.photo_url ORDER BY rp.photo_type, rp.created_at) as photos,
-       GROUP_CONCAT(DISTINCT rpb.photo_url ORDER BY rpb.created_at) as photos_before,
-       GROUP_CONCAT(DISTINCT rpa.photo_url ORDER BY rpa.created_at) as photos_after
+      `SELECT r.*
       FROM requests r
-      LEFT JOIN request_photos rp ON r.id = rp.request_id AND rp.photo_type = 'photo'
-      LEFT JOIN request_photos rpb ON r.id = rpb.request_id AND rpb.photo_type = 'photo_before'
-      LEFT JOIN request_photos rpa ON r.id = rpa.request_id AND rpa.photo_type = 'photo_after'
-      WHERE r.id = ?
-      GROUP BY r.id`,
+      WHERE r.id = ?`,
       [id]
     );
 
     const request = requests[0];
-    request.photos = request.photos ? request.photos.split(',') : [];
-    request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
-    request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
+    
+    // Обработка photos_before из JSON поля
+    if (request.photos_before) {
+      try {
+        request.photos_before = typeof request.photos_before === 'string' 
+          ? JSON.parse(request.photos_before) 
+          : request.photos_before;
+      } catch (e) {
+        request.photos_before = [];
+      }
+    } else {
+      request.photos_before = [];
+    }
+    
+    // Обработка photos_after из JSON поля
+    if (request.photos_after) {
+      try {
+        request.photos_after = typeof request.photos_after === 'string' 
+          ? JSON.parse(request.photos_after) 
+          : request.photos_after;
+      } catch (e) {
+        request.photos_after = [];
+      }
+    } else {
+      request.photos_after = [];
+    }
     // Обработка waste_types из JSON поля
     if (request.waste_types) {
       try {
@@ -1012,9 +1065,9 @@ router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, re
       }
     }
 
-    const { actual_participants, photos_after = [] } = req.body;
+    const { actual_participants } = req.body;
 
-    // Обработка загруженных файлов photos_after
+    // Обработка загруженных файлов photos_after (только файлы, URL не принимаем)
     const uploadedPhotosAfter = [];
     if (req.files && req.files.photos_after && Array.isArray(req.files.photos_after)) {
       for (const file of req.files.photos_after) {
@@ -1023,28 +1076,19 @@ router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, re
       }
     }
 
-    // Объединяем загруженные файлы с URL из JSON
-    const finalPhotosAfter = uploadedPhotosAfter.length > 0 
-      ? uploadedPhotosAfter 
-      : (Array.isArray(photos_after) ? photos_after : []);
-
-    // Добавляем фото "после" если есть
-    if (finalPhotosAfter.length > 0) {
-      for (const photoUrl of finalPhotosAfter) {
-        await pool.execute(
-          'INSERT INTO request_photos (id, request_id, photo_url, photo_type) VALUES (?, ?, ?, ?)',
-          [generateId(), id, photoUrl, 'photo_after']
-        );
-      }
-    }
-
-    // Сохраняем actual_participants
+    // Сохраняем actual_participants и photos_after в JSON поля
     const updates = [];
     const params = [];
     
     if (actual_participants !== undefined) {
       updates.push('actual_participants = ?');
       params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
+    }
+    
+    // Сохраняем photos_after в JSON поле (только если загружены файлы)
+    if (uploadedPhotosAfter.length > 0) {
+      updates.push('photos_after = ?');
+      params.push(JSON.stringify(uploadedPhotosAfter));
     }
 
     // Меняем статус на pending
@@ -1090,20 +1134,33 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       return error(res, 'Это не событие', 400);
     }
 
-    // Проверка, не участвует ли уже
-    const [existing] = await pool.execute(
-      'SELECT id FROM request_participants WHERE request_id = ? AND user_id = ?',
-      [id, userId]
-    );
+    // Проверка, не является ли пользователь создателем
+    if (request.created_by === userId) {
+      return error(res, 'Вы уже являетесь создателем события', 409);
+    }
 
-    if (existing.length > 0) {
+    // Получаем текущий список зарегистрированных участников
+    let registeredParticipants = [];
+    if (request.registered_participants) {
+      try {
+        registeredParticipants = typeof request.registered_participants === 'string'
+          ? JSON.parse(request.registered_participants)
+          : request.registered_participants;
+      } catch (e) {
+        registeredParticipants = [];
+      }
+    }
+
+    // Проверка, не участвует ли уже
+    if (registeredParticipants.includes(userId)) {
       return error(res, 'Вы уже участвуете в этом событии', 409);
     }
 
-    // Добавление участника
+    // Добавляем пользователя в список участников
+    registeredParticipants.push(userId);
     await pool.execute(
-      'INSERT INTO request_participants (id, request_id, user_id) VALUES (?, ?, ?)',
-      [generateId(), id, userId]
+      'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
+      [JSON.stringify(registeredParticipants), id]
     );
 
     // Отправка push-уведомления создателю заявки (асинхронно)
@@ -1136,12 +1193,42 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    await pool.execute(
-      'DELETE FROM request_participants WHERE request_id = ? AND user_id = ?',
-      [id, userId]
+    // Получаем текущий список зарегистрированных участников
+    const [requests] = await pool.execute(
+      'SELECT id, category, registered_participants FROM requests WHERE id = ?',
+      [id]
     );
 
-    success(res, null, 'Вы отменили участие в событии');
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    if (request.category !== 'event') {
+      return error(res, 'Это не событие', 400);
+    }
+
+    // Получаем текущий список участников
+    let registeredParticipants = [];
+    if (request.registered_participants) {
+      try {
+        registeredParticipants = typeof request.registered_participants === 'string'
+          ? JSON.parse(request.registered_participants)
+          : request.registered_participants;
+      } catch (e) {
+        registeredParticipants = [];
+      }
+    }
+
+    // Удаляем пользователя из списка участников
+    registeredParticipants = registeredParticipants.filter(p => p !== userId);
+    await pool.execute(
+      'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
+      [JSON.stringify(registeredParticipants), id]
+    );
+
+    success(res, null, 'Участие отменено');
   } catch (err) {
     console.error('Ошибка отмены участия:', err);
     error(res, 'Ошибка при отмене участия', 500, err);
@@ -1177,7 +1264,7 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
 
   // 3. Начисляем коины донатерам
   const [donations] = await pool.execute(
-    'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
+    'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
     [requestId]
   );
   const donorUserIds = [];
@@ -1273,7 +1360,7 @@ async function handleEventApproval(requestId, creatorId) {
 
   // 4. Начисляем коины донатерам
   const [donations] = await pool.execute(
-    'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
+    'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
     [requestId]
   );
   const donorUserIds = [];

@@ -67,43 +67,29 @@ async function autoCompleteSpeedCleanup() {
         );
         console.log(`✅ [autoCompleteSpeedCleanup] Заявка ${requestId} переведена в completed (прошло ${Math.floor(diffHours)} часов с одобрения)`);
 
-        // Получаем донатеров из request_contributors
-        const [contributors] = await pool.execute(
-          'SELECT user_id, amount FROM request_contributors WHERE request_id = ?',
+        // Получаем донатеров из donations
+        const [donations] = await pool.execute(
+          'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
           [requestId]
         );
 
         const donorUserIds = [];
 
-        if (contributors.length > 0) {
+        if (donations.length > 0) {
           const coinsToAward = 1;
 
-          for (const contributor of contributors) {
+          for (const donation of donations) {
             try {
-              // Проверяем, есть ли уже донат в таблице donations
-              const [existingDonation] = await pool.execute(
-                'SELECT id FROM donations WHERE request_id = ? AND user_id = ?',
-                [requestId, contributor.user_id]
-              );
-
-              // Если доната нет, создаем его
-              if (existingDonation.length === 0) {
-                await pool.execute(
-                  'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id) VALUES (?, ?, ?, ?, ?)',
-                  [generateId(), requestId, contributor.user_id, contributor.amount || 0, null]
-                );
-              }
-
               // Начисляем коины донатерам (по 1 коину каждому, кроме создателя)
-              if (contributor.user_id && contributor.user_id !== request.created_by) {
+              if (donation.user_id && donation.user_id !== request.created_by) {
                 await pool.execute(
                   'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                  [coinsToAward, coinsToAward, contributor.user_id]
+                  [coinsToAward, coinsToAward, donation.user_id]
                 );
-                donorUserIds.push(contributor.user_id);
+                donorUserIds.push(donation.user_id);
               }
-            } catch (contributorError) {
-              console.error(`❌ [autoCompleteSpeedCleanup] Ошибка обработки донатера ${contributor.user_id}:`, contributorError.message);
+            } catch (donationError) {
+              console.error(`❌ [autoCompleteSpeedCleanup] Ошибка обработки донатера ${donation.user_id}:`, donationError.message);
             }
           }
         }
@@ -372,12 +358,31 @@ async function checkEventTimes() {
         const diffHours = (startDate - now) / (1000 * 60 * 60);
         const diffMinutes = (startDate - now) / (1000 * 60);
 
-        // Получаем участников
-        const [participants] = await pool.execute(
-          'SELECT user_id FROM request_participants WHERE request_id = ?',
+        // Получаем зарегистрированных участников из registered_participants
+        const [requestData] = await pool.execute(
+          'SELECT registered_participants, created_by FROM requests WHERE id = ?',
           [request.id]
         );
-        const participantUserIds = participants.map(p => p.user_id).filter(Boolean);
+        
+        let participantUserIds = [];
+        if (requestData[0]?.registered_participants) {
+          try {
+            participantUserIds = typeof requestData[0].registered_participants === 'string'
+              ? JSON.parse(requestData[0].registered_participants)
+              : requestData[0].registered_participants;
+            if (!Array.isArray(participantUserIds)) {
+              participantUserIds = [];
+            }
+          } catch (e) {
+            console.error(`❌ [checkEventTimes] Ошибка парсинга registered_participants для заявки ${request.id}:`, e);
+            participantUserIds = [];
+          }
+        }
+        
+        // Также добавляем создателя события (если его еще нет в списке)
+        if (requestData[0]?.created_by && !participantUserIds.includes(requestData[0].created_by)) {
+          participantUserIds.push(requestData[0].created_by);
+        }
 
         // Проверяем время до события
         if (diffHours >= 23.5 && diffHours <= 24.5) {
