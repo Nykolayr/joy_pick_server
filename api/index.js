@@ -63,24 +63,38 @@ app.use((err, req, res, next) => {
   }
 
   // Всегда возвращаем JSON для API
+  // Показываем детали ошибки всегда (для отладки), но можно ограничить через NODE_ENV
   const isDev = process.env.NODE_ENV !== 'production';
+  const showDetails = isDev || process.env.SHOW_ERROR_DETAILS === 'true';
+  
   const errorResponse = {
     success: false,
-    message: isDev ? err.message : 'Внутренняя ошибка сервера',
+    message: showDetails ? err.message : 'Внутренняя ошибка сервера',
     timestamp: new Date().toISOString(),
     path: req.path,
     method: req.method
   };
 
-  if (isDev) {
+  if (showDetails) {
     errorResponse.error = err.message;
+    errorResponse.errorName = err.name;
     errorResponse.stack = err.stack;
     errorResponse.errorDetails = {
       code: err.code,
       name: err.name,
       sql: err.sql,
-      sqlMessage: err.sqlMessage
+      sqlMessage: err.sqlMessage,
+      errno: err.errno,
+      sqlState: err.sqlState
     };
+    
+    // Для ошибок базы данных добавляем больше информации
+    if (err.sqlMessage) {
+      errorResponse.sqlMessage = err.sqlMessage;
+    }
+    if (err.sql) {
+      errorResponse.sql = err.sql;
+    }
   }
 
   console.error('❌ API Error:', {
