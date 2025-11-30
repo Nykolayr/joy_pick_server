@@ -150,24 +150,7 @@ router.post('/', authenticate, [
       [newTotalContributed, requestId]
     );
 
-    // Добавление вкладчика, если его еще нет
-    const [existingContributor] = await pool.execute(
-      'SELECT id FROM request_contributors WHERE request_id = ? AND user_id = ?',
-      [requestId, userId]
-    );
-
-    if (existingContributor.length === 0) {
-      await pool.execute(
-        'INSERT INTO request_contributors (id, request_id, user_id, amount) VALUES (?, ?, ?, ?)',
-        [generateId(), requestId, userId, amount]
-      );
-    } else {
-      // Обновление суммы вклада
-      await pool.execute(
-        'UPDATE request_contributors SET amount = amount + ? WHERE request_id = ? AND user_id = ?',
-        [amount, requestId, userId]
-      );
-    }
+    // Донатеры хранятся только в таблице donations, request_contributors больше не используется
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {

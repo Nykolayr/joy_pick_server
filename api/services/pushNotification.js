@@ -24,6 +24,22 @@ async function saveNotificationToDatabase(userId, title, body, data = {}) {
 }
 
 /**
+ * Получение ID всех администраторов (модераторов)
+ * @returns {Promise<Array<string>>} Массив ID администраторов
+ */
+async function getAllAdminIds() {
+  try {
+    const [admins] = await pool.execute(
+      'SELECT id FROM users WHERE admin = TRUE AND fcm_token IS NOT NULL AND fcm_token != ""'
+    );
+    return admins.map(admin => admin.id);
+  } catch (error) {
+    console.error('❌ Ошибка получения списка администраторов:', error);
+    return [];
+  }
+}
+
+/**
  * Получение FCM токенов пользователей по их ID
  * @param {Array<string>} userIds - Массив ID пользователей
  * @returns {Promise<Array<string>>} Массив FCM токенов
@@ -794,6 +810,67 @@ async function sendEventTimeNotification({ userIds, requestId, messageType = '24
   });
 }
 
+/**
+ * Отправка push-уведомления модераторам о новой заявке на модерации
+ * @param {Object} options - Параметры уведомления
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.requestName - Название заявки
+ * @param {string} options.requestCategory - Категория заявки
+ * @param {string} options.creatorName - Имя создателя заявки
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendModerationNotification({ requestId, requestName, requestCategory, creatorName }) {
+  try {
+    // Получаем всех администраторов
+    const adminIds = await getAllAdminIds();
+
+    if (adminIds.length === 0) {
+      console.log('ℹ️ Нет администраторов для отправки уведомления о модерации');
+      return { successCount: 0, failureCount: 0 };
+    }
+
+    // Формируем название категории
+    const categoryDisplayNames = {
+      wasteLocation: 'Waste Location',
+      speedCleanup: 'Speed Cleanup',
+      event: 'Event',
+    };
+    const categoryDisplayName = categoryDisplayNames[requestCategory] || 'Request';
+
+    // Формируем deeplink для админ-панели
+    // Формат: https://garbagedev-9c240.web.app/admin/requests/{requestId}
+    const deeplink = `https://garbagedev-9c240.web.app/admin/requests/${requestId}`;
+
+    // Формируем текст уведомления
+    const notificationTitle = 'New Request for Moderation';
+    const notificationBody = `${categoryDisplayName}: "${requestName}"\nCreated by: ${creatorName}`;
+
+    // Отправляем уведомления всем модераторам
+    const result = await sendNotificationToUsers({
+      title: notificationTitle,
+      body: notificationBody,
+      userIds: adminIds,
+      sound: 'default',
+      data: {
+        type: 'moderation',
+        requestId: requestId,
+        requestCategory: requestCategory,
+        initialPageName: 'AdminRequestDetails',
+        parameterData: JSON.stringify({
+          requestId: requestId,
+          category: requestCategory,
+        }),
+        deeplink: deeplink,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    console.error('❌ Ошибка отправки уведомления модераторам:', error);
+    return { successCount: 0, failureCount: 0 };
+  }
+}
+
 module.exports = {
   sendPushNotifications,
   sendRequestCreatedNotification,
@@ -807,6 +884,7 @@ module.exports = {
   sendReminderNotification,
   sendRequestExpiredNotification,
   sendEventTimeNotification,
+  sendModerationNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
 };

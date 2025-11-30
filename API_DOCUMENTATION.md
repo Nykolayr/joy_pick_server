@@ -125,9 +125,8 @@ API поддерживает два способа авторизации:
 | `latitude` | float | Нет | Широта местоположения |
 | `longitude` | float | Нет | Долгота местоположения |
 | `city` | string | Нет | Город |
-| `photos` | array[string] | Нет | Массив URL фотографий мусора (для всех типов) |
-| `photos_before` | array[string] | Нет | Массив URL фотографий "до" (только для Speed Clean-up) |
-| `photos_after` | array[string] | Нет | Массив URL фотографий "после" (только для Speed Clean-up) |
+| `photos_before` | array[string] | Нет | Массив URL фотографий "до" уборки (для всех типов заявок) |
+| `photos_after` | array[string] | Нет | Массив URL фотографий "после" уборки (для всех типов заявок) |
 | `garbage_size` | integer | Нет | Размер мусора: `1` (bag), `2` (cart), `3` (car) |
 | `waste_types` | array[string] | Нет | Массив названий типов отходов (например: `["plastic", "glass"]`) |
 | `only_foot` | boolean | Нет | Доступ только пешком (по умолчанию: `false`) |
@@ -144,13 +143,11 @@ API поддерживает два способа авторизации:
 | `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
 | `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
 | `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события) |
+| `registered_participants` | array[string] | Нет | Массив ID всех зарегистрированных участников события (только для `event`, заполняется автоматически при участии) |
 | `is_open` | boolean | Нет | Открыта ли заявка (только чтение, по умолчанию: `true`) |
 | `created_by` | string | Нет | ID создателя (автоматически, только чтение) |
 | `taken_by` | string | Нет | ID исполнителя (только чтение) |
-| `contributors` | array[string] | Нет | Массив ID вкладчиков (только чтение) |
-| `contributions` | object | Нет | Объект вкладов {user_id: amount} (только чтение) |
-| `total_contributed` | integer | Нет | Общая сумма собранных средств (только чтение) |
-| `participants` | array[string] | Нет | Массив ID участников события (только чтение) |
+| `total_contributed` | integer | Нет | Общая сумма собранных средств (только чтение, из таблицы donations) |
 | `joined_user_id` | string | Нет | ID пользователя, присоединившегося к заявке (только чтение) |
 | `join_date` | datetime | Нет | Дата присоединения (только чтение) |
 | `completion_comment` | string | Нет | Комментарий при завершении (только чтение) |
@@ -169,11 +166,10 @@ API поддерживает два способа авторизации:
   "latitude": 55.7558,
   "longitude": 37.6173,
   "city": "Москва",
-  "photos": [
+  "photos_before": [
     "http://autogie1.bget.ru/uploads/photos/uuid1.jpg",
     "http://autogie1.bget.ru/uploads/photos/uuid2.jpg"
   ],
-  "photos_before": [],
   "photos_after": [],
   "garbage_size": 2,
   "waste_types": ["plastic", "paper"],
@@ -191,10 +187,9 @@ API поддерживает два способа авторизации:
   "is_open": true,
   "created_by": "353f958d-8796-44c7-a877-3e376eca6784",
   "taken_by": null,
-  "contributors": [],
-  "contributions": {},
   "total_contributed": 0,
-  "participants": [],
+  "registered_participants": [],
+  "actual_participants": [],
   "joined_user_id": null,
   "join_date": null,
   "completion_comment": null,
@@ -1243,8 +1238,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
         "trash_pickup_only": false,
         "created_at": "2024-01-01T00:00:00.000Z",
         "updated_at": "2024-01-01T00:00:00.000Z",
-        "photos": ["url1", "url2"],
-        "photos_before": [],
+        "photos_before": ["url1", "url2"],
         "photos_after": [],
         "waste_types": ["plastic", "glass"]
       }
@@ -1273,11 +1267,8 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
     "request": {
       "id": "uuid",
       // ... все поля заявки
-      "participants": ["user_id1", "user_id2"],
-      "contributors": ["user_id1"],
-      "contributions": {
-        "user_id1": 1000
-      },
+      "registered_participants": ["user_id1", "user_id2"],
+      "actual_participants": [],
       "donations": [
         {
           "id": "uuid",
@@ -1301,16 +1292,16 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 
 **Требует аутентификации**
 
-**Поддерживает два способа отправки:**
+**Важно:** Фотографии принимаются только в виде файлов через `multipart/form-data`. URL фотографий не принимаются.
 
-1. **JSON с URL фотографий** (для обратной совместимости)
-2. **multipart/form-data с файлами** (рекомендуется)
+**Content-Type:** `multipart/form-data`
 
-**Способ 1: JSON с URL фотографий**
+**Поля формы:**
+- Все поля заявки (как в JSON ниже) отправляются как поля формы
+- `photos_before` (file[]) - массив файлов фотографий "до" уборки
+- `photos_after` (file[]) - массив файлов фотографий "после" уборки
 
-**Content-Type:** `application/json`
-
-**Тело запроса:**
+**Тело запроса (JSON поля):**
 ```json
 {
   "category": "wasteLocation",
@@ -1328,10 +1319,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "end_date": null,
   "status": "new",
   "priority": "medium",
-  "waste_types": ["plastic", "glass"],
-  "photos": ["https://example.com/photo1.jpg", "https://example.com/photo2.jpg"],
-  "photos_before": [],
-  "photos_after": [],
+  "waste_types": ["plastic", "glass"]
   "target_amount": null,
   "plant_tree": false,
   "trash_pickup_only": false
@@ -1351,8 +1339,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "reward_amount": 50,
   "start_date": "2024-02-01T10:00:00.000Z",
   "end_date": "2024-02-01T10:25:00.000Z",
-  "photos_before": ["url1"],
-  "photos_after": ["url2"],
+  // photos_before и photos_after отправляются как файлы через multipart/form-data
   "waste_types": ["plastic"]
 }
 ```
@@ -1373,14 +1360,16 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
   "city": "Москва",
   "start_date": "2024-02-01T10:00:00.000Z",
   "end_date": "2024-02-01T18:00:00.000Z",
-  "plant_tree": true,
-  "photos": ["url1", "url2"]
+  "plant_tree": true
+  // photos_before и photos_after отправляются как файлы через multipart/form-data
 }
 ```
 
-**Способ 2: multipart/form-data с файлами (рекомендуется)**
-
-**Content-Type:** `multipart/form-data`
+**Важно для Event:**
+- При создании события статус автоматически устанавливается в `inProgress`
+- Создатель события автоматически добавляется в `registered_participants`
+- Другие пользователи могут присоединиться к событию через `POST /api/requests/:id/participate`
+- При закрытии события заказчик указывает реальных участников в `actual_participants`
 
 **Поля формы:**
 - `category` (string, обязательное) - категория заявки
@@ -1402,14 +1391,18 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 - `target_amount` (integer, опционально) - целевая сумма
 - `plant_tree` (boolean, опционально) - посадить дерево
 - `trash_pickup_only` (boolean, опционально) - только сбор мусора
-- `photos` (file[], опционально) - массив файлов для основных фото
-- `photos_before` (file[], опционально) - массив файлов для фото "до"
-- `photos_after` (file[], опционально) - массив файлов для фото "после"
+- `photos_before` (file[], опционально) - массив файлов для фото "до" уборки
+- `photos_after` (file[], опционально) - массив файлов для фото "после" уборки
+
+**Важно:**
+- Фотографии принимаются **только в виде файлов** через `multipart/form-data`
+- URL фотографий **не принимаются**
+- Фотографии сохраняются на сервере, и в ответе возвращаются их URL
 
 **Ограничения:**
 - Максимальный размер файла: 10MB
 - Разрешенные форматы: JPEG, PNG, GIF, WebP
-- Максимум 10 файлов в каждом поле (photos, photos_before, photos_after)
+- Максимум 10 файлов в каждом поле (photos_before, photos_after)
 
 **Пример для Flutter (multipart/form-data):**
 
@@ -1422,7 +1415,6 @@ Future<void> createRequestWithPhotos({
   required String token,
   required String name,
   required String category,
-  required List<File> photos,
   List<File>? photos_before,
   List<File>? photos_after,
 }) async {
@@ -1439,19 +1431,6 @@ Future<void> createRequestWithPhotos({
   request.fields['city'] = 'Москва';
   request.fields['latitude'] = '55.7558';
   request.fields['longitude'] = '37.6173';
-  
-  // Файлы - основные фото
-  for (var photo in photos) {
-    final fileStream = http.ByteStream(photo.openRead());
-    final length = await photo.length();
-    final multipartFile = http.MultipartFile(
-      'photos',
-      fileStream,
-      length,
-      filename: path.basename(photo.path),
-    );
-    request.files.add(multipartFile);
-  }
   
   // Файлы - фото "до"
   if (photos_before != null) {
@@ -1594,15 +1573,17 @@ Future<void> createRequestWithPhotos({
      - Заявка **НЕ переводится** в статус `completed` автоматически, остается в `approved`
    - **Через 24 часа после одобрения (updated_at):**
      - Заявка автоматически переводится в статус `completed` (через cron job)
-     - Начисляется по 1 коину **всем донатерам** (если они есть)
+     - Начисляется по 1 коину **всем донатерам** (из таблицы `donations`, если они есть)
      - Отправляется push-уведомление донатерам
-     - Донатеры из таблицы `request_contributors` автоматически переносятся в таблицу `donations`
+     - Все донаты (за вычетом комиссии) переводятся исполнителю
    - При отклонении (`rejected`):
      - Возвращаются деньги донатерам (если были)
      - Отправляются push-уведомления с причиной отклонения
 
 3. **Для заявок типа `event`:**
-   - При создании: статус автоматически `inProgress`, создатель автоматически добавляется в участники
+   - При создании: статус автоматически `inProgress`, создатель автоматически добавляется в `registered_participants`
+   - Другие пользователи могут присоединиться через `POST /api/requests/:id/participate` (добавляются в `registered_participants`)
+   - Автоматические push-уведомления отправляются всем из `registered_participants` (24ч, 2ч до события, начало события)
    - При закрытии события (`PUT /api/requests/:id/close-event`): статус меняется на `pending`
    - При одобрении (`approved`):
      - Начисляется по 1 коину: заказчику, **реальным участникам** (из `actual_participants`), всем донатерам
@@ -1688,7 +1669,7 @@ Future<void> createRequestWithPhotos({
 **Требует аутентификации**
 
 **Описание:**
-Присоединение к событию типа `event`. Пользователь добавляется в список участников (`participants`).
+Присоединение к событию типа `event`. Пользователь автоматически добавляется в список зарегистрированных участников (`registered_participants`). Создатель события автоматически добавляется в участники при создании события.
 
 **Ответ (200):**
 ```json
@@ -1722,22 +1703,20 @@ Future<void> createRequestWithPhotos({
 - Событие можно закрыть только после времени начала (`start_date`)
 - До времени начала события кнопка "Завершить" должна быть неактивна
 
-**Поддерживает два способа отправки:**
+**Важно:** Фотографии принимаются только в виде файлов через `multipart/form-data`. URL фотографий не принимаются.
 
-1. **JSON с URL фотографий**
-2. **multipart/form-data с файлами** (рекомендуется)
+**Content-Type:** `multipart/form-data`
 
-**Тело запроса (JSON):**
+**Поля формы:**
+- `actual_participants` (string, JSON массив) - массив ID реальных участников события (тех, кто реально пришел на событие)
+- `photos_after` (file[]) - массив файлов фотографий после уборки
+
+**Пример JSON для actual_participants:**
 ```json
 {
-  "actual_participants": ["user_id_1", "user_id_2", "user_id_3"],
-  "photos_after": ["https://example.com/photo1.jpg", "https://example.com/photo2.jpg"]
+  "actual_participants": ["user_id_1", "user_id_2", "user_id_3"]
 }
 ```
-
-**Поля формы (multipart/form-data):**
-- `actual_participants` (string, JSON массив) - массив ID реальных участников события
-- `photos_after` (file[] или string[]) - массив файлов или URL фотографий после уборки
 
 **Ответ (200):**
 ```json
@@ -1841,6 +1820,9 @@ Future<void> createRequestWithPhotos({
 
 **GET** `/participants?requestId=uuid`
 
+**Описание:**
+Получение списка участников события (только для `event`). Возвращает реальных участников из `actual_participants` (если событие уже закрыто) или зарегистрированных участников из `registered_participants`.
+
 **Ответ (200):**
 ```json
 {
@@ -1849,9 +1831,6 @@ Future<void> createRequestWithPhotos({
     "participants": [
       {
         "id": "uuid",
-        "request_id": "uuid",
-        "user_id": "uuid",
-        "created_at": "2024-01-01T00:00:00.000Z",
         "display_name": "Имя пользователя",
         "photo_url": "url",
         "email": "user@example.com"
@@ -1874,11 +1853,8 @@ Future<void> createRequestWithPhotos({
   "data": {
     "contributors": [
       {
-        "id": "uuid",
-        "request_id": "uuid",
         "user_id": "uuid",
         "amount": 1000,
-        "created_at": "2024-01-01T00:00:00.000Z",
         "display_name": "Имя пользователя",
         "photo_url": "url",
         "email": "user@example.com"
@@ -2496,6 +2472,36 @@ Body: Мария Сидорова joined your event "Экологический 
 Title: Someone donated to your request
 Body: Алексей Смирнов donated $25.00 to your request "Уборка парка"
 ```
+
+#### 5. При отправке заявки на модерацию
+
+Когда заявка переходит в статус `pending` (отправляется на рассмотрение), все модераторы (администраторы) получают push-уведомление.
+
+**Триггер:** `PUT /api/requests/:id` (изменение статуса на `pending`)
+
+**Получатели:** Все администраторы (пользователи с `admin = TRUE` и валидным FCM токеном)
+
+**Формат уведомления:**
+- **Заголовок:** `New Request for Moderation`
+- **Текст:** `{Категория}: "{Название заявки}"\nCreated by: {Имя создателя}`
+- **Deeplink:** Переход на страницу заявки в админ-панели
+
+**Пример:**
+```
+Title: New Request for Moderation
+Body: Waste Location: "Уборка парка"
+Created by: Иван Иванов
+```
+
+**Deeplink формат:**
+```
+https://garbagedev-9c240.web.app/admin/requests/{requestId}
+```
+
+**Важно:**
+- Уведомление отправляется только при переходе из другого статуса в `pending` (не при создании заявки со статусом `pending`)
+- Deeplink ведет на страницу заявки в админ-панели, где модератор может одобрить или отклонить заявку
+- Если у администратора нет FCM токена, уведомление не отправляется
 
 ### Ручная отправка уведомлений (только для админов)
 

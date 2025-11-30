@@ -17,14 +17,34 @@ router.get('/', async (req, res) => {
       return error(res, 'ID заявки обязателен', 400);
     }
 
-    const [participants] = await pool.execute(
-      `SELECT rp.*, u.display_name, u.photo_url, u.email
-      FROM request_participants rp
-      LEFT JOIN users u ON rp.user_id = u.id
-      WHERE rp.request_id = ?
-      ORDER BY rp.created_at DESC`,
+    // Участники event теперь хранятся в actual_participants (JSON поле в requests)
+    // Получаем actual_participants из заявки
+    const [requests] = await pool.execute(
+      'SELECT actual_participants FROM requests WHERE id = ?',
       [requestId]
     );
+
+    let participants = [];
+    if (requests.length > 0 && requests[0].actual_participants) {
+      try {
+        const participantIds = typeof requests[0].actual_participants === 'string' 
+          ? JSON.parse(requests[0].actual_participants) 
+          : requests[0].actual_participants;
+        
+        if (Array.isArray(participantIds) && participantIds.length > 0) {
+          const placeholders = participantIds.map(() => '?').join(',');
+          const [users] = await pool.execute(
+            `SELECT id, display_name, photo_url, email
+            FROM users
+            WHERE id IN (${placeholders})`,
+            participantIds
+          );
+          participants = users;
+        }
+      } catch (e) {
+        console.error('Ошибка парсинга actual_participants:', e);
+      }
+    }
 
     success(res, { participants });
   } catch (err) {
@@ -45,12 +65,14 @@ router.get('/contributors', async (req, res) => {
       return error(res, 'ID заявки обязателен', 400);
     }
 
+    // Вкладчики теперь хранятся только в таблице donations
     const [contributors] = await pool.execute(
-      `SELECT rc.*, u.display_name, u.photo_url, u.email
-      FROM request_contributors rc
-      LEFT JOIN users u ON rc.user_id = u.id
-      WHERE rc.request_id = ?
-      ORDER BY rc.amount DESC, rc.created_at DESC`,
+      `SELECT d.user_id, SUM(d.amount) as amount, u.display_name, u.photo_url, u.email
+      FROM donations d
+      LEFT JOIN users u ON d.user_id = u.id
+      WHERE d.request_id = ?
+      GROUP BY d.user_id
+      ORDER BY amount DESC`,
       [requestId]
     );
 
