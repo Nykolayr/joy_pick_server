@@ -361,6 +361,15 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     }
 
+    // Логируем входящие данные для отладки
+    console.log('📥 Данные запроса на создание заявки:', {
+      category: bodyData.category,
+      name: bodyData.name,
+      hasFiles: !!req.files,
+      filesCount: req.files ? Object.keys(req.files).length : 0,
+      bodyKeys: Object.keys(bodyData)
+    });
+
     const {
       category,
       name,
@@ -382,6 +391,21 @@ router.post('/', authenticate, uploadRequestPhotos, [
       plant_tree = false,
       trash_pickup_only = false
     } = bodyData;
+
+    // Обработка waste_types - может быть массивом или строкой
+    let processedWasteTypes = [];
+    if (waste_types) {
+      if (Array.isArray(waste_types)) {
+        processedWasteTypes = waste_types;
+      } else if (typeof waste_types === 'string') {
+        try {
+          processedWasteTypes = JSON.parse(waste_types);
+        } catch (e) {
+          // Если не JSON, разбиваем по запятой
+          processedWasteTypes = waste_types.split(',').map(t => t.trim()).filter(t => t);
+        }
+      }
+    }
 
     // Используем только загруженные файлы (URL не принимаем)
     const finalPhotosBefore = uploadedPhotosBefore;
@@ -438,7 +462,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         trash_pickup_only,
         finalPhotosBefore.length > 0 ? JSON.stringify(finalPhotosBefore) : null,
         finalPhotosAfter.length > 0 ? JSON.stringify(finalPhotosAfter) : null,
-        waste_types && Array.isArray(waste_types) && waste_types.length > 0 ? JSON.stringify(waste_types) : null,
+        processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
         registeredParticipants
       ]
     );
@@ -517,7 +541,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         created_by: userId,
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
-        photos: finalPhotos,
+        photos: [...finalPhotosBefore, ...finalPhotosAfter], // Объединяем все фото
       }).catch(err => {
         console.error('❌ Ошибка отправки push-уведомлений при создании заявки:', err);
         // Не прерываем выполнение, просто логируем ошибку
@@ -526,17 +550,19 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     success(res, { request }, 'Заявка создана', 201);
   } catch (err) {
-    console.error('Ошибка создания заявки:', err);
-    // Передаем ошибку дальше для детальной обработки
-    next(err);
+    console.error('❌ Ошибка создания заявки:', err);
+    console.error('❌ Stack trace:', err.stack);
+    // Возвращаем детальную ошибку клиенту
+    error(res, 'Ошибка при создании заявки', 500, err);
   }
 });
 
 /**
  * PUT /api/requests/:id
  * Обновление заявки
+ * Поддерживает multipart/form-data с файлами
  */
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
@@ -578,6 +604,48 @@ router.put('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
+    // Парсим данные из multipart/form-data
+    // В form-data все значения приходят как строки, нужно их правильно обработать
+    let bodyData = req.body;
+    
+    // Обработка waste_types - может быть массивом в form-data (waste_types[])
+    let wasteTypesArray = [];
+    if (bodyData['waste_types[]']) {
+      // Если пришел массив из form-data
+      if (Array.isArray(bodyData['waste_types[]'])) {
+        wasteTypesArray = bodyData['waste_types[]'];
+      } else {
+        wasteTypesArray = [bodyData['waste_types[]']];
+      }
+    } else if (bodyData.waste_types) {
+      // Если пришел как обычное поле
+      if (Array.isArray(bodyData.waste_types)) {
+        wasteTypesArray = bodyData.waste_types;
+      } else if (typeof bodyData.waste_types === 'string') {
+        try {
+          wasteTypesArray = JSON.parse(bodyData.waste_types);
+        } catch (e) {
+          wasteTypesArray = bodyData.waste_types.split(',').map(t => t.trim()).filter(t => t);
+        }
+      }
+    }
+
+    // Преобразуем строковые значения в нужные типы
+    const parseValue = (value, type) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      if (type === 'boolean') {
+        if (typeof value === 'string') {
+          return value === 'true' || value === '1';
+        }
+        return Boolean(value);
+      }
+      if (type === 'number') {
+        const num = parseFloat(value);
+        return isNaN(num) ? undefined : num;
+      }
+      return value;
+    };
+
     const {
       name,
       description,
@@ -598,54 +666,68 @@ router.put('/:id', authenticate, async (req, res) => {
       plant_tree,
       trash_pickup_only,
       completion_comment,
-      waste_types,
       rejection_reason,
       rejection_message,
       actual_participants
-    } = req.body;
+    } = bodyData;
+
+    // Используем обработанный массив waste_types
+    const waste_types = wasteTypesArray.length > 0 ? wasteTypesArray : undefined;
+
+    // Логируем входящие данные для отладки
+    console.log('📥 Данные запроса на обновление заявки:', {
+      id,
+      hasFiles: !!req.files,
+      filesCount: req.files ? Object.keys(req.files).length : 0,
+      bodyKeys: Object.keys(bodyData),
+      status: bodyData.status,
+      waste_types: waste_types,
+      uploadedPhotosBefore: uploadedPhotosBefore.length,
+      uploadedPhotosAfter: uploadedPhotosAfter.length
+    });
 
     const updates = [];
     const params = [];
 
-    if (name !== undefined) {
+    if (name !== undefined && name !== null && name !== '') {
       updates.push('name = ?');
       params.push(name);
     }
-    if (description !== undefined) {
+    if (description !== undefined && description !== null && description !== '') {
       updates.push('description = ?');
       params.push(description);
     }
-    if (latitude !== undefined) {
+    if (latitude !== undefined && latitude !== null && latitude !== '') {
       updates.push('latitude = ?');
-      params.push(latitude);
+      params.push(parseValue(latitude, 'number'));
     }
-    if (longitude !== undefined) {
+    if (longitude !== undefined && longitude !== null && longitude !== '') {
       updates.push('longitude = ?');
-      params.push(longitude);
+      params.push(parseValue(longitude, 'number'));
     }
-    if (city !== undefined) {
+    if (city !== undefined && city !== null && city !== '') {
       updates.push('city = ?');
       params.push(city);
     }
-    if (garbage_size !== undefined) {
+    if (garbage_size !== undefined && garbage_size !== null && garbage_size !== '') {
       updates.push('garbage_size = ?');
-      params.push(garbage_size);
+      params.push(parseValue(garbage_size, 'number'));
     }
-    if (only_foot !== undefined) {
+    if (only_foot !== undefined && only_foot !== null && only_foot !== '') {
       updates.push('only_foot = ?');
-      params.push(only_foot);
+      params.push(parseValue(only_foot, 'boolean'));
     }
-    if (possible_by_car !== undefined) {
+    if (possible_by_car !== undefined && possible_by_car !== null && possible_by_car !== '') {
       updates.push('possible_by_car = ?');
-      params.push(possible_by_car);
+      params.push(parseValue(possible_by_car, 'boolean'));
     }
-    if (cost !== undefined) {
+    if (cost !== undefined && cost !== null && cost !== '') {
       updates.push('cost = ?');
-      params.push(cost);
+      params.push(parseValue(cost, 'number'));
     }
-    if (reward_amount !== undefined) {
+    if (reward_amount !== undefined && reward_amount !== null && reward_amount !== '') {
       updates.push('reward_amount = ?');
-      params.push(reward_amount);
+      params.push(parseValue(reward_amount, 'number'));
     }
     if (start_date !== undefined) {
       updates.push('start_date = ?');
@@ -665,7 +747,7 @@ router.put('/:id', authenticate, async (req, res) => {
     let statusChangedToRejected = false;
     let speedCleanupEarnedCoin = false;
 
-    if (status !== undefined) {
+    if (status !== undefined && status !== null && status !== '') {
       // Получаем текущие данные заявки перед обновлением
       const [currentRequest] = await pool.execute(
         'SELECT category, status, created_by, joined_user_id, start_date, end_date FROM requests WHERE id = ?',
@@ -709,7 +791,7 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('status = ?');
       params.push(status);
     }
-    if (priority !== undefined) {
+    if (priority !== undefined && priority !== null && priority !== '') {
       updates.push('priority = ?');
       params.push(priority);
     }
@@ -717,25 +799,25 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.push('is_open = ?');
       params.push(is_open);
     }
-    if (target_amount !== undefined) {
+    if (target_amount !== undefined && target_amount !== null && target_amount !== '') {
       updates.push('target_amount = ?');
-      params.push(target_amount);
+      params.push(parseValue(target_amount, 'number'));
     }
-    if (plant_tree !== undefined) {
+    if (plant_tree !== undefined && plant_tree !== null && plant_tree !== '') {
       updates.push('plant_tree = ?');
-      params.push(plant_tree);
+      params.push(parseValue(plant_tree, 'boolean'));
     }
-    if (trash_pickup_only !== undefined) {
+    if (trash_pickup_only !== undefined && trash_pickup_only !== null && trash_pickup_only !== '') {
       updates.push('trash_pickup_only = ?');
-      params.push(trash_pickup_only);
+      params.push(parseValue(trash_pickup_only, 'boolean'));
     }
-    if (completion_comment !== undefined) {
+    if (completion_comment !== undefined && completion_comment !== null && completion_comment !== '') {
       updates.push('completion_comment = ?');
       params.push(completion_comment);
     }
-    if (waste_types !== undefined) {
+    if (waste_types !== undefined && waste_types !== null && (Array.isArray(waste_types) ? waste_types.length > 0 : true)) {
       updates.push('waste_types = ?');
-      params.push(Array.isArray(waste_types) ? JSON.stringify(waste_types) : null);
+      params.push(Array.isArray(waste_types) && waste_types.length > 0 ? JSON.stringify(waste_types) : null);
     }
     if (rejection_reason !== undefined) {
       updates.push('rejection_reason = ?');
