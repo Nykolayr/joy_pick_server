@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
+const { normalizeDatesInObject } = require('../utils/datetime');
 const { 
   sendRequestCreatedNotification, 
   sendJoinNotification, 
@@ -180,7 +181,8 @@ router.get('/', async (req, res) => {
       result.plant_tree = Boolean(result.plant_tree);
       result.trash_pickup_only = Boolean(result.trash_pickup_only);
       
-      return result;
+      // Нормализация дат в UTC
+      return normalizeDatesInObject(result);
     });
 
     // Получение общего количества
@@ -334,7 +336,17 @@ router.get('/:id', async (req, res) => {
     request.plant_tree = Boolean(request.plant_tree);
     request.trash_pickup_only = Boolean(request.trash_pickup_only);
 
-    success(res, { request });
+    // Нормализация дат в UTC
+    const normalizedRequest = normalizeDatesInObject(request);
+    
+    // Нормализация дат в донатах
+    if (normalizedRequest.donations && Array.isArray(normalizedRequest.donations)) {
+      normalizedRequest.donations = normalizedRequest.donations.map(donation => 
+        normalizeDatesInObject(donation)
+      );
+    }
+
+    success(res, { request: normalizedRequest });
   } catch (err) {
     error(res, 'Ошибка при получении заявки', 500, err);
   }
@@ -567,6 +579,9 @@ router.post('/', authenticate, uploadRequestPhotos, [
     request.contributions = {};
     request.donations = [];
 
+    // Нормализация дат в UTC
+    const normalizedRequest = normalizeDatesInObject(request);
+
     // Отправка push-уведомлений пользователям рядом (асинхронно, не блокируем ответ)
     if (latitude && longitude) {
       sendRequestCreatedNotification({
@@ -583,7 +598,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       });
     }
 
-    success(res, { request }, 'Заявка создана', 201);
+    success(res, { request: normalizedRequest }, 'Заявка создана', 201);
   } catch (err) {
     console.error('❌ Ошибка создания заявки:', err);
     console.error('❌ Stack trace:', err.stack);
@@ -1019,7 +1034,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       request.actual_participants = [];
     }
 
-    success(res, { request }, 'Заявка обновлена');
+    // Нормализация дат в UTC
+    const normalizedRequest = normalizeDatesInObject(request);
+
+    success(res, { request: normalizedRequest }, 'Заявка обновлена');
   } catch (err) {
     console.error('Ошибка обновления заявки:', err);
     error(res, 'Ошибка при обновлении заявки', 500, err);
