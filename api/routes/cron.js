@@ -3,7 +3,19 @@ const fs = require('fs');
 const path = require('path');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
-const { runAllCronTasks } = require('../../scripts/cronTasks');
+const pool = require('../config/database');
+const { generateId } = require('../utils/uuid');
+
+// Импортируем runAllCronTasks с обработкой ошибок импорта
+let runAllCronTasks;
+try {
+  runAllCronTasks = require('../../scripts/cronTasks').runAllCronTasks;
+} catch (importError) {
+  // Если ошибка при импорте, создаем функцию-заглушку
+  runAllCronTasks = async () => {
+    throw new Error(`Ошибка импорта cronTasks: ${importError.message}`);
+  };
+}
 
 const router = express.Router();
 
@@ -77,7 +89,7 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
         : 'Cron задачи еще не запускались'
     });
   } catch (err) {
-    return error(res, 'Ошибка при проверке статуса cron', 500);
+    return error(res, 'Ошибка при проверке статуса cron', 500, err);
   }
 });
 
@@ -101,7 +113,9 @@ router.post('/run', authenticate, requireAdmin, async (req, res) => {
       const lastRunInfo = {
         lastRun: new Date().toISOString(),
         status: 'error',
-        error: err.message,
+        error: err.message || 'Unknown error',
+        errorName: err.name,
+        errorStack: err.stack,
         results: null
       };
       const logsDir = path.dirname(LAST_RUN_FILE);
@@ -113,7 +127,204 @@ router.post('/run', authenticate, requireAdmin, async (req, res) => {
       // Не удалось сохранить
     }
     
-    return error(res, 'Ошибка при запуске cron задач', 500, err);
+    // ВСЕГДА передаем полный объект ошибки с деталями
+    return error(res, `Ошибка при запуске cron задач: ${err.message || 'Неизвестная ошибка'}`, 500, err);
+  }
+});
+
+/**
+ * GET /api/cron/actions
+ * Получение ближайших действий по заявкам
+ * - 10 последних выполненных действий
+ * - 10 запланированных действий
+ * Только для админов
+ */
+router.get('/actions', authenticate, requireAdmin, async (req, res) => {
+  try {
+    // Получаем 10 последних выполненных действий
+    const [completedActions] = await pool.execute(
+      `SELECT id, action_type, request_id, request_category, action_description, 
+              status, executed_at, metadata
+       FROM cron_actions 
+       ORDER BY executed_at DESC 
+       LIMIT 10`
+    );
+
+    // Вычисляем запланированные действия на основе текущих заявок
+    const scheduledActions = [];
+
+    // 1. SpeedCleanup: завершение через 24 часа после approved
+    const [speedCleanupRequests] = await pool.execute(
+      `SELECT id, name, updated_at, category
+       FROM requests 
+       WHERE category = 'speedCleanup' 
+         AND status = 'approved' 
+         AND updated_at IS NOT NULL
+       ORDER BY updated_at ASC
+       LIMIT 10`
+    );
+
+    for (const request of speedCleanupRequests) {
+      const approvedDate = new Date(request.updated_at);
+      const scheduledTime = new Date(approvedDate.getTime() + 24 * 60 * 60 * 1000);
+      const now = new Date();
+      
+      if (scheduledTime > now) {
+        scheduledActions.push({
+          action_type: 'autoCompleteSpeedCleanup',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Автоматическое завершение заявки "${request.name}" через 24 часа после одобрения`,
+          scheduled_at: scheduledTime.toISOString(),
+          time_until: Math.round((scheduledTime - now) / (1000 * 60 * 60 * 10)) / 10 // часы с 1 знаком после запятой
+        });
+      }
+    }
+
+    // 2. WasteLocation: напоминание за 2 часа (join_date + 22 часа) и истечение через 24 часа (join_date + 24 часа)
+    const [wasteRequests] = await pool.execute(
+      `SELECT id, name, join_date, category
+       FROM requests 
+       WHERE category = 'wasteLocation' 
+         AND status = 'inProgress' 
+         AND joined_user_id IS NOT NULL
+         AND join_date IS NOT NULL
+       ORDER BY join_date ASC
+       LIMIT 20`
+    );
+
+    for (const request of wasteRequests) {
+      const joinDate = new Date(request.join_date);
+      const reminderTime = new Date(joinDate.getTime() + 22 * 60 * 60 * 1000);
+      const expiryTime = new Date(joinDate.getTime() + 24 * 60 * 60 * 1000);
+      const now = new Date();
+
+      // Напоминание за 2 часа
+      if (reminderTime > now && reminderTime <= new Date(now.getTime() + 25 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'checkWasteReminders',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Напоминание исполнителю заявки "${request.name}" за 2 часа до окончания срока`,
+          scheduled_at: reminderTime.toISOString(),
+          time_until: Math.round((reminderTime - now) / (1000 * 60 * 60 * 10)) / 10
+        });
+      }
+
+      // Истечение через 24 часа
+      if (expiryTime > now && expiryTime <= new Date(now.getTime() + 25 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'checkExpiredWasteJoins',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Проверка истечения срока для заявки "${request.name}" (24 часа после присоединения)`,
+          scheduled_at: expiryTime.toISOString(),
+          time_until: Math.round((expiryTime - now) / (1000 * 60 * 60 * 10)) / 10
+        });
+      }
+    }
+
+    // 3. Event: уведомления за 24 часа, 2 часа, начало события
+    const [eventRequests] = await pool.execute(
+      `SELECT id, name, start_date, category
+       FROM requests 
+       WHERE category = 'event' 
+         AND status = 'inProgress' 
+         AND start_date IS NOT NULL
+       ORDER BY start_date ASC
+       LIMIT 30`
+    );
+
+    for (const request of eventRequests) {
+      const startDate = new Date(request.start_date);
+      const now = new Date();
+      const diffHours = (startDate - now) / (1000 * 60 * 60);
+
+      // Уведомление за 24 часа
+      const notification24h = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+      if (notification24h > now && notification24h <= new Date(now.getTime() + 25 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'checkEventTimes',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Уведомление участникам события "${request.name}" за 24 часа до начала`,
+          scheduled_at: notification24h.toISOString(),
+          time_until: Math.round((notification24h - now) / (1000 * 60 * 60 * 10)) / 10
+        });
+      }
+
+      // Уведомление за 2 часа
+      const notification2h = new Date(startDate.getTime() - 2 * 60 * 60 * 1000);
+      if (notification2h > now && notification2h <= new Date(now.getTime() + 3 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'checkEventTimes',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Уведомление участникам события "${request.name}" за 2 часа до начала`,
+          scheduled_at: notification2h.toISOString(),
+          time_until: Math.round((notification2h - now) / (1000 * 60 * 60 * 10)) / 10
+        });
+      }
+
+      // Начало события
+      if (startDate > now && startDate <= new Date(now.getTime() + 1 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'checkEventTimes',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Начало события "${request.name}"`,
+          scheduled_at: startDate.toISOString(),
+          time_until: Math.round((startDate - now) / (1000 * 60) / 10) / 10 // минуты
+        });
+      }
+    }
+
+    // 4. New заявки: удаление через 7 дней
+    const [newRequests] = await pool.execute(
+      `SELECT id, name, created_at, category
+       FROM requests 
+       WHERE status = 'new' 
+         AND created_at IS NOT NULL
+       ORDER BY created_at ASC
+       LIMIT 10`
+    );
+
+    for (const request of newRequests) {
+      const createdDate = new Date(request.created_at);
+      const deleteTime = new Date(createdDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const now = new Date();
+
+      if (deleteTime > now && deleteTime <= new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)) {
+        scheduledActions.push({
+          action_type: 'deleteInactiveRequests',
+          request_id: request.id,
+          request_category: request.category,
+          request_name: request.name,
+          action_description: `Удаление неактивной заявки "${request.name}" (7 дней без присоединения)`,
+          scheduled_at: deleteTime.toISOString(),
+          time_until: Math.round((deleteTime - now) / (1000 * 60 * 60 * 24 * 10)) / 10 // дни
+        });
+      }
+    }
+
+    // Сортируем запланированные действия по времени выполнения и берем первые 10
+    scheduledActions.sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+    const topScheduled = scheduledActions.slice(0, 10);
+
+    return success(res, {
+      completed: completedActions,
+      scheduled: topScheduled,
+      total_completed: completedActions.length,
+      total_scheduled: topScheduled.length
+    });
+  } catch (err) {
+    return error(res, 'Ошибка при получении действий cron', 500, err);
   }
 });
 

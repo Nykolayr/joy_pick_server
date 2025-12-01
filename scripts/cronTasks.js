@@ -26,6 +26,30 @@ const { generateId } = require('../api/utils/uuid');
 const LAST_RUN_FILE = path.join(__dirname, '..', 'logs', 'cron_last_run.json');
 
 /**
+ * Запись выполненного действия в таблицу cron_actions
+ */
+async function logCronAction(actionType, requestId, requestCategory, actionDescription, status = 'completed', metadata = null) {
+  try {
+    const actionId = generateId();
+    await pool.execute(
+      `INSERT INTO cron_actions (id, action_type, request_id, request_category, action_description, status, metadata, executed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        actionId,
+        actionType,
+        requestId,
+        requestCategory,
+        actionDescription,
+        status,
+        metadata ? JSON.stringify(metadata) : null
+      ]
+    );
+  } catch (err) {
+    // Игнорируем ошибки записи в лог, чтобы не прерывать выполнение cron
+  }
+}
+
+/**
  * Автоматический перевод speedCleanup заявок в completed через 24 часа после end_date
  * Начисление коинов и отправка push-уведомлений донатерам
  */
@@ -100,10 +124,32 @@ async function autoCompleteSpeedCleanup() {
           }
         }
 
+        // Записываем действие для каждой обработанной заявки
+        await logCronAction(
+          'autoCompleteSpeedCleanup',
+          requestId,
+          'speedCleanup',
+          `Автоматическое завершение заявки ${requestId} через 24 часа после одобрения`,
+          'completed',
+          { donorCount: donorUserIds.length, coinsAwarded: coinsToAward }
+        );
+
         processed++;
       } catch (requestError) {
         errors++;
       }
+    }
+
+    // Записываем общее действие для всей задачи
+    if (requests.length > 0) {
+      await logCronAction(
+        'autoCompleteSpeedCleanup',
+        null,
+        'speedCleanup',
+        `Обработано ${processed} из ${requests.length} заявок speedCleanup`,
+        errors > 0 ? 'completed' : 'completed',
+        { processed, errors, total: requests.length }
+      );
     }
 
     return { processed, errors, total: requests.length };
@@ -119,6 +165,7 @@ async function autoCompleteSpeedCleanup() {
 async function checkWasteReminders() {
   try {
     // Находим все waste заявки со статусом inProgress, где join_date + 22 часа = текущее время (с точностью до минуты)
+    // 22 часа = 1320 минут, добавляем 1 минуту = 1321 минута
     const [requests] = await pool.execute(
       `SELECT id, join_date, joined_user_id 
        FROM requests 
@@ -126,8 +173,8 @@ async function checkWasteReminders() {
          AND status = 'inProgress' 
          AND joined_user_id IS NOT NULL
          AND join_date IS NOT NULL
-         AND join_date <= DATE_SUB(NOW(), INTERVAL 22 HOUR)
-         AND join_date > DATE_SUB(NOW(), INTERVAL 22 HOUR 1 MINUTE)`
+         AND join_date <= DATE_SUB(NOW(), INTERVAL 1320 MINUTE)
+         AND join_date > DATE_SUB(NOW(), INTERVAL 1321 MINUTE)`
     );
 
     if (requests.length === 0) {
@@ -143,6 +190,16 @@ async function checkWasteReminders() {
           userIds: [request.joined_user_id],
           requestId: request.id,
         });
+        
+        // Записываем действие
+        await logCronAction(
+          'checkWasteReminders',
+          request.id,
+          'wasteLocation',
+          `Напоминание исполнителю заявки ${request.id} за 2 часа до окончания срока`,
+          'completed'
+        );
+        
         processed++;
       } catch (error) {
         errors++;
@@ -199,6 +256,15 @@ async function checkExpiredWasteJoins() {
         await pool.execute(
           'UPDATE requests SET status = ?, joined_user_id = NULL, join_date = NULL, updated_at = NOW() WHERE id = ?',
           ['new', request.id]
+        );
+
+        // Записываем действие
+        await logCronAction(
+          'checkExpiredWasteJoins',
+          request.id,
+          'wasteLocation',
+          `Истек срок для заявки ${request.id} (24 часа после присоединения), статус изменен на new`,
+          'completed'
         );
 
         processed++;
@@ -265,6 +331,17 @@ async function deleteInactiveRequests() {
 
         // Удаляем заявку
         await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+        
+        // Записываем действие
+        await logCronAction(
+          'deleteInactiveRequests',
+          request.id,
+          request.category || 'unknown',
+          `Удаление неактивной заявки ${request.id} (7 дней без присоединения)`,
+          'completed',
+          { donorCount: donations.length }
+        );
+        
         processed++;
       } catch (error) {
         errors++;
@@ -334,6 +411,9 @@ async function checkEventTimes() {
         }
 
         // Проверяем время до события
+        let actionDescription = '';
+        let messageType = '';
+        
         if (diffHours >= 23.5 && diffHours <= 24.5) {
           // За 24 часа
           if (participantUserIds.length > 0) {
@@ -342,6 +422,8 @@ async function checkEventTimes() {
               requestId: request.id,
               messageType: '24hours',
             });
+            actionDescription = `Уведомление участникам события ${request.id} за 24 часа до начала`;
+            messageType = '24hours';
           }
         } else if (diffHours >= 1.5 && diffHours <= 2.5) {
           // За 2 часа
@@ -351,6 +433,8 @@ async function checkEventTimes() {
               requestId: request.id,
               messageType: '2hours',
             });
+            actionDescription = `Уведомление участникам события ${request.id} за 2 часа до начала`;
+            messageType = '2hours';
           }
         } else if (diffMinutes >= -5 && diffMinutes <= 5) {
           // Событие началось
@@ -359,6 +443,20 @@ async function checkEventTimes() {
             requestId: request.id,
             messageType: 'start',
           });
+          actionDescription = `Начало события ${request.id}`;
+          messageType = 'start';
+        }
+
+        // Записываем действие, если было отправлено уведомление
+        if (actionDescription) {
+          await logCronAction(
+            'checkEventTimes',
+            request.id,
+            'event',
+            actionDescription,
+            'completed',
+            { messageType, participantCount: participantUserIds.length }
+          );
         }
 
         processed++;

@@ -37,11 +37,7 @@ app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Логирование запросов
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
+// Логирование запросов убрано - все ошибки возвращаются в API ответе
 
 // API маршруты
 app.use('/auth', authRoutes);
@@ -62,47 +58,41 @@ app.use((err, req, res, next) => {
     return next(err);
   }
 
-  // Всегда возвращаем JSON для API
-  // Показываем детали ошибки всегда (для отладки), но можно ограничить через NODE_ENV
-  const isDev = process.env.NODE_ENV !== 'production';
-  const showDetails = isDev || process.env.SHOW_ERROR_DETAILS === 'true';
-  
+  // ВСЕГДА возвращаем детальную информацию об ошибке в API ответе
   const errorResponse = {
     success: false,
-    message: showDetails ? err.message : 'Внутренняя ошибка сервера',
+    message: err.message || 'Внутренняя ошибка сервера',
     timestamp: new Date().toISOString(),
     path: req.path,
-    method: req.method
-  };
-
-  if (showDetails) {
-    errorResponse.error = err.message;
-    errorResponse.errorName = err.name;
-    errorResponse.stack = err.stack;
-    errorResponse.errorDetails = {
-      code: err.code,
+    method: req.method,
+    error: err.message,
+    errorName: err.name,
+    errorDetails: {
+      message: err.message,
       name: err.name,
+      code: err.code,
       sql: err.sql,
       sqlMessage: err.sqlMessage,
       errno: err.errno,
       sqlState: err.sqlState
-    };
-    
-    // Для ошибок базы данных добавляем больше информации
-    if (err.sqlMessage) {
-      errorResponse.sqlMessage = err.sqlMessage;
     }
-    if (err.sql) {
-      errorResponse.sql = err.sql;
-    }
+  };
+  
+  // Для ошибок базы данных добавляем больше информации
+  if (err.sqlMessage) {
+    errorResponse.sqlMessage = err.sqlMessage;
   }
-
-  console.error('❌ API Error:', {
-    path: req.path,
-    method: req.method,
-    error: err.message,
-    stack: err.stack
-  });
+  if (err.sql) {
+    errorResponse.sql = err.sql;
+  }
+  if (err.code) {
+    errorResponse.errorCode = err.code;
+  }
+  
+  // Stack trace всегда в ответе (для диагностики)
+  if (err.stack) {
+    errorResponse.stack = err.stack;
+  }
 
   res.status(err.status || 500).json(errorResponse);
 });
