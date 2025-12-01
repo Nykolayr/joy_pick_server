@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendNotificationToUsers } = require('../services/pushNotification');
+const { normalizeDatesInObject } = require('../utils/datetime');
 
 const router = express.Router();
 
@@ -125,7 +126,7 @@ router.get('/', authenticate, async (req, res) => {
 
     const [notifications] = await pool.execute(query, params);
 
-    // Обработка JSON поля data
+    // Обработка JSON поля data и нормализация дат
     const processedNotifications = notifications.map(notification => {
       const result = Object.assign({}, notification);
       if (notification.data) {
@@ -140,7 +141,8 @@ router.get('/', authenticate, async (req, res) => {
         result.data = {};
       }
       result.read = Boolean(notification.read);
-      return result;
+      // Нормализация дат в UTC
+      return normalizeDatesInObject(result, ['created_at', 'updated_at']);
     });
 
     // Получение общего количества

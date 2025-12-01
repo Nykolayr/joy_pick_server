@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { sendDonationNotification } = require('../services/pushNotification');
+const { normalizeDatesInObject } = require('../utils/datetime');
 
 const router = express.Router();
 
@@ -62,8 +63,11 @@ router.get('/', authenticate, async (req, res) => {
     const [countResult] = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
+    // Нормализация дат в UTC
+    const normalizedDonations = donations.map(donation => normalizeDatesInObject(donation));
+
     success(res, {
-      donations,
+      donations: normalizedDonations,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -99,7 +103,10 @@ router.get('/:id', authenticate, async (req, res) => {
       return error(res, 'Донат не найден', 404);
     }
 
-    success(res, { donation: donations[0] });
+    // Нормализация дат в UTC
+    const normalizedDonation = normalizeDatesInObject(donations[0]);
+
+    success(res, { donation: normalizedDonation });
   } catch (err) {
     console.error('Ошибка получения доната:', err);
     error(res, 'Ошибка при получении доната', 500);
@@ -177,7 +184,10 @@ router.post('/', authenticate, [
       [donationId]
     );
 
-    success(res, { donation: donations[0] }, 'Донат создан', 201);
+    // Нормализация дат в UTC
+    const normalizedDonation = normalizeDatesInObject(donations[0]);
+
+    success(res, { donation: normalizedDonation }, 'Донат создан', 201);
   } catch (err) {
     console.error('Ошибка создания доната:', err);
     error(res, 'Ошибка при создании доната', 500);
