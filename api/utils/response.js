@@ -20,9 +20,10 @@ function error(res, message = 'Произошла ошибка', statusCode = 40
   };
   
   // Если errors - это объект Error, извлекаем детали
+  // ВСЕГДА возвращаем все детали ошибки в ответе API
   if (errors instanceof Error) {
-    response.error = errors.message;
-    response.errorName = errors.name;
+    response.error = errors.message || 'Unknown error';
+    response.errorName = errors.name || 'Error';
     
     // Детали ошибки базы данных
     if (errors.code) {
@@ -34,20 +35,28 @@ function error(res, message = 'Произошла ошибка', statusCode = 40
     if (errors.sql) {
       response.sql = errors.sql;
     }
+    if (errors.errno) {
+      response.errno = errors.errno;
+    }
+    if (errors.sqlState) {
+      response.sqlState = errors.sqlState;
+    }
     
-    // В режиме разработки добавляем stack trace
-    const isDev = process.env.NODE_ENV !== 'production';
-    if (isDev) {
+    // ВСЕГДА добавляем stack trace (для диагностики)
+    if (errors.stack) {
       response.stack = errors.stack;
     }
     
-    // Формируем errorDetails
+    // Формируем errorDetails со всеми деталями
     response.errorDetails = {
-      message: errors.message,
-      name: errors.name,
+      message: errors.message || 'Unknown error',
+      name: errors.name || 'Error',
       code: errors.code,
       sqlMessage: errors.sqlMessage,
-      sql: errors.sql
+      sql: errors.sql,
+      errno: errors.errno,
+      sqlState: errors.sqlState,
+      stack: errors.stack
     };
   } else if (errors) {
     // Если errors - это массив (валидация), добавляем как есть

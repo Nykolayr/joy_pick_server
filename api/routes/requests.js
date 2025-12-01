@@ -265,9 +265,31 @@ router.get('/:id', async (req, res) => {
     request.donations = donations;
 
     // Обработка данных
-    request.photos = request.photos ? request.photos.split(',') : [];
-    request.photos_before = request.photos_before ? request.photos_before.split(',') : [];
-    request.photos_after = request.photos_after ? request.photos_after.split(',') : [];
+    // photos_before и photos_after теперь JSON массивы, а не строки
+    if (request.photos_before) {
+      try {
+        request.photos_before = typeof request.photos_before === 'string' 
+          ? JSON.parse(request.photos_before) 
+          : request.photos_before;
+      } catch (e) {
+        request.photos_before = [];
+      }
+    } else {
+      request.photos_before = [];
+    }
+    
+    if (request.photos_after) {
+      try {
+        request.photos_after = typeof request.photos_after === 'string' 
+          ? JSON.parse(request.photos_after) 
+          : request.photos_after;
+      } catch (e) {
+        request.photos_after = [];
+      }
+    } else {
+      request.photos_after = [];
+    }
+    
     // Обработка waste_types из JSON поля
     if (request.waste_types) {
       try {
@@ -292,6 +314,20 @@ router.get('/:id', async (req, res) => {
     } else {
       request.actual_participants = [];
     }
+    
+    // Обработка registered_participants из JSON поля (для event)
+    if (request.registered_participants) {
+      try {
+        request.registered_participants = typeof request.registered_participants === 'string' 
+          ? JSON.parse(request.registered_participants) 
+          : request.registered_participants;
+      } catch (e) {
+        request.registered_participants = [];
+      }
+    } else {
+      request.registered_participants = [];
+    }
+    
     request.only_foot = Boolean(request.only_foot);
     request.possible_by_car = Boolean(request.possible_by_car);
     request.is_open = Boolean(request.is_open);
@@ -300,7 +336,6 @@ router.get('/:id', async (req, res) => {
 
     success(res, { request });
   } catch (err) {
-    console.error('Ошибка получения заявки:', err);
     error(res, 'Ошибка при получении заявки', 500, err);
   }
 });

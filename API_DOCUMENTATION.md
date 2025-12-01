@@ -3236,21 +3236,185 @@ Cron задачи выполняются автоматически через `
 }
 ```
 
-**Примечание:** Задачи запускаются асинхронно в фоновом режиме. Для проверки результатов используйте `/api/cron/status`.
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Cron задачи выполнены",
+    "results": {
+      "autoCompleteSpeedCleanup": {
+        "processed": 2,
+        "errors": 0,
+        "total": 2
+      },
+      "checkWasteReminders": {
+        "processed": 1,
+        "errors": 0,
+        "total": 1
+      },
+      "checkExpiredWasteJoins": {
+        "processed": 0,
+        "errors": 0,
+        "total": 0
+      },
+      "checkEventTimes": {
+        "processed": 3,
+        "errors": 0,
+        "total": 3
+      },
+      "deleteInactiveRequests": {
+        "processed": 0,
+        "errors": 0,
+        "skipped": true
+      }
+    }
+  }
+}
+```
+
+**Ошибка (500):**
+```json
+{
+  "success": false,
+  "message": "Ошибка при запуске cron задач: [детали ошибки]",
+  "error": "[сообщение об ошибке]",
+  "errorName": "Error",
+  "stack": "[stack trace]"
+}
+```
+
+---
+
+### Получение ближайших действий по заявкам
+
+**GET** `/api/cron/actions`
+
+**Требует аутентификации и прав администратора**
+
+Возвращает 10 последних выполненных действий и 10 ближайших запланированных действий по заявкам.
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "completed": [
+      {
+        "id": "uuid",
+        "action_type": "autoCompleteSpeedCleanup",
+        "request_id": "request-uuid",
+        "request_category": "speedCleanup",
+        "action_description": "Автоматическое завершение заявки [id] через 24 часа после одобрения",
+        "status": "completed",
+        "executed_at": "2025-12-01T10:30:00.000Z",
+        "metadata": {
+          "donorCount": 5,
+          "coinsAwarded": 1
+        }
+      }
+    ],
+    "scheduled": [
+      {
+        "action_type": "autoCompleteSpeedCleanup",
+        "request_id": "request-uuid",
+        "request_category": "speedCleanup",
+        "request_name": "Название заявки",
+        "action_description": "Автоматическое завершение заявки \"Название заявки\" через 24 часа после одобрения",
+        "scheduled_at": "2025-12-02T10:30:00.000Z",
+        "time_until": 24.0
+      },
+      {
+        "action_type": "checkWasteReminders",
+        "request_id": "request-uuid",
+        "request_category": "wasteLocation",
+        "request_name": "Уборка мусора",
+        "action_description": "Напоминание исполнителю заявки \"Уборка мусора\" за 2 часа до окончания срока",
+        "scheduled_at": "2025-12-01T20:00:00.000Z",
+        "time_until": 2.5
+      },
+      {
+        "action_type": "checkEventTimes",
+        "request_id": "request-uuid",
+        "request_category": "event",
+        "request_name": "Экологическое мероприятие",
+        "action_description": "Уведомление участникам события \"Экологическое мероприятие\" за 24 часа до начала",
+        "scheduled_at": "2025-12-02T12:00:00.000Z",
+        "time_until": 25.5
+      }
+    ],
+    "total_completed": 10,
+    "total_scheduled": 10
+  }
+}
+```
+
+**Типы действий:**
+
+1. **autoCompleteSpeedCleanup** - автоматическое завершение `speedCleanup` заявок через 24 часа после одобрения
+2. **checkWasteReminders** - напоминание исполнителю `wasteLocation` заявки за 2 часа до окончания срока
+3. **checkExpiredWasteJoins** - проверка истечения срока для `wasteLocation` заявок (24 часа после присоединения)
+4. **checkEventTimes** - уведомления для `event` заявок:
+   - За 24 часа до начала
+   - За 2 часа до начала
+   - Начало события
+5. **deleteInactiveRequests** - удаление неактивных заявок (7 дней без присоединения)
+
+**Поля запланированных действий:**
+- `action_type` - тип действия
+- `request_id` - ID заявки
+- `request_category` - категория заявки
+- `request_name` - название заявки
+- `action_description` - описание действия
+- `scheduled_at` - запланированное время выполнения (ISO 8601)
+- `time_until` - время до выполнения (в часах или днях, с одним знаком после запятой)
+
+**Ошибка (500):**
+```json
+{
+  "success": false,
+  "message": "Ошибка при получении действий cron",
+  "error": "[сообщение об ошибке]",
+  "errorName": "Error",
+  "stack": "[stack trace]"
+}
+```
 
 ---
 
 ### Текущие cron задачи
 
-1. **autoCompleteSpeedCleanup** - автоматический перевод `speedCleanup` заявок в `completed` через 24 часа после `end_date`
-   - Начисление коинов донатерам
+1. **autoCompleteSpeedCleanup** - автоматический перевод `speedCleanup` заявок в `completed` через 24 часа после одобрения (`updated_at`)
+   - Начисление коинов донатерам (по 1 коину каждому)
    - Отправка push-уведомлений донатерам
-   - Перенос донатеров из `request_contributors` в `donations`
+   - Получение донатеров из таблицы `donations`
 
-**Расписание:** По умолчанию каждые 5 минут (для тестирования). Для продакшена измените в `.env`:
+2. **checkWasteReminders** - напоминание исполнителю `wasteLocation` заявки за 2 часа до окончания срока
+   - Находит заявки, где `join_date + 22 часа ≈ текущее время`
+   - Отправляет push-уведомление исполнителю
+
+3. **checkExpiredWasteJoins** - проверка истекших присоединений для `wasteLocation` заявок
+   - Находит заявки, где `join_date + 24 часа < текущее время`
+   - Отправляет push-уведомления исполнителю и создателю
+   - Меняет статус на `new` и обнуляет `joined_user_id` и `join_date`
+
+4. **checkEventTimes** - проверка времени до события для `event` заявок
+   - Уведомление за 24 часа до начала (всем из `registered_participants`)
+   - Уведомление за 2 часа до начала (всем из `registered_participants`)
+   - Уведомление о начале события (создателю)
+
+5. **deleteInactiveRequests** - удаление неактивных заявок
+   - Находит заявки со статусом `new`, где `created_at + 7 дней < текущее время`
+   - Отправляет push-уведомления создателю и донатерам
+   - Удаляет заявку из базы данных
+   - Выполняется только в полночь (00:00)
+
+**Расписание:** Настраивается через переменную окружения `CRON_SCHEDULE` в `.env`:
 ```env
-CRON_SCHEDULE=0 * * * *  # Каждый час
+CRON_SCHEDULE=0 * * * *  # Каждый час (рекомендуется для продакшена)
 ```
+
+**История действий:** Все выполненные действия сохраняются в таблице `cron_actions` и доступны через `GET /api/cron/actions`.
 
 ---
 
