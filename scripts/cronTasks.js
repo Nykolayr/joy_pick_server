@@ -30,8 +30,6 @@ const LAST_RUN_FILE = path.join(__dirname, '..', 'logs', 'cron_last_run.json');
  * Начисление коинов и отправка push-уведомлений донатерам
  */
 async function autoCompleteSpeedCleanup() {
-  console.log('🔄 [autoCompleteSpeedCleanup] Начало обработки...');
-
   try {
     // Находим все speedCleanup заявки со статусом approved, где прошло 24 часа с момента одобрения (updated_at)
     const [requests] = await pool.execute(
@@ -44,11 +42,8 @@ async function autoCompleteSpeedCleanup() {
     );
 
     if (requests.length === 0) {
-      console.log('✅ [autoCompleteSpeedCleanup] Нет заявок для обработки');
       return { processed: 0, errors: 0 };
     }
-
-    console.log(`📋 [autoCompleteSpeedCleanup] Найдено заявок: ${requests.length}`);
 
     let processed = 0;
     let errors = 0;
@@ -65,7 +60,6 @@ async function autoCompleteSpeedCleanup() {
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
           ['completed', requestId]
         );
-        console.log(`✅ [autoCompleteSpeedCleanup] Заявка ${requestId} переведена в completed (прошло ${Math.floor(diffHours)} часов с одобрения)`);
 
         // Получаем донатеров из donations
         const [donations] = await pool.execute(
@@ -89,7 +83,7 @@ async function autoCompleteSpeedCleanup() {
                 donorUserIds.push(donation.user_id);
               }
             } catch (donationError) {
-              console.error(`❌ [autoCompleteSpeedCleanup] Ошибка обработки донатера ${donation.user_id}:`, donationError.message);
+              // Ошибка обработки донатера
             }
           }
         }
@@ -101,24 +95,20 @@ async function autoCompleteSpeedCleanup() {
               userIds: donorUserIds,
               earnedCoin: true,
             });
-            console.log(`📱 [autoCompleteSpeedCleanup] Отправлено push-уведомлений донатерам: ${donorUserIds.length}`);
           } catch (pushError) {
-            console.error(`❌ [autoCompleteSpeedCleanup] Ошибка отправки push-уведомлений:`, pushError.message);
+            // Ошибка отправки push-уведомлений
           }
         }
 
         processed++;
       } catch (requestError) {
         errors++;
-        console.error(`❌ [autoCompleteSpeedCleanup] Ошибка обработки заявки ${request.id}:`, requestError.message);
       }
     }
 
-    console.log(`✅ [autoCompleteSpeedCleanup] Завершено: обработано ${processed}, ошибок ${errors}`);
     return { processed, errors, total: requests.length };
 
   } catch (error) {
-    console.error('❌ [autoCompleteSpeedCleanup] Критическая ошибка:', error);
     throw error;
   }
 }
@@ -127,8 +117,6 @@ async function autoCompleteSpeedCleanup() {
  * Проверка напоминаний исполнителю за 2 часа до окончания срока (для waste)
  */
 async function checkWasteReminders() {
-  console.log('🔄 [checkWasteReminders] Начало обработки...');
-
   try {
     // Находим все waste заявки со статусом inProgress, где join_date + 22 часа = текущее время (с точностью до минуты)
     const [requests] = await pool.execute(
@@ -143,11 +131,8 @@ async function checkWasteReminders() {
     );
 
     if (requests.length === 0) {
-      console.log('✅ [checkWasteReminders] Нет заявок для обработки');
       return { processed: 0, errors: 0 };
     }
-
-    console.log(`📋 [checkWasteReminders] Найдено заявок: ${requests.length}`);
 
     let processed = 0;
     let errors = 0;
@@ -158,19 +143,15 @@ async function checkWasteReminders() {
           userIds: [request.joined_user_id],
           requestId: request.id,
         });
-        console.log(`📱 [checkWasteReminders] Отправлено напоминание исполнителю ${request.joined_user_id} для заявки ${request.id}`);
         processed++;
       } catch (error) {
         errors++;
-        console.error(`❌ [checkWasteReminders] Ошибка обработки заявки ${request.id}:`, error.message);
       }
     }
 
-    console.log(`✅ [checkWasteReminders] Завершено: обработано ${processed}, ошибок ${errors}`);
     return { processed, errors, total: requests.length };
 
   } catch (error) {
-    console.error('❌ [checkWasteReminders] Критическая ошибка:', error);
     throw error;
   }
 }
@@ -179,8 +160,6 @@ async function checkWasteReminders() {
  * Проверка истекших присоединений для waste (24 часа)
  */
 async function checkExpiredWasteJoins() {
-  console.log('🔄 [checkExpiredWasteJoins] Начало обработки...');
-
   try {
     // Находим все waste заявки со статусом inProgress, где join_date + 24 часа < текущее время
     const [requests] = await pool.execute(
@@ -194,11 +173,8 @@ async function checkExpiredWasteJoins() {
     );
 
     if (requests.length === 0) {
-      console.log('✅ [checkExpiredWasteJoins] Нет заявок для обработки');
       return { processed: 0, errors: 0 };
     }
-
-    console.log(`📋 [checkExpiredWasteJoins] Найдено заявок: ${requests.length}`);
 
     let processed = 0;
     let errors = 0;
@@ -225,19 +201,15 @@ async function checkExpiredWasteJoins() {
           ['new', request.id]
         );
 
-        console.log(`✅ [checkExpiredWasteJoins] Заявка ${request.id} возвращена в статус new`);
         processed++;
       } catch (error) {
         errors++;
-        console.error(`❌ [checkExpiredWasteJoins] Ошибка обработки заявки ${request.id}:`, error.message);
       }
     }
 
-    console.log(`✅ [checkExpiredWasteJoins] Завершено: обработано ${processed}, ошибок ${errors}`);
     return { processed, errors, total: requests.length };
 
   } catch (error) {
-    console.error('❌ [checkExpiredWasteJoins] Критическая ошибка:', error);
     throw error;
   }
 }
@@ -246,8 +218,6 @@ async function checkExpiredWasteJoins() {
  * Удаление неактивных заявок (7 дней без присоединения)
  */
 async function deleteInactiveRequests() {
-  console.log('🔄 [deleteInactiveRequests] Начало обработки...');
-
   try {
     // Находим все заявки со статусом new, где created_at + 7 дней < текущее время
     const [requests] = await pool.execute(
@@ -258,11 +228,8 @@ async function deleteInactiveRequests() {
     );
 
     if (requests.length === 0) {
-      console.log('✅ [deleteInactiveRequests] Нет заявок для обработки');
       return { processed: 0, errors: 0 };
     }
-
-    console.log(`📋 [deleteInactiveRequests] Найдено заявок: ${requests.length}`);
 
     let processed = 0;
     let errors = 0;
@@ -276,14 +243,6 @@ async function deleteInactiveRequests() {
         );
 
         // TODO: Возврат денег создателю и донатерам через платежную систему
-        if (request.cost && request.cost > 0) {
-          console.log(`💰 [deleteInactiveRequests] Возврат ${request.cost} создателю заявки ${request.id}`);
-        }
-        for (const donation of donations) {
-          if (donation.amount && donation.amount > 0) {
-            console.log(`💰 [deleteInactiveRequests] Возврат ${donation.amount} донатеру ${donation.user_id} заявки ${request.id}`);
-          }
-        }
 
         // Отправляем пуши
         const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
@@ -306,19 +265,15 @@ async function deleteInactiveRequests() {
 
         // Удаляем заявку
         await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
-        console.log(`✅ [deleteInactiveRequests] Заявка ${request.id} удалена`);
         processed++;
       } catch (error) {
         errors++;
-        console.error(`❌ [deleteInactiveRequests] Ошибка обработки заявки ${request.id}:`, error.message);
       }
     }
 
-    console.log(`✅ [deleteInactiveRequests] Завершено: обработано ${processed}, ошибок ${errors}`);
     return { processed, errors, total: requests.length };
 
   } catch (error) {
-    console.error('❌ [deleteInactiveRequests] Критическая ошибка:', error);
     throw error;
   }
 }
@@ -327,8 +282,6 @@ async function deleteInactiveRequests() {
  * Проверка времени до события для event
  */
 async function checkEventTimes() {
-  console.log('🔄 [checkEventTimes] Начало обработки...');
-
   try {
     // Находим все event заявки со статусом inProgress, где start_date близко к текущему времени
     const now = new Date();
@@ -343,11 +296,8 @@ async function checkEventTimes() {
     );
 
     if (requests.length === 0) {
-      console.log('✅ [checkEventTimes] Нет заявок для обработки');
       return { processed: 0, errors: 0 };
     }
-
-    console.log(`📋 [checkEventTimes] Найдено заявок: ${requests.length}`);
 
     let processed = 0;
     let errors = 0;
@@ -374,7 +324,6 @@ async function checkEventTimes() {
               participantUserIds = [];
             }
           } catch (e) {
-            console.error(`❌ [checkEventTimes] Ошибка парсинга registered_participants для заявки ${request.id}:`, e);
             participantUserIds = [];
           }
         }
@@ -393,7 +342,6 @@ async function checkEventTimes() {
               requestId: request.id,
               messageType: '24hours',
             });
-            console.log(`📱 [checkEventTimes] Отправлено уведомление за 24 часа участникам заявки ${request.id}`);
           }
         } else if (diffHours >= 1.5 && diffHours <= 2.5) {
           // За 2 часа
@@ -403,7 +351,6 @@ async function checkEventTimes() {
               requestId: request.id,
               messageType: '2hours',
             });
-            console.log(`📱 [checkEventTimes] Отправлено уведомление за 2 часа участникам заявки ${request.id}`);
           }
         } else if (diffMinutes >= -5 && diffMinutes <= 5) {
           // Событие началось
@@ -412,21 +359,17 @@ async function checkEventTimes() {
             requestId: request.id,
             messageType: 'start',
           });
-          console.log(`📱 [checkEventTimes] Отправлено уведомление о начале события заказчику заявки ${request.id}`);
         }
 
         processed++;
       } catch (error) {
         errors++;
-        console.error(`❌ [checkEventTimes] Ошибка обработки заявки ${request.id}:`, error.message);
       }
     }
 
-    console.log(`✅ [checkEventTimes] Завершено: обработано ${processed}, ошибок ${errors}`);
     return { processed, errors, total: requests.length };
 
   } catch (error) {
-    console.error('❌ [checkEventTimes] Критическая ошибка:', error);
     throw error;
   }
 }
@@ -435,42 +378,40 @@ async function checkEventTimes() {
  * Здесь можно добавлять новые периодические задачи
  */
 async function runAllCronTasks() {
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`🚀 Запуск cron задач: ${new Date().toISOString()}`);
-  console.log(`${'='.repeat(60)}\n`);
-
   const results = {};
 
   try {
-    // Задача 1: Автоматический перевод speedCleanup заявок
     results.autoCompleteSpeedCleanup = await autoCompleteSpeedCleanup();
-
-    // Задача 2: Проверка напоминаний для waste (каждые 5-10 минут)
     results.checkWasteReminders = await checkWasteReminders();
-
-    // Задача 3: Проверка истекших присоединений для waste (каждые 5-10 минут)
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
-
-    // Задача 4: Проверка времени до события для event (каждые 5-10 минут)
     results.checkEventTimes = await checkEventTimes();
 
-    // Задача 5: Удаление неактивных заявок (каждые 24 часа)
-    // Выполняем только раз в день (проверяем час)
     const currentHour = new Date().getHours();
-    if (currentHour === 0) { // В полночь
+    if (currentHour === 0) {
       results.deleteInactiveRequests = await deleteInactiveRequests();
     } else {
       results.deleteInactiveRequests = { processed: 0, errors: 0, skipped: true };
     }
 
   } catch (error) {
-    console.error('❌ Критическая ошибка выполнения cron задач:', error);
+    // Сохраняем ошибку в файл
+    try {
+      const lastRunInfo = {
+        lastRun: new Date().toISOString(),
+        results: results,
+        status: 'error',
+        error: error.message
+      };
+      const logsDir = path.dirname(LAST_RUN_FILE);
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+      fs.writeFileSync(LAST_RUN_FILE, JSON.stringify(lastRunInfo, null, 2));
+    } catch (fileError) {
+      // Не удалось сохранить
+    }
     throw error;
   }
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`✅ Все cron задачи завершены: ${new Date().toISOString()}`);
-  console.log(`${'='.repeat(60)}\n`);
 
   // Сохраняем информацию о последнем запуске
   try {
@@ -480,16 +421,14 @@ async function runAllCronTasks() {
       status: 'success'
     };
 
-    // Создаем папку logs если её нет
     const logsDir = path.dirname(LAST_RUN_FILE);
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
     }
 
     fs.writeFileSync(LAST_RUN_FILE, JSON.stringify(lastRunInfo, null, 2));
-    console.log(`💾 Информация о последнем запуске сохранена`);
   } catch (fileError) {
-    console.error('⚠️ Не удалось сохранить информацию о последнем запуске:', fileError.message);
+    // Не удалось сохранить
   }
 
   return results;
@@ -499,8 +438,6 @@ async function runAllCronTasks() {
 if (require.main === module) {
   runAllCronTasks()
     .then((results) => {
-      console.log('📊 Результаты:', JSON.stringify(results, null, 2));
-      
       // Сохраняем информацию о последнем запуске даже при ошибках
       try {
         const lastRunInfo = {
@@ -516,14 +453,12 @@ if (require.main === module) {
 
         fs.writeFileSync(LAST_RUN_FILE, JSON.stringify(lastRunInfo, null, 2));
       } catch (fileError) {
-        console.error('⚠️ Не удалось сохранить информацию о последнем запуске:', fileError.message);
+        // Не удалось сохранить
       }
 
       process.exit(0);
     })
     .catch((err) => {
-      console.error('❌ Скрипт завершен с ошибкой:', err);
-      
       // Сохраняем информацию об ошибке
       try {
         const lastRunInfo = {

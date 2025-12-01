@@ -24,29 +24,17 @@ app.get('/', (req, res) => {
 });
 
 // Настройка cron задач через node-cron
-// Запускается каждые 5 минут (для тестирования, потом вернем на каждый час)
-const CRON_SCHEDULE = process.env.CRON_SCHEDULE || '*/5 * * * *'; // По умолчанию каждые 5 минут
-
-console.log(`⏰ Настройка cron задач с расписанием: ${CRON_SCHEDULE}`);
+const CRON_SCHEDULE = process.env.CRON_SCHEDULE || '*/5 * * * *';
 
 cron.schedule(CRON_SCHEDULE, async () => {
-  console.log(`\n🔄 Автоматический запуск cron задач: ${new Date().toISOString()}`);
   try {
     await runAllCronTasks();
   } catch (error) {
-    console.error('❌ Ошибка выполнения cron задач:', error);
+    // Ошибка сохраняется в файл через runAllCronTasks
   }
 });
 
-console.log(`✅ Cron задачи настроены и будут запускаться автоматически`);
-
-// Для Passenger нужно слушать порт
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Joy Pick Server running on port ${port}`);
-  console.log(`📡 API доступен по адресу: http://localhost:${port}/api`);
-  console.log(`💚 Проверка здоровья: http://localhost:${port}/api/health`);
-  console.log(`⏰ Cron задачи запускаются каждые 5 минут (для тестирования)`);
-});
+app.listen(port);
 
 module.exports = app;

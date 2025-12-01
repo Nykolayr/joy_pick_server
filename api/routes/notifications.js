@@ -120,8 +120,8 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     // Сортировка по дате создания (новые сначала)
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(limitNum, offset);
+    // LIMIT и OFFSET должны быть числами, а не параметрами
+    query += ` ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [notifications] = await pool.execute(query, params);
 

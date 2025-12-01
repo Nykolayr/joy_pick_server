@@ -27,7 +27,7 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
         lastRunInfo = JSON.parse(fileContent);
         fileExists = true;
       } catch (readError) {
-        console.error('Ошибка чтения файла последнего запуска:', readError);
+        // Ошибка чтения файла
       }
     }
 
@@ -77,7 +77,6 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
         : 'Cron задачи еще не запускались'
     });
   } catch (err) {
-    console.error('Ошибка проверки статуса cron:', err);
     return error(res, 'Ошибка при проверке статуса cron', 500);
   }
 });
@@ -89,25 +88,32 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
  */
 router.post('/run', authenticate, requireAdmin, async (req, res) => {
   try {
-    console.log('🔧 Ручной запуск cron задач из админки...');
+    // Запускаем задачи и ждем результат
+    const results = await runAllCronTasks();
     
-    // Запускаем задачи асинхронно, чтобы не блокировать ответ
-    runAllCronTasks()
-      .then((results) => {
-        console.log('✅ Ручной запуск cron задач завершен:', results);
-      })
-      .catch((err) => {
-        console.error('❌ Ошибка при ручном запуске cron задач:', err);
-      });
-
-    // Сразу возвращаем ответ, что задачи запущены
     return success(res, {
-      message: 'Cron задачи запущены',
-      note: 'Задачи выполняются в фоновом режиме. Проверьте статус через /api/cron/status'
+      message: 'Cron задачи выполнены',
+      results: results
     });
   } catch (err) {
-    console.error('Ошибка ручного запуска cron:', err);
-    return error(res, 'Ошибка при запуске cron задач', 500);
+    // Сохраняем информацию об ошибке в файл
+    try {
+      const lastRunInfo = {
+        lastRun: new Date().toISOString(),
+        status: 'error',
+        error: err.message,
+        results: null
+      };
+      const logsDir = path.dirname(LAST_RUN_FILE);
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+      fs.writeFileSync(LAST_RUN_FILE, JSON.stringify(lastRunInfo, null, 2));
+    } catch (fileError) {
+      // Не удалось сохранить
+    }
+    
+    return error(res, 'Ошибка при запуске cron задач', 500, err);
   }
 });
 
