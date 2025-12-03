@@ -477,9 +477,10 @@ router.post('/', authenticate, uploadRequestPhotos, [
       registeredParticipants = JSON.stringify([userId]);
     }
 
-    // Для waste заявок устанавливаем expires_at = created_at + 7 дней
+    // TODO: После проверки вернуть на 7 дней (сейчас 1 день для тестирования)
+    // Для waste заявок устанавливаем expires_at = created_at + 1 день (для проверки, потом вернуть на 7 дней)
     const expiresAt = category === 'wasteLocation' 
-      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      ? new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
       : null;
 
     // Создание заявки с фото в JSON полях
@@ -1705,12 +1706,13 @@ router.post('/:id/extend', authenticate, async (req, res) => {
       return error(res, 'Заявка уже истекла и не может быть продлена', 400);
     }
 
-    // Продлеваем заявку: expires_at += 7 дней, extended_count = 1
+    // TODO: После проверки вернуть на 7 дней (сейчас 1 день для тестирования)
+    // Продлеваем заявку: expires_at += 1 день (для проверки, потом вернуть на 7 дней), extended_count = 1
     const currentExpiresAt = request.expires_at 
       ? new Date(request.expires_at)
-      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      : new Date(Date.now() + 1 * 24 * 60 * 60 * 1000);
     
-    const newExpiresAt = new Date(currentExpiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const newExpiresAt = new Date(currentExpiresAt.getTime() + 1 * 24 * 60 * 60 * 1000);
     const newExpiresAtString = newExpiresAt.toISOString().slice(0, 19).replace('T', ' ');
 
     await pool.execute(
