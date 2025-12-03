@@ -477,14 +477,19 @@ router.post('/', authenticate, uploadRequestPhotos, [
       registeredParticipants = JSON.stringify([userId]);
     }
 
+    // Для waste заявок устанавливаем expires_at = created_at + 7 дней
+    const expiresAt = category === 'wasteLocation' 
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      : null;
+
     // Создание заявки с фото в JSON полях
     await pool.execute(
       `INSERT INTO requests (
         id, user_id, category, name, description, latitude, longitude, city,
         garbage_size, only_foot, possible_by_car, cost, reward_amount,
         start_date, end_date, status, priority, created_by, target_amount,
-        plant_tree, trash_pickup_only, photos_before, photos_after, waste_types, registered_participants, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        plant_tree, trash_pickup_only, photos_before, photos_after, waste_types, registered_participants, expires_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         requestId,
         userId,
@@ -510,7 +515,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         finalPhotosBefore.length > 0 ? JSON.stringify(finalPhotosBefore) : null,
         finalPhotosAfter.length > 0 ? JSON.stringify(finalPhotosAfter) : null,
         processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
-        registeredParticipants
+        registeredParticipants,
+        expiresAt
       ]
     );
 
@@ -1650,6 +1656,157 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
 
   console.log(`✅ Заявка ${requestId} отклонена`);
 }
+
+/**
+ * POST /api/requests/:id/extend
+ * Продление заявки waste еще на неделю (максимум одно продление)
+ */
+router.post('/:id/extend', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Получаем заявку
+    const [requests] = await pool.execute(
+      `SELECT id, category, status, created_by, expires_at, extended_count
+       FROM requests 
+       WHERE id = ?`,
+      [id]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверяем, что это waste заявка
+    if (request.category !== 'wasteLocation') {
+      return error(res, 'Продление доступно только для заявок типа wasteLocation', 400);
+    }
+
+    // Проверяем, что заявка в статусе new
+    if (request.status !== 'new') {
+      return error(res, 'Продление доступно только для заявок со статусом new', 400);
+    }
+
+    // Проверяем, что пользователь - создатель заявки
+    if (request.created_by !== userId) {
+      return error(res, 'Только создатель заявки может продлить ее', 403);
+    }
+
+    // Проверяем, что заявка еще не была продлена
+    if (request.extended_count >= 1) {
+      return error(res, 'Заявка уже была продлена. Максимум одно продление.', 400);
+    }
+
+    // Проверяем, что заявка еще не истекла
+    if (request.expires_at && new Date(request.expires_at) <= new Date()) {
+      return error(res, 'Заявка уже истекла и не может быть продлена', 400);
+    }
+
+    // Продлеваем заявку: expires_at += 7 дней, extended_count = 1
+    const currentExpiresAt = request.expires_at 
+      ? new Date(request.expires_at)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    const newExpiresAt = new Date(currentExpiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const newExpiresAtString = newExpiresAt.toISOString().slice(0, 19).replace('T', ' ');
+
+    await pool.execute(
+      `UPDATE requests 
+       SET expires_at = ?, extended_count = ?, updated_at = NOW() 
+       WHERE id = ?`,
+      [newExpiresAtString, 1, id]
+    );
+
+    // Получаем обновленную заявку
+    const [updatedRequests] = await pool.execute(
+      `SELECT r.*
+       FROM requests r
+       WHERE r.id = ?`,
+      [id]
+    );
+
+    const updatedRequest = updatedRequests[0];
+    
+    // Обработка JSON полей
+    if (updatedRequest.photos_before) {
+      try {
+        updatedRequest.photos_before = typeof updatedRequest.photos_before === 'string' 
+          ? JSON.parse(updatedRequest.photos_before) 
+          : updatedRequest.photos_before;
+      } catch (e) {
+        updatedRequest.photos_before = [];
+      }
+    } else {
+      updatedRequest.photos_before = [];
+    }
+    
+    if (updatedRequest.photos_after) {
+      try {
+        updatedRequest.photos_after = typeof updatedRequest.photos_after === 'string' 
+          ? JSON.parse(updatedRequest.photos_after) 
+          : updatedRequest.photos_after;
+      } catch (e) {
+        updatedRequest.photos_after = [];
+      }
+    } else {
+      updatedRequest.photos_after = [];
+    }
+
+    if (updatedRequest.waste_types) {
+      try {
+        updatedRequest.waste_types = typeof updatedRequest.waste_types === 'string' 
+          ? JSON.parse(updatedRequest.waste_types) 
+          : updatedRequest.waste_types;
+      } catch (e) {
+        updatedRequest.waste_types = [];
+      }
+    } else {
+      updatedRequest.waste_types = [];
+    }
+
+    if (updatedRequest.actual_participants) {
+      try {
+        updatedRequest.actual_participants = typeof updatedRequest.actual_participants === 'string' 
+          ? JSON.parse(updatedRequest.actual_participants) 
+          : updatedRequest.actual_participants;
+      } catch (e) {
+        updatedRequest.actual_participants = [];
+      }
+    } else {
+      updatedRequest.actual_participants = [];
+    }
+
+    if (updatedRequest.registered_participants) {
+      try {
+        updatedRequest.registered_participants = typeof updatedRequest.registered_participants === 'string' 
+          ? JSON.parse(updatedRequest.registered_participants) 
+          : updatedRequest.registered_participants;
+      } catch (e) {
+        updatedRequest.registered_participants = [];
+      }
+    } else {
+      updatedRequest.registered_participants = [];
+    }
+
+    // Получение донатов
+    const [donations] = await pool.execute(
+      'SELECT * FROM donations WHERE request_id = ? ORDER BY created_at DESC',
+      [id]
+    );
+    updatedRequest.donations = donations;
+
+    // Нормализация дат
+    const { normalizeDatesInObject } = require('../utils/datetime');
+    const normalizedRequest = normalizeDatesInObject(updatedRequest);
+
+    success(res, normalizedRequest, 200);
+  } catch (err) {
+    error(res, 'Ошибка при продлении заявки', 500, err);
+  }
+});
 
 module.exports = router;
 

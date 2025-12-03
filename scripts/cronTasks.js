@@ -281,16 +281,79 @@ async function checkExpiredWasteJoins() {
 }
 
 /**
- * Удаление неактивных заявок (7 дней без присоединения)
+ * Уведомление о скором удалении неактивных waste заявок (через 7 дней)
+ */
+async function notifyInactiveWasteRequests() {
+  try {
+    // Находим все waste заявки со статусом new, где expires_at - 1 день <= текущее время
+    // Это означает, что заявке исполнилось 7 дней, и через сутки она будет удалена
+    const [requests] = await pool.execute(
+      `SELECT id, created_by, expires_at, extended_count
+       FROM requests 
+       WHERE category = 'wasteLocation'
+         AND status = 'new' 
+         AND expires_at IS NOT NULL
+         AND expires_at > NOW()
+         AND expires_at <= DATE_ADD(NOW(), INTERVAL 1 DAY)
+         AND extended_count = 0`
+    );
+
+    if (requests.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    let processed = 0;
+    let errors = 0;
+
+    const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
+
+    for (const request of requests) {
+      try {
+        // Отправляем пуш создателю о том, что заявка будет удалена через сутки
+        // И что он может продлить ее еще на неделю
+        await sendRequestRejectedNotification({
+          userIds: [request.created_by],
+          requestId: request.id,
+          messageType: 'creator',
+          rejectionMessage: 'Your request will be deleted in 24 hours. You can extend it for another week by opening the request.',
+        });
+
+        // Записываем действие
+        await logCronAction(
+          'notifyInactiveWasteRequests',
+          request.id,
+          'wasteLocation',
+          `Уведомление создателю заявки ${request.id} о скором удалении (через 24 часа)`,
+          'completed'
+        );
+        
+        processed++;
+      } catch (error) {
+        errors++;
+      }
+    }
+
+    return { processed, errors, total: requests.length };
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Удаление неактивных waste заявок (через 8 дней, если не продлены)
  */
 async function deleteInactiveRequests() {
   try {
-    // Находим все заявки со статусом new, где created_at + 7 дней < текущее время
+    // Находим все waste заявки со статусом new, где expires_at <= текущее время
+    // Это означает, что прошло 8 дней (7 дней + 1 день ожидания) и заявка не была продлена
     const [requests] = await pool.execute(
-      `SELECT id, created_by, cost 
+      `SELECT id, created_by, cost, category
        FROM requests 
-       WHERE status = 'new' 
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
+       WHERE category = 'wasteLocation'
+         AND status = 'new' 
+         AND expires_at IS NOT NULL
+         AND expires_at <= NOW()`
     );
 
     if (requests.length === 0) {
@@ -336,8 +399,8 @@ async function deleteInactiveRequests() {
         await logCronAction(
           'deleteInactiveRequests',
           request.id,
-          request.category || 'unknown',
-          `Удаление неактивной заявки ${request.id} (7 дней без присоединения)`,
+          request.category || 'wasteLocation',
+          `Удаление неактивной заявки ${request.id} (8 дней без присоединения)`,
           'completed',
           { donorCount: donations.length }
         );
@@ -483,6 +546,7 @@ async function runAllCronTasks() {
     results.checkWasteReminders = await checkWasteReminders();
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
     results.checkEventTimes = await checkEventTimes();
+    results.notifyInactiveWasteRequests = await notifyInactiveWasteRequests();
 
     const currentHour = new Date().getHours();
     if (currentHour === 0) {
@@ -585,6 +649,7 @@ module.exports = {
   autoCompleteSpeedCleanup,
   checkWasteReminders,
   checkExpiredWasteJoins,
+  notifyInactiveWasteRequests,
   deleteInactiveRequests,
   checkEventTimes
 };
