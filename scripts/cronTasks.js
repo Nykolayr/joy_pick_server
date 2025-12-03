@@ -189,6 +189,7 @@ async function checkWasteReminders() {
         await sendReminderNotification({
           userIds: [request.joined_user_id],
           requestId: request.id,
+          requestCategory: 'wasteLocation',
         });
         
         // Записываем действие
@@ -243,6 +244,7 @@ async function checkExpiredWasteJoins() {
           userIds: [request.joined_user_id],
           requestId: request.id,
           messageType: 'executor',
+          requestCategory: 'wasteLocation',
         });
 
         // Отправляем пуш создателю
@@ -250,6 +252,7 @@ async function checkExpiredWasteJoins() {
           userIds: [request.created_by],
           requestId: request.id,
           messageType: 'creator',
+          requestCategory: 'wasteLocation',
         });
 
         // Меняем статус на new и обнуляем joined_user_id и join_date
@@ -318,6 +321,7 @@ async function notifyInactiveWasteRequests() {
           requestId: request.id,
           messageType: 'creator',
           rejectionMessage: 'Your request will be deleted in 24 hours. You can extend it for another week by opening the request.',
+          requestCategory: 'wasteLocation',
         });
 
         // Записываем действие
@@ -384,6 +388,7 @@ async function deleteInactiveRequests() {
           requestId: request.id,
           messageType: 'creator',
           rejectionMessage: 'Your request was deleted due to inactivity',
+          requestCategory: 'wasteLocation',
         });
 
         const donorUserIds = donations.map(d => d.user_id).filter(Boolean);
@@ -393,6 +398,7 @@ async function deleteInactiveRequests() {
             requestId: request.id,
             messageType: 'donor',
             rejectionMessage: 'Request you donated to was deleted',
+            requestCategory: 'wasteLocation',
           });
         }
 

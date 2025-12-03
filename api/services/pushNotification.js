@@ -484,17 +484,17 @@ async function sendJoinNotification({ requestId, requestName, requestCategory, c
       console.log('⚠️ Ошибка получения данных пользователя:', e);
     }
 
-    // Формируем текст уведомления
+    // Формируем текст уведомления (согласно концепции)
     let title, body;
     if (actionType === 'joined') {
       title = 'Someone joined your request';
-      body = `${actionUserName} joined your request "${requestName}"`;
+      body = 'Someone joined your request!';
     } else if (actionType === 'participated') {
       title = 'Someone joined your event';
-      body = `${actionUserName} joined your event "${requestName}"`;
+      body = 'Someone joined your event!';
     } else {
       title = 'Someone joined your request';
-      body = `${actionUserName} joined your request "${requestName}"`;
+      body = 'Someone joined your request!';
     }
 
     // Формируем deeplink для перехода на заявку
@@ -639,11 +639,21 @@ async function sendSpeedCleanupNotification({ userIds, earnedCoin }) {
  * @param {Object} options - Параметры уведомления
  * @param {Array<string>} options.userIds - Массив ID пользователей (создатель)
  * @param {string} options.requestId - ID заявки
+ * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestSubmittedNotification({ userIds, requestId }) {
+async function sendRequestSubmittedNotification({ userIds, requestId, requestCategory = 'wasteLocation' }) {
   const title = 'Request Submitted';
   const body = 'Your request has been submitted for review!';
+
+  // Формируем deeplink для перехода на заявку
+  const categoryPaths = {
+    wasteLocation: 'waste_location',
+    speedCleanup: 'speed_cleanup',
+    event: 'event',
+  };
+  const categoryPath = categoryPaths[requestCategory] || 'waste_location';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
 
   return await sendNotificationToUsers({
     title,
@@ -653,6 +663,12 @@ async function sendRequestSubmittedNotification({ userIds, requestId }) {
     data: {
       type: 'requestSubmitted',
       requestId: requestId,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: requestCategory,
+      }),
+      deeplink: deeplink,
     },
   });
 }
@@ -663,9 +679,10 @@ async function sendRequestSubmittedNotification({ userIds, requestId }) {
  * @param {Array<string>} options.userIds - Массив ID пользователей
  * @param {string} options.requestId - ID заявки
  * @param {string} options.messageType - Тип сообщения: 'creator', 'executor', 'donor', 'participant'
+ * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestApprovedNotification({ userIds, requestId, messageType = 'creator' }) {
+async function sendRequestApprovedNotification({ userIds, requestId, messageType = 'creator', requestCategory = 'wasteLocation' }) {
   const messages = {
     creator: { title: 'Thank you!', body: 'Thank you for your initiative!' },
     executor: { title: 'Thank you!', body: 'Thank you for completing the request!' },
@@ -674,6 +691,15 @@ async function sendRequestApprovedNotification({ userIds, requestId, messageType
   };
 
   const message = messages[messageType] || messages.creator;
+
+  // Формируем deeplink для перехода на заявку
+  const categoryPaths = {
+    wasteLocation: 'waste_location',
+    speedCleanup: 'speed_cleanup',
+    event: 'event',
+  };
+  const categoryPath = categoryPaths[requestCategory] || 'waste_location';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
 
   return await sendNotificationToUsers({
     title: message.title,
@@ -684,6 +710,12 @@ async function sendRequestApprovedNotification({ userIds, requestId, messageType
       type: 'requestApproved',
       requestId: requestId,
       messageType: messageType,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: requestCategory,
+      }),
+      deeplink: deeplink,
     },
   });
 }
@@ -695,9 +727,10 @@ async function sendRequestApprovedNotification({ userIds, requestId, messageType
  * @param {string} options.requestId - ID заявки
  * @param {string} options.messageType - Тип сообщения: 'creator', 'donor'
  * @param {string} options.rejectionMessage - Сообщение об отклонении
+ * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestRejectedNotification({ userIds, requestId, messageType = 'creator', rejectionMessage = null }) {
+async function sendRequestRejectedNotification({ userIds, requestId, messageType = 'creator', rejectionMessage = null, requestCategory = 'wasteLocation' }) {
   let title = 'Request Rejected';
   let body = 'Your request was rejected';
   
@@ -709,6 +742,15 @@ async function sendRequestRejectedNotification({ userIds, requestId, messageType
     body = rejectionMessage || 'Your request was rejected';
   }
 
+  // Формируем deeplink для перехода на заявку
+  const categoryPaths = {
+    wasteLocation: 'waste_location',
+    speedCleanup: 'speed_cleanup',
+    event: 'event',
+  };
+  const categoryPath = categoryPaths[requestCategory] || 'waste_location';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
+
   return await sendNotificationToUsers({
     title,
     body,
@@ -718,6 +760,12 @@ async function sendRequestRejectedNotification({ userIds, requestId, messageType
       type: 'requestRejected',
       requestId: requestId,
       messageType: messageType,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: requestCategory,
+      }),
+      deeplink: deeplink,
     },
   });
 }
@@ -727,11 +775,21 @@ async function sendRequestRejectedNotification({ userIds, requestId, messageType
  * @param {Object} options - Параметры уведомления
  * @param {Array<string>} options.userIds - Массив ID пользователей (исполнитель)
  * @param {string} options.requestId - ID заявки
+ * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendReminderNotification({ userIds, requestId }) {
+async function sendReminderNotification({ userIds, requestId, requestCategory = 'wasteLocation' }) {
   const title = 'Reminder';
   const body = 'You have 2 hours left to complete the request!';
+
+  // Формируем deeplink для перехода на заявку
+  const categoryPaths = {
+    wasteLocation: 'waste_location',
+    speedCleanup: 'speed_cleanup',
+    event: 'event',
+  };
+  const categoryPath = categoryPaths[requestCategory] || 'waste_location';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
 
   return await sendNotificationToUsers({
     title,
@@ -741,6 +799,12 @@ async function sendReminderNotification({ userIds, requestId }) {
     data: {
       type: 'reminder',
       requestId: requestId,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: requestCategory,
+      }),
+      deeplink: deeplink,
     },
   });
 }
@@ -751,9 +815,10 @@ async function sendReminderNotification({ userIds, requestId }) {
  * @param {Array<string>} options.userIds - Массив ID пользователей
  * @param {string} options.requestId - ID заявки
  * @param {string} options.messageType - Тип сообщения: 'executor', 'creator'
+ * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestExpiredNotification({ userIds, requestId, messageType = 'executor' }) {
+async function sendRequestExpiredNotification({ userIds, requestId, messageType = 'executor', requestCategory = 'wasteLocation' }) {
   const messages = {
     executor: { 
       title: 'Request Expired', 
@@ -767,6 +832,15 @@ async function sendRequestExpiredNotification({ userIds, requestId, messageType 
 
   const message = messages[messageType] || messages.executor;
 
+  // Формируем deeplink для перехода на заявку
+  const categoryPaths = {
+    wasteLocation: 'waste_location',
+    speedCleanup: 'speed_cleanup',
+    event: 'event',
+  };
+  const categoryPath = categoryPaths[requestCategory] || 'waste_location';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
+
   return await sendNotificationToUsers({
     title: message.title,
     body: message.body,
@@ -776,6 +850,12 @@ async function sendRequestExpiredNotification({ userIds, requestId, messageType 
       type: 'requestExpired',
       requestId: requestId,
       messageType: messageType,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: requestCategory,
+      }),
+      deeplink: deeplink,
     },
   });
 }
@@ -797,6 +877,10 @@ async function sendEventTimeNotification({ userIds, requestId, messageType = '24
 
   const message = messages[messageType] || messages['24hours'];
 
+  // Формируем deeplink для перехода на заявку
+  const categoryPath = 'event';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
+
   return await sendNotificationToUsers({
     title: message.title,
     body: message.body,
@@ -806,6 +890,12 @@ async function sendEventTimeNotification({ userIds, requestId, messageType = '24
       type: 'eventTime',
       requestId: requestId,
       messageType: messageType,
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: 'event',
+      }),
+      deeplink: deeplink,
     },
   });
 }
