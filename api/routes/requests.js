@@ -867,12 +867,16 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(Array.isArray(waste_types) && waste_types.length > 0 ? JSON.stringify(waste_types) : null);
     }
     if (rejection_reason !== undefined) {
+      // Приравниваем пустую строку к null
+      const normalizedRejectionReason = (rejection_reason === '' || rejection_reason === null) ? null : rejection_reason;
       updates.push('rejection_reason = ?');
-      params.push(rejection_reason || null);
+      params.push(normalizedRejectionReason);
     }
     if (rejection_message !== undefined) {
+      // Приравниваем пустую строку к null
+      const normalizedRejectionMessage = (rejection_message === '' || rejection_message === null) ? null : rejection_message;
       updates.push('rejection_message = ?');
-      params.push(rejection_message || null);
+      params.push(normalizedRejectionMessage);
     }
     if (actual_participants !== undefined) {
       updates.push('actual_participants = ?');
@@ -889,18 +893,22 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     
     // Обработка отсоединения от заявки (joined_user_id и join_date = null)
+    // Пустые строки приравниваются к null
     if (joined_user_id !== undefined) {
+      // Приравниваем пустую строку к null
+      const normalizedJoinedUserId = (joined_user_id === '' || joined_user_id === null) ? null : joined_user_id;
+      
       // Валидация: joined_user_id должен быть UUID из БД (поле id) или null
       // НЕ принимаем Firebase UID - только UUID из базы данных
-      if (joined_user_id !== null && !joined_user_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      if (normalizedJoinedUserId !== null && !normalizedJoinedUserId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
         return error(res, 'joined_user_id должен быть UUID из базы данных (поле id из таблицы users). Firebase UID не поддерживается. Используйте id пользователя из БД.', 400);
       }
       
       // Проверка существования пользователя в БД (если не null)
-      if (joined_user_id) {
+      if (normalizedJoinedUserId) {
         const [users] = await pool.execute(
           'SELECT id FROM users WHERE id = ?',
-          [joined_user_id]
+          [normalizedJoinedUserId]
         );
         
         if (users.length === 0) {
@@ -909,11 +917,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
       
       updates.push('joined_user_id = ?');
-      params.push(joined_user_id || null);
+      params.push(normalizedJoinedUserId);
     }
     if (join_date !== undefined) {
+      // Приравниваем пустую строку к null
+      const normalizedJoinDate = (join_date === '' || join_date === null) ? null : join_date;
       updates.push('join_date = ?');
-      params.push(join_date || null);
+      params.push(normalizedJoinDate);
     }
     
     // Обновление photos_before (только если загружены файлы)
