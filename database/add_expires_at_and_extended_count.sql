@@ -12,9 +12,10 @@ ADD COLUMN expires_at DATETIME NULL COMMENT 'Дата истечения зая�
 ALTER TABLE requests 
 ADD COLUMN extended_count INT NOT NULL DEFAULT 0 COMMENT 'Количество продлений заявки (максимум 1 для waste)';
 
+-- TODO: После проверки вернуть на 7 дней (сейчас 1 день для тестирования)
 -- Устанавливаем expires_at для существующих waste заявок со статусом new
 UPDATE requests 
-SET expires_at = DATE_ADD(created_at, INTERVAL 7 DAY)
+SET expires_at = DATE_ADD(created_at, INTERVAL 1 DAY)
 WHERE category = 'wasteLocation' 
   AND status = 'new' 
   AND expires_at IS NULL;
