@@ -718,23 +718,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       completion_comment,
       rejection_reason,
       rejection_message,
-      actual_participants
+      actual_participants,
+      joined_user_id,
+      join_date
     } = bodyData;
 
     // Используем обработанный массив waste_types
     const waste_types = wasteTypesArray.length > 0 ? wasteTypesArray : undefined;
-
-    // Логируем входящие данные для отладки
-    console.log('📥 Данные запроса на обновление заявки:', {
-      id,
-      hasFiles: !!req.files,
-      filesCount: req.files ? Object.keys(req.files).length : 0,
-      bodyKeys: Object.keys(bodyData),
-      status: bodyData.status,
-      waste_types: waste_types,
-      uploadedPhotosBefore: uploadedPhotosBefore.length,
-      uploadedPhotosAfter: uploadedPhotosAfter.length
-    });
 
     const updates = [];
     const params = [];
@@ -880,6 +870,43 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     if (actual_participants !== undefined) {
       updates.push('actual_participants = ?');
       params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
+    }
+    
+    // Валидация actual_participants: все ID должны быть UUID из БД
+    if (actual_participants !== undefined && Array.isArray(actual_participants)) {
+      for (const participantId of actual_participants) {
+        if (participantId && !participantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+          return error(res, `actual_participants содержит невалидный ID: ${participantId}. Все ID должны быть UUID из базы данных (поле id из таблицы users).`, 400);
+        }
+      }
+    }
+    
+    // Обработка отсоединения от заявки (joined_user_id и join_date = null)
+    if (joined_user_id !== undefined) {
+      // Валидация: joined_user_id должен быть UUID из БД (поле id) или null
+      // НЕ принимаем Firebase UID - только UUID из базы данных
+      if (joined_user_id !== null && !joined_user_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        return error(res, 'joined_user_id должен быть UUID из базы данных (поле id из таблицы users). Firebase UID не поддерживается. Используйте id пользователя из БД.', 400);
+      }
+      
+      // Проверка существования пользователя в БД (если не null)
+      if (joined_user_id) {
+        const [users] = await pool.execute(
+          'SELECT id FROM users WHERE id = ?',
+          [joined_user_id]
+        );
+        
+        if (users.length === 0) {
+          return error(res, 'Пользователь с указанным ID не найден в базе данных', 404);
+        }
+      }
+      
+      updates.push('joined_user_id = ?');
+      params.push(joined_user_id || null);
+    }
+    if (join_date !== undefined) {
+      updates.push('join_date = ?');
+      params.push(join_date || null);
     }
     
     // Обновление photos_before (только если загружены файлы)
@@ -1216,6 +1243,14 @@ router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, re
     const params = [];
     
     if (actual_participants !== undefined) {
+      // Валидация: все ID в actual_participants должны быть UUID из БД
+      if (Array.isArray(actual_participants)) {
+        for (const participantId of actual_participants) {
+          if (participantId && !participantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+            return error(res, `actual_participants содержит невалидный ID: ${participantId}. Все ID должны быть UUID из базы данных (поле id из таблицы users).`, 400);
+          }
+        }
+      }
       updates.push('actual_participants = ?');
       params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
     }
