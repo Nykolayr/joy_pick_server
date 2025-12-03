@@ -961,6 +961,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
           sendRequestSubmittedNotification({
             userIds: [requestCreatedBy],
             requestId: id,
+            requestCategory: requestInfo.category || requestCategory,
           }).catch(err => {
             console.error('❌ Ошибка отправки push-уведомления при отправке на рассмотрение:', err);
           });
@@ -1471,13 +1472,13 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
 
   // 5. Отправляем push-уведомления
   if (creatorId) {
-    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'wasteLocation' }).catch(console.error);
   }
   if (executorId) {
-    sendRequestApprovedNotification({ userIds: [executorId], requestId, messageType: 'executor' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: [executorId], requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(console.error);
   }
   if (donorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(console.error);
   }
 
   // 6. Меняем статус на completed
@@ -1563,13 +1564,13 @@ async function handleEventApproval(requestId, creatorId) {
 
   // 6. Отправляем push-уведомления
   if (creatorId) {
-    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'event' }).catch(console.error);
   }
   if (participantUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant', requestCategory: 'event' }).catch(console.error);
   }
   if (donorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'event' }).catch(console.error);
   }
 
   // 7. Меняем статус на completed
@@ -1644,6 +1645,7 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       requestId,
       messageType: 'creator',
       rejectionMessage: finalMessage,
+      requestCategory: category,
     }).catch(console.error);
   }
   if (donorUserIds.length > 0) {
@@ -1652,6 +1654,7 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       requestId,
       messageType: 'donor',
       rejectionMessage: finalMessage,
+      requestCategory: category,
     }).catch(console.error);
   }
 
