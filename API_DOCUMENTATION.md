@@ -1001,12 +1001,104 @@ if (serverAuthResult != null) {
 
 **Требует аутентификации и прав администратора**
 
+Получение списка пользователей с пагинацией.
+
 **Query параметры:**
 - `page` (integer, опционально) - номер страницы (по умолчанию: 1)
-- `limit` (integer, опционально) - количество записей на странице (по умолчанию: 20)
+- `limit` (integer, опционально) - количество записей на странице (по умолчанию: 20, максимум: 100)
+- `search` (string, опционально) - поиск по email, display_name, first_name, second_name
+
+---
+
+### Получение всех пользователей списком
+
+**GET** `/users/all`
+
+**Требует аутентификации и прав администратора**
+
+Получение всех пользователей сразу списком без пагинации.
+
+**Query параметры:**
 - `search` (string, опционально) - поиск по email, display_name, first_name, second_name
 
 **Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": "uuid",
+        "email": "user@example.com",
+        "display_name": "Имя пользователя",
+        "photo_url": "https://...",
+        "uid": "firebase-uid",
+        "phone_number": "+79001234567",
+        "city": "Москва",
+        "first_name": "Имя",
+        "second_name": "Фамилия",
+        "country": "Россия",
+        "gender": "male",
+        "count_performed": 5,
+        "count_orders": 3,
+        "jcoins": 1000,
+        "coins_from_created": 500,
+        "coins_from_participation": 500,
+        "stripe_id": null,
+        "score": 4.5,
+        "admin": 0,
+        "fcm_token": "token",
+        "auth_type": "email",
+        "latitude": 55.7558,
+        "longitude": 37.6173,
+        "created_time": "2025-01-01T00:00:00.000Z"
+      }
+    ],
+    "total": 150
+  }
+}
+```
+
+**Ошибки:**
+- `401` - Не авторизован
+- `403` - Нет прав администратора
+- `500` - Ошибка сервера (с детальной информацией об ошибке)
+
+**Пример использования в Flutter:**
+```dart
+Future<Map<String, dynamic>> getAllUsers({
+  required String token,
+  String? search,
+}) async {
+  final queryParams = <String, String>{};
+  
+  if (search != null && search.isNotEmpty) {
+    queryParams['search'] = search;
+  }
+  
+  final uri = Uri.parse('http://autogie1.bget.ru/api/users/all')
+      .replace(queryParameters: queryParams);
+  
+  final response = await http.get(
+    uri,
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+  );
+  
+  if (response.statusCode == 200) {
+    return json.decode(response.body);
+  } else {
+    throw Exception('Ошибка получения всех пользователей: ${response.body}');
+  }
+}
+```
+
+---
+
+**Ответ для GET /users (с пагинацией) (200):**
 ```json
 {
   "success": true,
@@ -1054,7 +1146,7 @@ if (serverAuthResult != null) {
 - `403` - Нет прав администратора
 - `500` - Ошибка сервера (с детальной информацией об ошибке)
 
-**Пример использования в Flutter:**
+**Пример использования в Flutter (с пагинацией):**
 ```dart
 Future<Map<String, dynamic>> getUsersList({
   required String token,
@@ -3426,6 +3518,21 @@ Cron задачи выполняются автоматически через `
           "donorCount": 5,
           "coinsAwarded": 1
         }
+      },
+      {
+        "id": "uuid",
+        "action_type": "checkWasteReminders",
+        "request_id": "request-uuid",
+        "request_category": "wasteLocation",
+        "action_description": "Ошибка при отправке напоминания для заявки [id]: Connection timeout",
+        "status": "error",
+        "executed_at": "2025-12-01T10:25:00.000Z",
+        "metadata": {
+          "error": "Connection timeout",
+          "errorName": "Error",
+          "errorStack": "Error: Connection timeout\n    at ...",
+          "requestId": "request-uuid"
+        }
       }
     ],
     "scheduled": [
@@ -3474,6 +3581,18 @@ Cron задачи выполняются автоматически через `
    - Начало события
 5. **deleteInactiveRequests** - удаление неактивных заявок (7 дней без присоединения)
 
+**Поля выполненных действий:**
+- `id` - ID действия
+- `action_type` - тип действия
+- `request_id` - ID заявки (может быть null для общих действий)
+- `request_category` - категория заявки
+- `action_description` - описание действия
+- `status` - статус выполнения: `"completed"` или `"error"`
+- `executed_at` - время выполнения (ISO 8601)
+- `metadata` - дополнительные данные (JSON):
+  - Для успешных действий: `{ donorCount, coinsAwarded, processed, errors, total, ... }`
+  - Для ошибок: `{ error, errorName, errorStack, requestId }` - **подробная информация об ошибке**
+
 **Поля запланированных действий:**
 - `action_type` - тип действия
 - `request_id` - ID заявки
@@ -3482,6 +3601,12 @@ Cron задачи выполняются автоматически через `
 - `action_description` - описание действия
 - `scheduled_at` - запланированное время выполнения (ISO 8601)
 - `time_until` - время до выполнения (в часах или днях, с одним знаком после запятой)
+
+**Важно:** Если действие завершилось с ошибкой (`status: "error"`), в поле `metadata` содержится подробная информация об ошибке:
+- `error` - сообщение об ошибке
+- `errorName` - тип ошибки (Error, TypeError, etc.)
+- `errorStack` - полный stack trace ошибки
+- `requestId` - ID заявки, при обработке которой произошла ошибка
 
 **Ошибка (500):**
 ```json

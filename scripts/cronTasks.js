@@ -137,6 +137,20 @@ async function autoCompleteSpeedCleanup() {
         processed++;
       } catch (requestError) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'autoCompleteSpeedCleanup',
+          request.id,
+          'speedCleanup',
+          `Ошибка при обработке заявки ${request.id}: ${requestError.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: requestError.message || 'Неизвестная ошибка',
+            errorName: requestError.name || 'Error',
+            errorStack: requestError.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 
@@ -204,6 +218,20 @@ async function checkWasteReminders() {
         processed++;
       } catch (error) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'checkExpiredWasteJoins',
+          request.id,
+          'wasteLocation',
+          `Ошибка при проверке истечения срока для заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 
@@ -273,6 +301,20 @@ async function checkExpiredWasteJoins() {
         processed++;
       } catch (error) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'checkExpiredWasteJoins',
+          request.id,
+          'wasteLocation',
+          `Ошибка при проверке истечения срока для заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 
@@ -336,6 +378,20 @@ async function notifyInactiveWasteRequests() {
         processed++;
       } catch (error) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'notifyInactiveWasteRequests',
+          request.id,
+          'wasteLocation',
+          `Ошибка при уведомлении о скором удалении заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 
@@ -418,6 +474,20 @@ async function deleteInactiveRequests() {
         processed++;
       } catch (error) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'deleteInactiveRequests',
+          request.id,
+          request.category || 'wasteLocation',
+          `Ошибка при удалении неактивной заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 
@@ -535,6 +605,20 @@ async function checkEventTimes() {
         processed++;
       } catch (error) {
         errors++;
+        // Записываем ошибку в лог с подробной информацией
+        await logCronAction(
+          'checkEventTimes',
+          request.id,
+          'event',
+          `Ошибка при проверке времени события для заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
       }
     }
 

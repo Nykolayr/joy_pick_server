@@ -68,6 +68,39 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/users/all
+ * Получение всех пользователей сразу списком (без пагинации, только для админов)
+ */
+router.get('/all', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { search = '' } = req.query;
+
+    let query = `
+      SELECT id, email, display_name, photo_url, uid, phone_number, city,
+       first_name, second_name, country, gender, count_performed, count_orders,
+       jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+       admin, fcm_token, auth_type, latitude, longitude, created_time
+       FROM users
+    `;
+    const params = [];
+
+    if (search) {
+      query += ` WHERE email LIKE ? OR display_name LIKE ? OR first_name LIKE ? OR second_name LIKE ?`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    query += ` ORDER BY created_time DESC`;
+
+    const [users] = await pool.execute(query, params);
+
+    success(res, { users, total: users.length });
+  } catch (err) {
+    error(res, 'Ошибка при получении списка всех пользователей', 500, err);
+  }
+});
+
+/**
  * GET /api/users/:id
  * Получение данных пользователя по ID
  */
