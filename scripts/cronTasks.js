@@ -85,13 +85,14 @@ async function autoCompleteSpeedCleanup() {
           ['completed', requestId]
         );
 
-        // Получаем донатеров из donations
+        // Получаем донатеров и суммы донатов
         const [donations] = await pool.execute(
-          'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
+          'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
           [requestId]
         );
 
         const donorUserIds = [];
+        let totalDonationsAmount = 0;
 
         if (donations.length > 0) {
           const coinsToAward = 1;
@@ -106,21 +107,36 @@ async function autoCompleteSpeedCleanup() {
                 );
                 donorUserIds.push(donation.user_id);
               }
+              
+              // Суммируем донаты
+              if (donation.amount) {
+                totalDonationsAmount += parseFloat(donation.amount) || 0;
+              }
             } catch (donationError) {
               // Ошибка обработки донатера
             }
           }
         }
 
-        // Отправляем push-уведомление донатерам (если они есть)
-        if (donorUserIds.length > 0) {
+        // TODO: Перевести все донаты (за вычетом комиссии) исполнителю (created_by) через платежную систему
+        // Пока только логируем сумму
+        if (totalDonationsAmount > 0 && request.created_by) {
+          // Здесь должен быть код перевода денег исполнителю через платежную систему
+          // const commission = totalDonationsAmount * 0.1; // 10% комиссия (пример)
+          // const amountToTransfer = totalDonationsAmount - commission;
+          // await transferMoneyToUser(request.created_by, amountToTransfer);
+        }
+
+        // Отправляем push-уведомление исполнителю (created_by) о получении донатов
+        if (request.created_by) {
           try {
             await sendSpeedCleanupNotification({
-              userIds: donorUserIds,
-              earnedCoin: true,
+              userIds: [request.created_by],
+              messageType: 'executor',
+              requestId: requestId,
             });
           } catch (pushError) {
-            // Ошибка отправки push-уведомлений
+            // Ошибка отправки push-уведомления исполнителю
           }
         }
 
@@ -156,13 +172,20 @@ async function autoCompleteSpeedCleanup() {
 
     // Записываем общее действие для всей задачи
     if (requests.length > 0) {
+      const hasErrors = errors > 0;
       await logCronAction(
         'autoCompleteSpeedCleanup',
         null,
         'speedCleanup',
-        `Обработано ${processed} из ${requests.length} заявок speedCleanup`,
-        errors > 0 ? 'completed' : 'completed',
-        { processed, errors, total: requests.length }
+        `Обработано ${processed} из ${requests.length} заявок speedCleanup${hasErrors ? ` (${errors} ошибок)` : ''}`,
+        hasErrors ? 'error' : 'completed',
+        { 
+          processed, 
+          errors, 
+          total: requests.length,
+          hasErrors: hasErrors,
+          message: hasErrors ? `При обработке возникло ${errors} ошибок. Проверьте отдельные записи с status='error' для деталей.` : null
+        }
       );
     }
 
@@ -332,16 +355,17 @@ async function checkExpiredWasteJoins() {
 async function notifyInactiveWasteRequests() {
   try {
     // TODO: После проверки изменить комментарий на "заявке исполнилось 7 дней" (сейчас 1 день для тестирования)
-    // Находим все waste заявки со статусом new, где expires_at - 1 день <= текущее время
-    // Это означает, что заявке исполнилось 1 день (для проверки, потом вернуть на 7 дней), и через сутки она будет удалена
+    // Находим все waste заявки со статусом new, где заявке исполнилось 1 день (expires_at <= NOW())
+    // expires_at = created_at + 1 день, поэтому когда expires_at <= NOW(), заявке исполнилось 1 день
+    // Пуш отправляется когда заявке исполнилось 1 день, и через сутки заявка будет удалена
     const [requests] = await pool.execute(
       `SELECT id, created_by, expires_at, extended_count
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'new' 
          AND expires_at IS NOT NULL
-         AND expires_at > NOW()
-         AND expires_at <= DATE_ADD(NOW(), INTERVAL 1 DAY)
+         AND expires_at <= NOW()
+         AND expires_at > DATE_SUB(NOW(), INTERVAL 1 DAY)
          AND extended_count = 0`
     );
 
@@ -356,6 +380,21 @@ async function notifyInactiveWasteRequests() {
 
     for (const request of requests) {
       try {
+        // Проверяем, было ли уже отправлено уведомление для этой заявки
+        const [existingActions] = await pool.execute(
+          `SELECT id FROM cron_actions 
+           WHERE action_type = 'notifyInactiveWasteRequests' 
+             AND request_id = ? 
+             AND status = 'completed'
+           LIMIT 1`,
+          [request.id]
+        );
+
+        // Если уведомление уже было отправлено, пропускаем
+        if (existingActions.length > 0) {
+          continue;
+        }
+
         // Отправляем пуш создателю о том, что заявка будет удалена через сутки
         // И что он может продлить ее еще на неделю
         await sendRequestRejectedNotification({
@@ -409,15 +448,17 @@ async function notifyInactiveWasteRequests() {
 async function deleteInactiveRequests() {
   try {
     // TODO: После проверки изменить комментарий на "прошло 8 дней (7 дней + 1 день ожидания)" (сейчас 2 дня для тестирования)
-    // Находим все waste заявки со статусом new, где expires_at <= текущее время
-    // Это означает, что прошло 2 дня (1 день + 1 день ожидания, для проверки, потом вернуть на 8 дней) и заявка не была продлена
+    // Находим все waste заявки со статусом new, где прошло 2 дня (1 день + 1 день ожидания после пуша)
+    // expires_at = created_at + 1 день (время отправки пуша)
+    // Удаление происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
+    // Это эквивалентно expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)
     const [requests] = await pool.execute(
       `SELECT id, created_by, cost, category
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'new' 
          AND expires_at IS NOT NULL
-         AND expires_at <= NOW()`
+         AND expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)`
     );
 
     if (requests.length === 0) {
@@ -556,42 +597,78 @@ async function checkEventTimes() {
         // Проверяем время до события
         let actionDescription = '';
         let messageType = '';
+        let shouldSendNotification = false;
         
         if (diffHours >= 23.5 && diffHours <= 24.5) {
           // За 24 часа
-          if (participantUserIds.length > 0) {
+          messageType = '24hours';
+          // Проверяем, было ли уже отправлено уведомление за 24 часа
+          const [existingActions] = await pool.execute(
+            `SELECT id FROM cron_actions 
+             WHERE action_type = 'checkEventTimes' 
+               AND request_id = ? 
+               AND status = 'completed'
+               AND action_description LIKE ?
+             LIMIT 1`,
+            [request.id, `%за 24 часа до начала%`]
+          );
+          if (existingActions.length === 0 && participantUserIds.length > 0) {
             await sendEventTimeNotification({
               userIds: participantUserIds,
               requestId: request.id,
               messageType: '24hours',
             });
             actionDescription = `Уведомление участникам события ${request.id} за 24 часа до начала`;
-            messageType = '24hours';
+            shouldSendNotification = true;
           }
         } else if (diffHours >= 1.5 && diffHours <= 2.5) {
           // За 2 часа
-          if (participantUserIds.length > 0) {
+          messageType = '2hours';
+          // Проверяем, было ли уже отправлено уведомление за 2 часа
+          const [existingActions] = await pool.execute(
+            `SELECT id FROM cron_actions 
+             WHERE action_type = 'checkEventTimes' 
+               AND request_id = ? 
+               AND status = 'completed'
+               AND action_description LIKE ?
+             LIMIT 1`,
+            [request.id, `%за 2 часа до начала%`]
+          );
+          if (existingActions.length === 0 && participantUserIds.length > 0) {
             await sendEventTimeNotification({
               userIds: participantUserIds,
               requestId: request.id,
               messageType: '2hours',
             });
             actionDescription = `Уведомление участникам события ${request.id} за 2 часа до начала`;
-            messageType = '2hours';
+            shouldSendNotification = true;
           }
         } else if (diffMinutes >= -5 && diffMinutes <= 5) {
           // Событие началось
-          await sendEventTimeNotification({
-            userIds: [request.created_by],
-            requestId: request.id,
-            messageType: 'start',
-          });
-          actionDescription = `Начало события ${request.id}`;
           messageType = 'start';
+          // Проверяем, было ли уже отправлено уведомление о начале
+          const [existingActions] = await pool.execute(
+            `SELECT id FROM cron_actions 
+             WHERE action_type = 'checkEventTimes' 
+               AND request_id = ? 
+               AND status = 'completed'
+               AND action_description LIKE ?
+             LIMIT 1`,
+            [request.id, `%Начало события%`]
+          );
+          if (existingActions.length === 0) {
+            await sendEventTimeNotification({
+              userIds: [request.created_by],
+              requestId: request.id,
+              messageType: 'start',
+            });
+            actionDescription = `Начало события ${request.id}`;
+            shouldSendNotification = true;
+          }
         }
 
         // Записываем действие, если было отправлено уведомление
-        if (actionDescription) {
+        if (shouldSendNotification && actionDescription) {
           await logCronAction(
             'checkEventTimes',
             request.id,

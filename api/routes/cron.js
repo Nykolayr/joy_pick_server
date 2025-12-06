@@ -150,6 +150,18 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
        LIMIT 10`
     );
 
+    // Парсим metadata из JSON строки в объект
+    const parsedActions = completedActions.map(action => {
+      if (action.metadata && typeof action.metadata === 'string') {
+        try {
+          action.metadata = JSON.parse(action.metadata);
+        } catch (e) {
+          // Если не удалось распарсить, оставляем как есть
+        }
+      }
+      return action;
+    });
+
     // Вычисляем запланированные действия на основе текущих заявок
     const scheduledActions = [];
 
@@ -285,30 +297,70 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
       }
     }
 
-    // 4. New заявки: удаление через 7 дней
-    const [newRequests] = await pool.execute(
-      `SELECT id, name, created_at, category
+    // 4. WasteLocation: уведомление о скором удалении и удаление
+    // 4.1. Уведомление о скором удалении (когда заявке исполнилось 1 день)
+    // expires_at = created_at + 1 день (время когда заявке исполнится 1 день)
+    // Пуш отправляется когда expires_at <= NOW() (заявке уже исполнилось 1 день)
+    const [wasteForNotification] = await pool.execute(
+      `SELECT id, name, expires_at, created_at, category, extended_count
        FROM requests 
-       WHERE status = 'new' 
-         AND created_at IS NOT NULL
-       ORDER BY created_at ASC
+       WHERE category = 'wasteLocation'
+         AND status = 'new' 
+         AND expires_at IS NOT NULL
+         AND expires_at <= NOW()
+         AND expires_at > DATE_SUB(NOW(), INTERVAL 1 DAY)
+         AND extended_count = 0
+       ORDER BY expires_at ASC
        LIMIT 10`
     );
 
-    for (const request of newRequests) {
-      const createdDate = new Date(request.created_at);
-      const deleteTime = new Date(createdDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+    for (const request of wasteForNotification) {
+      const expiresAt = new Date(request.expires_at);
       const now = new Date();
+      
+      // Время отправки пуша = когда заявке исполнилось 1 день = expires_at
+      // Показываем что пуш должен быть отправлен сейчас (expires_at уже прошло)
+      scheduledActions.push({
+        action_type: 'notifyInactiveWasteRequests',
+        request_id: request.id,
+        request_category: request.category,
+        request_name: request.name,
+        action_description: `Уведомление создателю заявки "${request.name}" о скором удалении (через 24 часа после создания)`,
+        scheduled_at: expiresAt.toISOString(),
+        time_until: 0 // уже должно быть отправлено
+      });
+    }
 
-      if (deleteTime > now && deleteTime <= new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)) {
+    // 4.2. Удаление неактивных waste заявок (через 1 день после пуша)
+    // expires_at = created_at + 1 день (время отправки пуша)
+    // Удаление происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
+    const [wasteForDeletion] = await pool.execute(
+      `SELECT id, name, expires_at, category
+       FROM requests 
+       WHERE category = 'wasteLocation'
+         AND status = 'new' 
+         AND expires_at IS NOT NULL
+         AND expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)
+       ORDER BY expires_at ASC
+       LIMIT 10`
+    );
+
+    for (const request of wasteForDeletion) {
+      const expiresAt = new Date(request.expires_at);
+      const now = new Date();
+      // Время удаления = expires_at + 1 день (через 1 день после пуша)
+      const deleteTime = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
+      
+      // Показываем только если удаление запланировано в ближайшие 24 часа
+      if (deleteTime <= now && deleteTime > new Date(now.getTime() - 24 * 60 * 60 * 1000)) {
         scheduledActions.push({
           action_type: 'deleteInactiveRequests',
           request_id: request.id,
           request_category: request.category,
           request_name: request.name,
-          action_description: `Удаление неактивной заявки "${request.name}" (7 дней без присоединения)`,
+          action_description: `Удаление неактивной заявки "${request.name}" (через 1 день после уведомления)`,
           scheduled_at: deleteTime.toISOString(),
-          time_until: Math.round((deleteTime - now) / (1000 * 60 * 60 * 24 * 10)) / 10 // дни
+          time_until: 0 // уже должно быть удалено
         });
       }
     }
@@ -318,9 +370,9 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
     const topScheduled = scheduledActions.slice(0, 10);
 
     return success(res, {
-      completed: completedActions,
+      completed: parsedActions,
       scheduled: topScheduled,
-      total_completed: completedActions.length,
+      total_completed: parsedActions.length,
       total_scheduled: topScheduled.length
     });
   } catch (err) {
