@@ -616,21 +616,47 @@ async function sendDonationNotification({ requestId, requestName, requestCategor
  * @param {boolean} options.earnedCoin - Заработан ли коин (true) или нет (false)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendSpeedCleanupNotification({ userIds, earnedCoin }) {
-  const title = 'Thank you!';
-  const body = earnedCoin 
-    ? 'You\'ve earned a coin for your cleanup work!'
-    : 'Try to work a bit longer next time to earn a coin.';
+/**
+ * Отправка уведомления для speedCleanup заявок
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {boolean} options.earnedCoin - Заработан ли коин (для донатеров)
+ * @param {string} options.messageType - Тип сообщения: 'donor' (донатерам), 'executor' (исполнителю о получении донатов)
+ * @param {string} options.requestId - ID заявки (для deeplink, если messageType = 'executor')
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendSpeedCleanupNotification({ userIds, earnedCoin, messageType = 'donor', requestId = null }) {
+  let title, body;
+  
+  if (messageType === 'executor') {
+    // Уведомление исполнителю о получении донатов
+    title = 'Donations Received';
+    body = 'You have received donations for your cleanup work!';
+  } else {
+    // Уведомление донатерам о коинах
+    title = 'Thank you!';
+    body = earnedCoin 
+      ? 'You\'ve earned a coin for your cleanup work!'
+      : 'Try to work a bit longer next time to earn a coin.';
+  }
+
+  const data = {
+    type: 'speedCleanup',
+    earnedCoin: earnedCoin,
+    messageType: messageType,
+  };
+
+  // Добавляем deeplink для исполнителя
+  if (messageType === 'executor' && requestId) {
+    data.deeplink = `joypick://speed_cleanup/${requestId}`;
+  }
 
   return await sendNotificationToUsers({
     title,
     body,
     userIds,
     sound: 'default',
-    data: {
-      type: 'speedCleanup',
-      earnedCoin: earnedCoin,
-    },
+    data,
   });
 }
 
