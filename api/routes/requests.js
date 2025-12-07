@@ -15,6 +15,7 @@ const {
   sendRequestRejectedNotification,
   sendModerationNotification
 } = require('../services/pushNotification');
+const { createGroupChatForRequest, deleteChatsForRequest, addParticipantToGroupChat } = require('../utils/chats');
 
 const router = express.Router();
 
@@ -520,6 +521,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
         expiresAt
       ]
     );
+
+    // Создаем групповой чат для заявки
+    try {
+      await createGroupChatForRequest(requestId, userId);
+    } catch (chatError) {
+      console.error('Ошибка при создании группового чата:', chatError);
+      // Не прерываем создание заявки, если не удалось создать чат
+    }
 
     // Получение созданной заявки
     const [requests] = await pool.execute(
@@ -1113,6 +1122,14 @@ router.delete('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
+    // Удаляем все связанные чаты перед удалением заявки
+    try {
+      await deleteChatsForRequest(id);
+    } catch (chatError) {
+      console.error('Ошибка при удалении чатов для заявки:', chatError);
+      // Продолжаем удаление заявки даже если не удалось удалить чаты
+    }
+
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
     success(res, null, 'Заявка удалена');
@@ -1177,6 +1194,14 @@ router.post('/:id/join', authenticate, async (req, res) => {
       'UPDATE requests SET joined_user_id = ?, join_date = NOW(), status = ?, updated_at = NOW() WHERE id = ?',
       [userId, 'inProgress', id]
     );
+
+    // Добавляем участника в групповой чат заявки
+    try {
+      await addParticipantToGroupChat(id, userId);
+    } catch (chatError) {
+      console.error('Ошибка при добавлении участника в групповой чат:', chatError);
+      // Не прерываем присоединение, если не удалось добавить в чат
+    }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
@@ -1497,6 +1522,14 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
     ['completed', requestId]
   );
   console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+
+  // 7. Удаляем все связанные чаты
+  try {
+    await deleteChatsForRequest(requestId);
+    console.log(`✅ Удалены чаты для заявки ${requestId}`);
+  } catch (chatError) {
+    console.error('❌ Ошибка при удалении чатов для заявки:', chatError);
+  }
 }
 
 /**
@@ -1589,6 +1622,14 @@ async function handleEventApproval(requestId, creatorId) {
     ['completed', requestId]
   );
   console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+
+  // 8. Удаляем все связанные чаты
+  try {
+    await deleteChatsForRequest(requestId);
+    console.log(`✅ Удалены чаты для заявки ${requestId}`);
+  } catch (chatError) {
+    console.error('❌ Ошибка при удалении чатов для заявки:', chatError);
+  }
 }
 
 /**

@@ -159,6 +159,15 @@ router.post('/', authenticate, [
 
     // Донатеры хранятся только в таблице donations, request_contributors больше не используется
 
+    // Добавляем донатера в групповой чат заявки
+    try {
+      const { addParticipantToGroupChat } = require('../utils/chats');
+      await addParticipantToGroupChat(requestId, userId);
+    } catch (chatError) {
+      console.error('Ошибка при добавлении донатера в групповой чат:', chatError);
+      // Не прерываем создание доната, если не удалось добавить в чат
+    }
+
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
       sendDonationNotification({

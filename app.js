@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const cron = require('node-cron');
 require('dotenv').config();
@@ -6,6 +7,7 @@ require('dotenv').config();
 // Импорт API
 const apiApp = require('./api');
 const { runAllCronTasks } = require('./scripts/cronTasks');
+const { initializeSocket } = require('./api/services/socket');
 
 const app = express();
 
@@ -34,7 +36,17 @@ cron.schedule(CRON_SCHEDULE, async () => {
   }
 });
 
+// Создаем HTTP сервер
+const httpServer = http.createServer(app);
 const port = process.env.PORT || 3000;
-app.listen(port);
 
-module.exports = app;
+// Инициализируем Socket.io
+const io = initializeSocket(httpServer);
+
+// Запускаем сервер
+httpServer.listen(port, () => {
+  console.log(`Сервер запущен на порту ${port}`);
+  console.log(`Socket.io сервер инициализирован`);
+});
+
+module.exports = { app, io };
