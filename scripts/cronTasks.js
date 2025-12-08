@@ -71,6 +71,7 @@ async function autoCompleteSpeedCleanup() {
 
     let processed = 0;
     let errors = 0;
+    const failedRequestIds = []; // Список requestId с ошибками
 
     for (const request of requests) {
       try {
@@ -93,10 +94,9 @@ async function autoCompleteSpeedCleanup() {
 
         const donorUserIds = [];
         let totalDonationsAmount = 0;
+        const coinsToAward = 1; // Коины для начисления донатерам
 
         if (donations.length > 0) {
-          const coinsToAward = 1;
-
           for (const donation of donations) {
             try {
               // Начисляем коины донатерам (по 1 коину каждому, кроме создателя)
@@ -153,6 +153,8 @@ async function autoCompleteSpeedCleanup() {
         processed++;
       } catch (requestError) {
         errors++;
+        failedRequestIds.push(request.id); // Добавляем в список ошибок
+        
         // Записываем ошибку в лог с подробной информацией
         await logCronAction(
           'autoCompleteSpeedCleanup',
@@ -184,7 +186,10 @@ async function autoCompleteSpeedCleanup() {
           errors, 
           total: requests.length,
           hasErrors: hasErrors,
-          message: hasErrors ? `При обработке возникло ${errors} ошибок. Проверьте отдельные записи с status='error' для деталей.` : null
+          failedRequestIds: hasErrors ? failedRequestIds : undefined, // Список requestId с ошибками
+          message: hasErrors 
+            ? `При обработке возникло ${errors} ошибок. Заявки с ошибками: ${failedRequestIds.join(', ')}. Проверьте отдельные записи с status='error' и request_id в этом списке для деталей.` 
+            : null
         }
       );
     }

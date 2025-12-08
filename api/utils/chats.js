@@ -30,7 +30,8 @@ async function createGroupChatForRequest(requestId, createdBy) {
     // Добавляем создателя в участники
     await pool.execute(
       `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-       VALUES (?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE joined_at = joined_at`,
       [generateId(), chatId, createdBy]
     );
 
@@ -95,7 +96,8 @@ async function addParticipantToGroupChat(requestId, userId) {
           if (existing.length === 0) {
             await pool.execute(
               `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-               VALUES (?, ?, ?, NOW())`,
+               VALUES (?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE joined_at = joined_at`,
               [generateId(), chatId, userId]
             );
           }
@@ -116,7 +118,8 @@ async function addParticipantToGroupChat(requestId, userId) {
       // Добавляем участника
       await pool.execute(
         `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-         VALUES (?, ?, ?, NOW())`,
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE joined_at = joined_at`,
         [generateId(), chatId, userId]
       );
     }

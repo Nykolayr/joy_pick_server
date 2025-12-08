@@ -82,23 +82,36 @@ router.post('/support', authenticate, async (req, res) => {
       [chatId, 'support', userId, userId]
     );
 
-    // Получаем всех админов
-    const [admins] = await pool.execute(
-      'SELECT id FROM users WHERE admin = true'
+    // Проверяем, является ли пользователь админом
+    const [userCheck] = await pool.execute(
+      'SELECT admin FROM users WHERE id = ?',
+      [userId]
     );
+    const isUserAdmin = userCheck.length > 0 && userCheck[0].admin === 1;
+
+    // Получаем всех админов (исключая текущего пользователя, если он админ)
+    let adminsQuery = 'SELECT id FROM users WHERE admin = true';
+    const adminParams = [];
+    if (isUserAdmin) {
+      adminsQuery += ' AND id != ?';
+      adminParams.push(userId);
+    }
+    const [admins] = await pool.execute(adminsQuery, adminParams);
 
     // Добавляем пользователя в участники
     await pool.execute(
       `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-       VALUES (?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE joined_at = joined_at`,
       [generateId(), chatId, userId]
     );
 
-    // Добавляем всех админов в участники
+    // Добавляем всех админов в участники (исключая пользователя, если он админ)
     for (const admin of admins) {
       await pool.execute(
         `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-         VALUES (?, ?, ?, NOW())`,
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE joined_at = joined_at`,
         [generateId(), chatId, admin.id]
       );
     }
@@ -251,13 +264,15 @@ router.post('/private', authenticate, async (req, res) => {
     // Добавляем обоих пользователей в участники
     await pool.execute(
       `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-       VALUES (?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE joined_at = joined_at`,
       [generateId(), chatId, userId]
     );
 
     await pool.execute(
       `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
-       VALUES (?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE joined_at = joined_at`,
       [generateId(), chatId, requestCreatorId]
     );
 
@@ -369,7 +384,9 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     query += ' ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const limitNum = parseInt(limit) || 20;
+    const offsetNum = parseInt(offset) || 0;
+    params.push(limitNum, offsetNum);
 
     const [chats] = await pool.execute(query, params);
 
@@ -419,8 +436,8 @@ router.get('/', authenticate, async (req, res) => {
     return success(res, {
       chats: chatsWithLastMessage,
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      limit: limitNum,
+      offset: offsetNum
     });
   } catch (err) {
     return error(res, 'Ошибка при получении списка чатов', 500, err);
@@ -497,7 +514,9 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     }
 
     query += ' ORDER BY m.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const limitNum = parseInt(limit) || 50;
+    const offsetNum = parseInt(offset) || 0;
+    params.push(limitNum, offsetNum);
 
     const [messages] = await pool.execute(query, params);
 
@@ -556,9 +575,9 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     return success(res, {
       messages: messagesWithReads,
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      has_more: (parseInt(offset) + messagesWithReads.length) < total
+      limit: limitNum,
+      offset: offsetNum,
+      has_more: (offsetNum + messagesWithReads.length) < total
     });
   } catch (err) {
     return error(res, 'Ошибка при получении сообщений', 500, err);
@@ -732,7 +751,9 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
     }
 
     query += ' ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const limitNum = parseInt(limit) || 20;
+    const offsetNum = parseInt(offset) || 0;
+    params.push(limitNum, offsetNum);
 
     const [chats] = await pool.execute(query, params);
 
@@ -791,8 +812,8 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
     return success(res, {
       chats: chatsWithLastMessage,
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      limit: limitNum,
+      offset: offsetNum
     });
   } catch (err) {
     return error(res, 'Ошибка при получении списка чатов', 500, err);
@@ -893,13 +914,15 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
 
     const [counts] = await pool.execute(countQuery, countParams);
     const total = counts[0]?.total || 0;
+    const limitNum = parseInt(limit) || 50;
+    const offsetNum = parseInt(offset) || 0;
 
     return success(res, {
       messages: messagesWithReads,
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      has_more: (parseInt(offset) + messagesWithReads.length) < total
+      limit: limitNum,
+      offset: offsetNum,
+      has_more: (offsetNum + messagesWithReads.length) < total
     });
   } catch (err) {
     return error(res, 'Ошибка при получении сообщений', 500, err);
