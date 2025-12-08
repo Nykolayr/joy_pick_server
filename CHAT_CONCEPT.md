@@ -510,8 +510,58 @@ CREATE TABLE chat_participants (
 ## WebSocket сервер (Socket.io)
 
 ### Подключение
-- **URL:** `wss://autogie1.bget.ru` (или `ws://localhost:3000` для разработки)
-- **Аутентификация:** JWT токен в query параметре или заголовке
+
+**Важно:** Используйте тот же домен, что и для HTTP API, БЕЗ указания порта!
+
+- **Production URL:** `http://autogie1.bget.ru` или `https://autogie1.bget.ru`
+- **Development URL:** `http://localhost:3000` (только для локальной разработки)
+
+**НЕ используйте:**
+- ❌ `wss://autogie1.bget.ru:46218` (неправильный порт)
+- ❌ `ws://autogie1.bget.ru:3000` (не указывайте порт на production)
+
+**Аутентификация:** JWT токен передается в параметре `auth`:
+
+**Пример для JavaScript/TypeScript:**
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://autogie1.bget.ru', {
+  transports: ['polling', 'websocket'], // polling - основной транспорт для Passenger
+  auth: {
+    token: 'your_jwt_token'
+  }
+});
+```
+
+**Пример для Flutter/Dart:**
+```dart
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+
+final socket = IO.io(
+  'http://autogie1.bget.ru',
+  IO.OptionBuilder()
+    .setTransports(['polling', 'websocket']) // polling - основной транспорт
+    .setAuth({'token': yourJwtToken})
+    .setExtraHeaders({'Authorization': 'Bearer $yourJwtToken'})
+    .build()
+);
+```
+
+**Обработка событий подключения:**
+```javascript
+socket.on('connect', () => {
+  console.log('Подключено к Socket.io');
+});
+
+socket.on('connect_error', (error) => {
+  console.error('Ошибка подключения:', error);
+});
+
+socket.on('disconnect', (reason) => {
+  console.log('Отключено:', reason);
+});
+```
 
 ### Комнаты (Rooms)
 - Каждый чат = отдельная комната Socket.io

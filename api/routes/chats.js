@@ -383,10 +383,12 @@ router.get('/', authenticate, async (req, res) => {
       params.push(type);
     }
 
-    query += ' ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?';
-    const limitNum = parseInt(limit) || 20;
-    const offsetNum = parseInt(offset) || 0;
-    params.push(limitNum, offsetNum);
+    // Валидация и преобразование параметров пагинации
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+    
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [chats] = await pool.execute(query, params);
 
@@ -513,10 +515,12 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       params.push(before);
     }
 
-    query += ' ORDER BY m.created_at DESC LIMIT ? OFFSET ?';
-    const limitNum = parseInt(limit) || 50;
-    const offsetNum = parseInt(offset) || 0;
-    params.push(limitNum, offsetNum);
+    // Валидация и преобразование параметров пагинации
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 50)); // Максимум 100 на странице
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+    
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY m.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [messages] = await pool.execute(query, params);
 
@@ -750,10 +754,12 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
       params.push(user_id);
     }
 
-    query += ' ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?';
-    const limitNum = parseInt(limit) || 20;
-    const offsetNum = parseInt(offset) || 0;
-    params.push(limitNum, offsetNum);
+    // Валидация и преобразование параметров пагинации
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+    
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [chats] = await pool.execute(query, params);
 
@@ -858,8 +864,12 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
       params.push(before);
     }
 
-    query += ' ORDER BY m.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    // Валидация и преобразование параметров пагинации
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 50)); // Максимум 100 на странице
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+    
+    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
+    query += ` ORDER BY m.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [messages] = await pool.execute(query, params);
 
@@ -914,8 +924,6 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
 
     const [counts] = await pool.execute(countQuery, countParams);
     const total = counts[0]?.total || 0;
-    const limitNum = parseInt(limit) || 50;
-    const offsetNum = parseInt(offset) || 0;
 
     return success(res, {
       messages: messagesWithReads,

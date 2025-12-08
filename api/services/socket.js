@@ -17,7 +17,11 @@ function initializeSocket(httpServer) {
       methods: ['GET', 'POST'],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    // Для Passenger на Beget используем polling как основной транспорт
+    transports: ['polling', 'websocket'],
+    allowEIO3: true, // Поддержка старых клиентов
+    pingTimeout: 60000,
+    pingInterval: 25000
   });
 
   // Middleware для аутентификации

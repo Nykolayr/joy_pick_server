@@ -19,7 +19,7 @@ const migrationRoutes = require('./routes/migration');
 const notificationRoutes = require('./routes/notifications');
 const wasteTypesRoutes = require('./routes/wasteTypes');
 const cronRoutes = require('./routes/cron');
-const chatRoutes = require('./routes/chats');
+// const chatRoutes = require('./routes/chats'); // Временно отключено для диагностики
 
 const app = express();
 
@@ -51,7 +51,7 @@ app.use('/migration', migrationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/waste-types', wasteTypesRoutes);
 app.use('/cron', cronRoutes);
-app.use('/chats', chatRoutes);
+// app.use('/chats', chatRoutes); // Временно отключено для диагностики
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {
@@ -117,7 +117,7 @@ app.get('/', (req, res) => {
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
-      chats: '/api/chats',
+      // chats: '/api/chats', // Временно отключено
       info: '/api/info',
       health: '/api/health'
     }
@@ -141,7 +141,7 @@ app.get('/info', (req, res) => {
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
-      chats: '/api/chats',
+      // chats: '/api/chats', // Временно отключено
       cron: '/api/cron',
       info: '/api/info',
       health: '/api/health',
