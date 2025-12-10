@@ -1,6 +1,6 @@
 // Middleware для обработки ошибок
+// ВСЕ ОШИБКИ ВОЗВРАЩАЮТСЯ В JSON - НЕ ЛОГИРУЕМ В ФАЙЛЫ
 const errorHandler = (err, req, res, next) => {
-  console.error('Ошибка:', err);
 
   // Ошибки валидации Joi
   if (err.isJoi) {
@@ -114,15 +114,7 @@ const errorHandler = (err, req, res, next) => {
     };
   }
 
-  // Логируем полную ошибку на сервере
-  console.error('❌ Server Error:', {
-    message: err.message,
-    code: err.code,
-    sql: err.sql,
-    sqlMessage: err.sqlMessage,
-    stack: err.stack
-  });
-
+  // Все ошибки возвращаются в JSON ответе - не логируем в файлы
   res.status(500).json(errorResponse);
 };
 
