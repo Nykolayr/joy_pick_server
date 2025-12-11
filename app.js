@@ -11,30 +11,46 @@ const { runAllCronTasks } = require('./scripts/cronTasks');
 
 const app = express();
 
-// Создаем HTTP сервер из Express app для Socket.io
-// Для Passenger: используем app.listen для получения сервера
-// Passenger перехватывает app.listen и использует свой сервер
+// КРИТИЧЕСКИ ВАЖНО: Для Passenger на Beget
+// Passenger сам создает HTTP сервер, нам нужно получить его через app.listen
+// Но Passenger перехватывает app.listen, поэтому создаем сервер явно
+let server;
+let io;
+
+// КРИТИЧЕСКИ ВАЖНО: Для Passenger на Beget
+// Passenger сам создает HTTP сервер и передает его через app.listen
+// НО: app.listen возвращает сервер, который Passenger использует
 const port = process.env.PORT || 3000;
-const server = app.listen(port, () => {
-  // Passenger перехватывает этот вызов, но сервер все равно создается
-});
+server = app.listen(port);
 
 // Инициализация Socket.io
-const io = new Server(server, {
+// КРИТИЧЕСКИ ВАЖНО: Для Passenger на Beget используем ТОЛЬКО polling
+// WebSocket не работает через прокси Passenger
+// ВАЖНО: Socket.io должен быть инициализирован ПОСЛЕ создания сервера
+// Используем настройки из примера для Beget
+io = new Server(server, {
+  // Важно для прокси и Passenger (из примера)
+  transports: ['polling'], // ТОЛЬКО polling для Passenger на Beget
   cors: {
     origin: process.env.CORS_ORIGIN || '*',
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Authorization', 'Content-Type']
   },
-  transports: ['polling', 'websocket'], // polling - основной транспорт для Passenger
-  allowEIO3: true // Поддержка старых клиентов
+  path: '/socket.io/', // Путь для Socket.io
+  pingTimeout: 60000, // Таймаут для ping (60 секунд)
+  pingInterval: 25000, // Интервал ping (25 секунд)
+  connectTimeout: 60000, // Таймаут подключения (60 секунд)
+  allowEIO3: false, // Отключаем EIO3, используем только EIO4
+  serveClient: false, // Не отдаем клиентскую библиотеку Socket.io
+  // КРИТИЧЕСКИ ВАЖНО: Для Passenger отключаем upgrade
+  allowUpgrades: false, // Запрещаем upgrade на WebSocket (только polling)
+  // КРИТИЧЕСКИ ВАЖНО: Увеличиваем таймауты для Passenger
+  httpCompression: false // Отключаем сжатие для совместимости с Passenger
 });
 
 // Подключаем Socket.io обработчики
 require('./api/socket')(io);
-
-// Сохраняем io в app для доступа из роутов
-app.set('io', io);
 
 // Сохраняем io в app для доступа из роутов
 app.set('io', io);

@@ -6,6 +6,71 @@ const { generateId } = require('../utils/uuid');
 
 const router = express.Router();
 
+// КРИТИЧЕСКИ ВАЖНО: Хранилище для SSE подключений
+// Структура: Map<chatId, Set<Response>>
+// Каждый чат может иметь несколько подключенных клиентов
+const sseConnections = new Map();
+
+/**
+ * Безопасный парсинг JSON поля из базы данных
+ * MySQL может возвращать JSON уже как объект/массив или как строку
+ * @param {any} value - Значение из БД
+ * @returns {Array} - Массив ID пользователей
+ */
+function safeParseJsonArray(value) {
+  if (!value) {
+    return [];
+  }
+  
+  if (Array.isArray(value)) {
+    // Уже массив, возвращаем как есть
+    return value;
+  }
+  
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      // Если не удалось распарсить, возвращаем пустой массив
+      return [];
+    }
+  }
+  
+  // Если это объект или что-то другое, возвращаем пустой массив
+  return [];
+}
+
+/**
+ * Отправка события через SSE всем подключенным клиентам чата
+ * @param {string} chatId - ID чата
+ * @param {object} event - Событие для отправки
+ */
+function sendSSEEvent(chatId, event) {
+  const connections = sseConnections.get(chatId);
+  if (!connections || connections.size === 0) {
+    return;
+  }
+
+  const data = JSON.stringify(event);
+  const sseMessage = `data: ${data}\n\n`;
+
+  // Отправляем событие всем подключенным клиентам
+  connections.forEach((res) => {
+    try {
+      res.write(sseMessage);
+    } catch (err) {
+      // Если клиент отключился, удаляем его из списка
+      connections.delete(res);
+    }
+  });
+
+  // Если больше нет подключений, удаляем чат из Map
+  if (connections.size === 0) {
+    sseConnections.delete(chatId);
+  }
+}
+
 /**
  * GET /api/chats
  * Получить список всех чатов текущего пользователя
@@ -18,31 +83,38 @@ router.get('/', authenticate, async (req, res) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offsetNum = Math.max(0, parseInt(offset) || 0);
 
+    // КРИТИЧЕСКИ ВАЖНО: Для support чатов фильтруем по владельцу (user_id)
+    // Для остальных типов - по участию в chat_participants
+    // Это нужно, чтобы админы не видели все support чаты других пользователей
     let query = `
       SELECT DISTINCT c.*, 
         (SELECT COUNT(*) FROM messages m 
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
-         AND m.id NOT IN (
-           SELECT message_id FROM message_reads WHERE user_id = ?
-         )) as unread_count,
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count,
         (SELECT m.id FROM messages m 
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
          ORDER BY m.created_at DESC LIMIT 1) as last_message_id
       FROM chats c
       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-      WHERE cp.user_id = ?
+      WHERE (
+        (c.type = 'support' AND c.user_id = ?) 
+        OR 
+        (c.type != 'support' AND cp.user_id = ?)
+      )
     `;
-    const params = [userId, userId];
+    const params = [userId, userId, userId];
 
     if (type) {
       query += ` AND c.type = ?`;
       params.push(type);
     }
 
-    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limitNum, offsetNum);
+    // КРИТИЧЕСКИ ВАЖНО: LIMIT и OFFSET не могут быть плейсхолдерами в MySQL2
+    // Вставляем значения напрямую (безопасно, так как limitNum и offsetNum - числа)
+    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [chats] = await pool.execute(query, params);
 
@@ -66,9 +138,13 @@ router.get('/', authenticate, async (req, res) => {
       SELECT COUNT(DISTINCT c.id) as total
       FROM chats c
       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-      WHERE cp.user_id = ?
+      WHERE (
+        (c.type = 'support' AND c.user_id = ?) 
+        OR 
+        (c.type != 'support' AND cp.user_id = ?)
+      )
     `;
-    const countParams = [userId];
+    const countParams = [userId, userId];
     if (type) {
       countQuery += ` AND c.type = ?`;
       countParams.push(type);
@@ -98,9 +174,8 @@ router.get('/support', authenticate, async (req, res) => {
         (SELECT COUNT(*) FROM messages m 
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
-         AND m.id NOT IN (
-           SELECT message_id FROM message_reads WHERE user_id = ?
-         )) as unread_count
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count
        FROM chats c
        WHERE c.type = 'support' AND c.user_id = ?`,
       [userId, userId]
@@ -149,6 +224,24 @@ router.post('/support', authenticate, async (req, res) => {
       [chatId, userId]
     );
 
+    // КРИТИЧЕСКИ ВАЖНО: Автоматически добавляем всех админов в support чат
+    const [admins] = await pool.execute(
+      `SELECT id FROM users WHERE is_admin = true OR admin = true`
+    );
+    
+    for (const admin of admins) {
+      try {
+        await pool.execute(
+          `INSERT INTO chat_participants (chat_id, user_id, joined_at)
+           VALUES (?, ?, NOW())
+           ON DUPLICATE KEY UPDATE joined_at = joined_at`,
+          [chatId, admin.id]
+        );
+      } catch (err) {
+        // Игнорируем ошибки дублирования
+      }
+    }
+
     const [newChat] = await pool.execute(
       `SELECT * FROM chats WHERE id = ?`,
       [chatId]
@@ -187,9 +280,8 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
         (SELECT COUNT(*) FROM messages m 
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
-         AND m.id NOT IN (
-           SELECT message_id FROM message_reads WHERE user_id = ?
-         )) as unread_count
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count
        FROM chats c
        WHERE c.type = 'private' 
        AND c.request_id = ? 
@@ -303,9 +395,8 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
         (SELECT COUNT(*) FROM messages m 
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
-         AND m.id NOT IN (
-           SELECT message_id FROM message_reads WHERE user_id = ?
-         )) as unread_count,
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count,
         (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
        FROM chats c
        WHERE c.type = 'group' AND c.request_id = ?`,
@@ -363,18 +454,25 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       params.push(before);
     }
 
-    query += ` ORDER BY m.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limitNum, offsetNum);
+    // КРИТИЧЕСКИ ВАЖНО: LIMIT и OFFSET не могут быть плейсхолдерами в MySQL2
+    // Вставляем значения напрямую (безопасно, так как limitNum и offsetNum - числа)
+    query += ` ORDER BY m.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [messages] = await pool.execute(query, params);
 
-    // Получаем информацию о прочтении для каждого сообщения
+    // Парсим JSON поля read_by и unread_by для каждого сообщения
     for (const message of messages) {
-      const [reads] = await pool.execute(
-        `SELECT user_id, read_at FROM message_reads WHERE message_id = ?`,
-        [message.id]
-      );
-      message.read_by = reads;
+      // Безопасный парсинг JSON полей
+      message.read_by = safeParseJsonArray(message.read_by);
+      message.unread_by = safeParseJsonArray(message.unread_by);
+      
+      // Убеждаемся, что отправитель всегда в read_by
+      if (!message.read_by.includes(message.sender_id)) {
+        message.read_by.push(message.sender_id);
+      }
+      
+      // Удаляем отправителя из unread_by (если он там есть)
+      message.unread_by = message.unread_by.filter(id => id !== message.sender_id);
     }
 
     // Получаем общее количество сообщений
@@ -400,7 +498,8 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       message: msg.message,
       message_type: msg.message_type,
       created_at: msg.created_at,
-      read_by: msg.read_by
+      read_by: msg.read_by,
+      unread_by: msg.unread_by
     }));
 
     success(res, {
@@ -439,12 +538,32 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       return error(res, 'Чат не найден или нет доступа', 404);
     }
 
-    // Сохраняем сообщение
+    // Получаем всех участников чата
+    const [participants] = await pool.execute(
+      `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+      [chatId]
+    );
+
+    // Формируем массивы: отправитель в read_by, остальные в unread_by
+    const readBy = [userId]; // Отправитель сразу прочитал
+    const unreadBy = participants
+      .map(p => p.user_id)
+      .filter(id => id !== userId); // Все остальные участники
+
+    // Сохраняем сообщение с JSON полями
     const messageId = generateId();
     await pool.execute(
-      `INSERT INTO messages (id, chat_id, sender_id, message, message_type, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [messageId, chatId, userId, message, message_type]
+      `INSERT INTO messages (id, chat_id, sender_id, message, message_type, created_at, read_by, unread_by)
+       VALUES (?, ?, ?, ?, ?, NOW(), ?, ?)`,
+      [
+        messageId,
+        chatId,
+        userId,
+        message,
+        message_type,
+        JSON.stringify(readBy),
+        unreadBy.length > 0 ? JSON.stringify(unreadBy) : null
+      ]
     );
 
     // Обновляем last_message_at в чате
@@ -465,10 +584,27 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
     );
 
     const messageData = messages[0];
+    
+    // Безопасный парсинг JSON полей
+    messageData.read_by = safeParseJsonArray(messageData.read_by);
+    messageData.unread_by = safeParseJsonArray(messageData.unread_by);
 
-    // Отправляем через Socket.io (если доступен)
+    // Отправляем через SSE (Server-Sent Events)
+    sendSSEEvent(chatId, {
+      type: 'new_message',
+      success: true,
+      id: messageData.id,
+      chat_id: messageData.chat_id,
+      sender_id: messageData.sender_id,
+      message: messageData.message,
+      message_type: messageData.message_type,
+      created_at: messageData.created_at,
+      read_by: messageData.read_by,
+      unread_by: messageData.unread_by
+    });
+
+    // Отправляем через Socket.io (если доступен) - для обратной совместимости
     try {
-      // Получаем io из главного app через req.app
       const mainApp = req.app;
       const io = mainApp ? mainApp.get('io') : null;
       if (io) {
@@ -492,7 +628,9 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       sender_id: messageData.sender_id,
       message: messageData.message,
       message_type: messageData.message_type,
-      created_at: messageData.created_at
+      created_at: messageData.created_at,
+      read_by: messageData.read_by,
+      unread_by: messageData.unread_by
     }, 'Сообщение отправлено', 201);
   } catch (err) {
     error(res, 'Ошибка при отправке сообщения', 500, err);
@@ -500,8 +638,100 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
 });
 
 /**
+ * POST /api/chats/:chatId/read
+ * Отметить все сообщения в чате как прочитанные (при открытии чата)
+ */
+router.post('/:chatId/read', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { chatId } = req.params;
+
+    // Проверяем доступ к чату
+    const [chats] = await pool.execute(
+      `SELECT c.* FROM chats c
+       INNER JOIN chat_participants cp ON c.id = cp.chat_id
+       WHERE c.id = ? AND cp.user_id = ?`,
+      [chatId, userId]
+    );
+
+    if (chats.length === 0) {
+      return error(res, 'Чат не найден или нет доступа', 404);
+    }
+
+    // Получаем все непрочитанные сообщения для этого пользователя
+    const [messages] = await pool.execute(
+      `SELECT id, read_by, unread_by FROM messages 
+       WHERE chat_id = ? 
+       AND deleted_at IS NULL
+       AND JSON_CONTAINS(COALESCE(unread_by, '[]'), JSON_QUOTE(?)) = 1`,
+      [chatId, userId]
+    );
+
+    // Обновляем каждое сообщение: перемещаем userId из unread_by в read_by
+    for (const message of messages) {
+      let readBy = safeParseJsonArray(message.read_by);
+      let unreadBy = safeParseJsonArray(message.unread_by);
+
+      // Перемещаем userId из unread_by в read_by
+      if (unreadBy.includes(userId)) {
+        unreadBy = unreadBy.filter(id => id !== userId);
+        if (!readBy.includes(userId)) {
+          readBy.push(userId);
+        }
+      }
+
+      // Обновляем сообщение
+      await pool.execute(
+        `UPDATE messages 
+         SET read_by = ?, unread_by = ? 
+         WHERE id = ?`,
+        [
+          JSON.stringify(readBy),
+          unreadBy.length > 0 ? JSON.stringify(unreadBy) : null,
+          message.id
+        ]
+      );
+    }
+
+    // Отправляем через SSE (Server-Sent Events)
+    sendSSEEvent(chatId, {
+      type: 'all_messages_read',
+      success: true,
+      userId: userId,
+      chatId: chatId,
+      messagesCount: messages.length,
+      readAt: new Date().toISOString()
+    });
+
+    // Отправляем через Socket.io (если доступен) - для обратной совместимости
+    try {
+      const mainApp = req.app;
+      const io = mainApp ? mainApp.get('io') : null;
+      if (io) {
+        io.to(`chat:${chatId}`).emit('all_messages_read', {
+          success: true,
+          userId: userId,
+          chatId: chatId,
+          messagesCount: messages.length
+        });
+      }
+    } catch (socketError) {
+      // Socket.io не доступен
+    }
+
+    success(res, {
+      chat_id: chatId,
+      messages_marked_read: messages.length,
+      read_at: new Date().toISOString()
+    });
+  } catch (err) {
+    error(res, 'Ошибка при отметке сообщений как прочитанных', 500, err);
+  }
+});
+
+/**
  * POST /api/chats/:chatId/messages/:messageId/read
- * Отметить сообщение как прочитанное
+ * Отметить одно сообщение как прочитанное (для обратной совместимости)
  */
 router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) => {
   try {
@@ -520,25 +750,60 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
       return error(res, 'Чат не найден или нет доступа', 404);
     }
 
-    // Сохраняем отметку о прочтении
-    await pool.execute(
-      `INSERT INTO message_reads (message_id, user_id, read_at)
-       VALUES (?, ?, NOW())
-       ON DUPLICATE KEY UPDATE read_at = NOW()`,
-      [messageId, userId]
+    // Получаем сообщение
+    const [messages] = await pool.execute(
+      `SELECT id, read_by, unread_by FROM messages 
+       WHERE id = ? AND chat_id = ? AND deleted_at IS NULL`,
+      [messageId, chatId]
     );
 
-    // Отправляем через Socket.io (если доступен)
+    if (messages.length === 0) {
+      return error(res, 'Сообщение не найдено', 404);
+    }
+
+    const message = messages[0];
+    let readBy = safeParseJsonArray(message.read_by);
+    let unreadBy = safeParseJsonArray(message.unread_by);
+
+    // Перемещаем userId из unread_by в read_by
+    if (unreadBy.includes(userId)) {
+      unreadBy = unreadBy.filter(id => id !== userId);
+      if (!readBy.includes(userId)) {
+        readBy.push(userId);
+      }
+    }
+
+    // Обновляем сообщение
+    await pool.execute(
+      `UPDATE messages 
+       SET read_by = ?, unread_by = ? 
+       WHERE id = ?`,
+      [
+        JSON.stringify(readBy),
+        unreadBy.length > 0 ? JSON.stringify(unreadBy) : null,
+        messageId
+      ]
+    );
+
+    const readData = {
+      success: true,
+      messageId: messageId,
+      userId: userId,
+      readAt: new Date().toISOString()
+    };
+
+    // Отправляем через SSE (Server-Sent Events)
+    sendSSEEvent(chatId, {
+      type: 'message_read',
+      ...readData
+    });
+
+    // Отправляем через Socket.io (если доступен) - для обратной совместимости
     try {
       const mainApp = req.app;
       const io = mainApp ? mainApp.get('io') : null;
       if (io) {
-        io.to(`chat:${chatId}`).emit('message_read', {
-          success: true,
-          messageId: messageId,
-          userId: userId,
-          readAt: new Date().toISOString()
-        });
+        io.to(`chat:${chatId}`).emit('message_read', readData);
       }
     } catch (socketError) {
       // Socket.io не доступен
@@ -564,13 +829,20 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offsetNum = Math.max(0, parseInt(offset) || 0);
 
+    const adminId = req.user.userId || req.user.id;
+    
     let query = `
       SELECT c.*, 
-        (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+        (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count,
+        (SELECT COUNT(*) FROM messages m 
+         WHERE m.chat_id = c.id 
+         AND m.deleted_at IS NULL
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count
       FROM chats c
       WHERE 1=1
     `;
-    const params = [];
+    const params = [adminId];
 
     if (type) {
       query += ` AND c.type = ?`;
@@ -585,8 +857,9 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
       params.push(user_id);
     }
 
-    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limitNum, offsetNum);
+    // КРИТИЧЕСКИ ВАЖНО: LIMIT и OFFSET не могут быть плейсхолдерами в MySQL2
+    // Вставляем значения напрямую (безопасно, так как limitNum и offsetNum - числа)
+    query += ` ORDER BY c.last_message_at DESC, c.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [chats] = await pool.execute(query, params);
 
@@ -655,18 +928,25 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
       params.push(before);
     }
 
-    query += ` ORDER BY m.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limitNum, offsetNum);
+    // КРИТИЧЕСКИ ВАЖНО: LIMIT и OFFSET не могут быть плейсхолдерами в MySQL2
+    // Вставляем значения напрямую (безопасно, так как limitNum и offsetNum - числа)
+    query += ` ORDER BY m.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [messages] = await pool.execute(query, params);
 
-    // Получаем информацию о прочтении
+    // Парсим JSON поля read_by и unread_by для каждого сообщения
     for (const message of messages) {
-      const [reads] = await pool.execute(
-        `SELECT user_id, read_at FROM message_reads WHERE message_id = ?`,
-        [message.id]
-      );
-      message.read_by = reads;
+      // Безопасный парсинг JSON полей
+      message.read_by = safeParseJsonArray(message.read_by);
+      message.unread_by = safeParseJsonArray(message.unread_by);
+      
+      // Убеждаемся, что отправитель всегда в read_by
+      if (!message.read_by.includes(message.sender_id)) {
+        message.read_by.push(message.sender_id);
+      }
+      
+      // Удаляем отправителя из unread_by (если он там есть)
+      message.unread_by = message.unread_by.filter(id => id !== message.sender_id);
     }
 
     // Получаем общее количество
@@ -691,7 +971,8 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
       message: msg.message,
       message_type: msg.message_type,
       created_at: msg.created_at,
-      read_by: msg.read_by
+      read_by: msg.read_by,
+      unread_by: msg.unread_by
     }));
 
     success(res, {
@@ -701,6 +982,90 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
     });
   } catch (err) {
     error(res, 'Ошибка при получении сообщений', 500, err);
+  }
+});
+
+/**
+ * GET /api/chats/:chatId/events
+ * Server-Sent Events (SSE) поток для получения новых сообщений в реальном времени
+ * 
+ * Клиент открывает долгий HTTP GET запрос и получает события через SSE
+ * Для отправки сообщений используется POST /api/chats/:chatId/messages
+ */
+router.get('/:chatId/events', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { chatId } = req.params;
+
+    // Проверяем доступ к чату
+    const [chats] = await pool.execute(
+      `SELECT c.* FROM chats c
+       INNER JOIN chat_participants cp ON c.id = cp.chat_id
+       WHERE c.id = ? AND cp.user_id = ?`,
+      [chatId, userId]
+    );
+
+    if (chats.length === 0) {
+      return error(res, 'Чат не найден или нет доступа', 404);
+    }
+
+    // Устанавливаем заголовки для SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Отключаем буферизацию в nginx
+    res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // Отправляем начальное сообщение о подключении
+    res.write(`data: ${JSON.stringify({
+      type: 'connected',
+      message: 'Подключено к чату',
+      chatId: chatId,
+      timestamp: new Date().toISOString()
+    })}\n\n`);
+
+    // Добавляем подключение в хранилище
+    if (!sseConnections.has(chatId)) {
+      sseConnections.set(chatId, new Set());
+    }
+    sseConnections.get(chatId).add(res);
+
+    // Отправляем ping каждые 30 секунд для поддержания соединения
+    const pingInterval = setInterval(() => {
+      try {
+        res.write(`data: ${JSON.stringify({
+          type: 'ping',
+          timestamp: new Date().toISOString()
+        })}\n\n`);
+      } catch (err) {
+        // Клиент отключился
+        clearInterval(pingInterval);
+        const connections = sseConnections.get(chatId);
+        if (connections) {
+          connections.delete(res);
+          if (connections.size === 0) {
+            sseConnections.delete(chatId);
+          }
+        }
+      }
+    }, 30000);
+
+    // Обработка отключения клиента
+    req.on('close', () => {
+      clearInterval(pingInterval);
+      const connections = sseConnections.get(chatId);
+      if (connections) {
+        connections.delete(res);
+        // Если больше нет подключений, удаляем чат из Map
+        if (connections.size === 0) {
+          sseConnections.delete(chatId);
+        }
+      }
+    });
+
+  } catch (err) {
+    error(res, 'Ошибка при подключении к SSE потоку', 500, err);
   }
 });
 
