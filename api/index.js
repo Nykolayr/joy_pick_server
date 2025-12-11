@@ -160,6 +160,85 @@ app.get('/health', (req, res) => {
   });
 });
 
+     // Тестовый endpoint для проверки Socket.io напрямую
+     app.get('/test-socket', (req, res) => {
+       try {
+         const io = req.app.get('io');
+         if (!io) {
+           return res.status(500).json({
+             success: false,
+             message: 'Socket.io не инициализирован'
+           });
+         }
+         
+         // Проверяем, может ли Socket.io обработать запрос
+         res.json({
+           success: true,
+           message: 'Socket.io доступен',
+           socket: {
+             path: io.path,
+             transports: io.opts?.transports,
+             connected: io.sockets.sockets.size
+           },
+           test: 'Попробуйте подключиться через клиент Socket.io'
+         });
+       } catch (error) {
+         res.status(500).json({
+           success: false,
+           message: 'Ошибка при проверке Socket.io',
+           error: error.message
+         });
+       }
+     });
+
+     // Диагностика Socket.io
+     app.get('/health/socket', (req, res) => {
+       try {
+         const io = req.app.get('io');
+         if (!io) {
+           return res.status(500).json({
+             success: false,
+             message: 'Socket.io не инициализирован',
+             error: 'Socket.io сервер не найден в app'
+           });
+         }
+         
+         // Проверяем, обрабатывает ли Socket.io запросы
+         const engine = io.engine;
+         const connectedSockets = io.sockets.sockets.size;
+         
+         res.json({
+           success: true,
+           socket: {
+             connected: connectedSockets,
+             engineClients: engine.clientsCount || 0,
+             path: io.path || '/socket.io/',
+             transports: io.opts?.transports || [],
+             cors: io.opts?.cors || {},
+             allowEIO3: io.opts?.allowEIO3 || false,
+             serveClient: io.opts?.serveClient !== false
+           },
+           engine: {
+             clientsCount: engine.clientsCount || 0,
+             upgradeTimeout: engine.upgradeTimeout || 0,
+             pingTimeout: engine.pingTimeout || 0,
+             pingInterval: engine.pingInterval || 0
+           },
+           timestamp: new Date().toISOString()
+         });
+       } catch (error) {
+         res.status(500).json({
+           success: false,
+           message: 'Ошибка при проверке Socket.io',
+           error: error.message,
+           errorDetails: {
+             name: error.name,
+             stack: error.stack
+           }
+         });
+       }
+     });
+
 // Проверка статуса БД
 app.get('/health/db', async (req, res) => {
   try {

@@ -89,6 +89,8 @@ CREATE TABLE messages (
   sender_id VARCHAR(36) NOT NULL COMMENT 'ID отправителя',
   message TEXT NOT NULL COMMENT 'Текст сообщения',
   message_type ENUM('text', 'image', 'file') NOT NULL DEFAULT 'text' COMMENT 'Тип сообщения',
+  read_by JSON NULL COMMENT 'Массив ID пользователей, которые прочитали сообщение',
+  unread_by JSON NULL COMMENT 'Массив ID пользователей, которые не прочитали сообщение',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Дата отправки',
   updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP COMMENT 'Дата обновления',
   deleted_at DATETIME NULL COMMENT 'Дата удаления (soft delete)',
@@ -100,23 +102,10 @@ CREATE TABLE messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
----
-
-### Таблица `message_reads`
-
-```sql
-CREATE TABLE message_reads (
-  id VARCHAR(36) PRIMARY KEY COMMENT 'UUID записи',
-  message_id VARCHAR(36) NOT NULL COMMENT 'ID сообщения',
-  user_id VARCHAR(36) NOT NULL COMMENT 'ID пользователя',
-  read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Дата прочтения',
-  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY unique_message_user (message_id, user_id),
-  INDEX idx_user_id (user_id),
-  INDEX idx_read_at (read_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
+**Логика прочтения:**
+- При отправке сообщения: отправитель автоматически добавляется в `read_by`, все остальные участники чата - в `unread_by`
+- При открытии чата: вызывается `POST /api/chats/:chatId/read`, который перемещает текущего пользователя из `unread_by` в `read_by` для всех непрочитанных сообщений
+- При получении сообщений: возвращаются оба массива `read_by` и `unread_by` для каждого сообщения
 
 ---
 
