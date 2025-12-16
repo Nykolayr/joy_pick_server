@@ -414,6 +414,161 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
 });
 
 /**
+ * POST /api/chats/group
+ * Создать групповой чат для заявки
+ */
+router.post('/group', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { request_id } = req.body;
+
+    if (!request_id) {
+      return error(res, 'request_id обязателен', 400);
+    }
+
+    // Проверяем существование заявки
+    const [requests] = await pool.execute(
+      `SELECT category, created_by, joined_user_id, registered_participants 
+       FROM requests WHERE id = ?`,
+      [request_id]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверяем, существует ли уже групповой чат для этой заявки
+    const [existing] = await pool.execute(
+      `SELECT * FROM chats WHERE type = 'group' AND request_id = ?`,
+      [request_id]
+    );
+
+    if (existing.length > 0) {
+      // Возвращаем существующий чат
+      const [chats] = await pool.execute(
+        `SELECT c.*, 
+          (SELECT COUNT(*) FROM messages m 
+           WHERE m.chat_id = c.id 
+           AND m.deleted_at IS NULL
+           AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+          ) as unread_count,
+          (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+         FROM chats c
+         WHERE c.id = ?`,
+        [userId, existing[0].id]
+      );
+      return success(res, chats[0]);
+    }
+
+    // Создаем новый групповой чат
+    const chatId = generateId();
+    await pool.execute(
+      `INSERT INTO chats (id, type, request_id, created_by, created_at, last_message_at)
+       VALUES (?, 'group', ?, ?, NOW(), NOW())`,
+      [chatId, request_id, request.created_by]
+    );
+
+    // Собираем всех участников для добавления в чат
+    const participants = new Set();
+
+    // 1. Добавляем создателя заявки
+    if (request.created_by) {
+      participants.add(request.created_by);
+    }
+
+    // 2. Добавляем текущего пользователя (чтобы он мог получить доступ к чату)
+    if (userId) {
+      participants.add(userId);
+    }
+
+    // 3. Для waste: добавляем joined_user_id (если есть)
+    if (request.category === 'wasteLocation' && request.joined_user_id) {
+      participants.add(request.joined_user_id);
+    }
+
+    // 4. Для event: добавляем registered_participants (если есть)
+    if (request.category === 'event' && request.registered_participants) {
+      try {
+        let registeredParticipants = [];
+        if (typeof request.registered_participants === 'string') {
+          registeredParticipants = JSON.parse(request.registered_participants);
+        } else if (Array.isArray(request.registered_participants)) {
+          registeredParticipants = request.registered_participants;
+        }
+        
+        if (Array.isArray(registeredParticipants)) {
+          registeredParticipants.forEach(id => {
+            if (id) participants.add(id);
+          });
+        }
+      } catch (e) {
+        // Игнорируем ошибки парсинга
+      }
+    }
+
+    // 5. Добавляем всех донатеров из таблицы donations
+    const [donations] = await pool.execute(
+      `SELECT DISTINCT user_id FROM donations WHERE request_id = ? AND user_id IS NOT NULL`,
+      [request_id]
+    );
+    
+    donations.forEach(donation => {
+      if (donation.user_id) {
+        participants.add(donation.user_id);
+      }
+    });
+
+    // Убеждаемся, что есть хотя бы один участник
+    if (participants.size === 0) {
+      return error(res, 'Не удалось определить участников чата', 500);
+    }
+
+    // Добавляем всех участников в chat_participants
+    const insertErrors = [];
+    for (const participantId of participants) {
+      try {
+        await pool.execute(
+          `INSERT INTO chat_participants (chat_id, user_id, joined_at)
+           VALUES (?, ?, NOW())
+           ON DUPLICATE KEY UPDATE joined_at = joined_at`,
+          [chatId, participantId]
+        );
+      } catch (err) {
+        // Сохраняем ошибки для отладки (кроме дублирования)
+        if (err.code !== 'ER_DUP_ENTRY') {
+          insertErrors.push({ participantId, error: err.message });
+        }
+      }
+    }
+
+    // Если были критические ошибки при добавлении участников, возвращаем ошибку
+    if (insertErrors.length > 0 && participants.size === insertErrors.length) {
+      return error(res, 'Ошибка при добавлении участников в чат', 500, { insertErrors });
+    }
+
+    // Получаем созданный чат
+    const [newChat] = await pool.execute(
+      `SELECT c.*, 
+        (SELECT COUNT(*) FROM messages m 
+         WHERE m.chat_id = c.id 
+         AND m.deleted_at IS NULL
+         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+        ) as unread_count,
+        (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+       FROM chats c
+       WHERE c.id = ?`,
+      [userId, chatId]
+    );
+
+    success(res, newChat[0], 'Групповой чат создан', 201);
+  } catch (err) {
+    error(res, 'Ошибка при создании группового чата', 500, err);
+  }
+});
+
+/**
  * GET /api/chats/:chatId/messages
  * Получить историю сообщений чата
  */

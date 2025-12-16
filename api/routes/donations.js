@@ -6,6 +6,7 @@ const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { sendDonationNotification } = require('../services/pushNotification');
 const { normalizeDatesInObject } = require('../utils/datetime');
+const { addParticipantToGroupChatByRequest } = require('../utils/chatHelpers');
 
 const router = express.Router();
 
@@ -158,6 +159,12 @@ router.post('/', authenticate, [
     );
 
     // Донатеры хранятся только в таблице donations, request_contributors больше не используется
+
+    // Добавление донатера в групповой чат заявки (асинхронно, не блокируем ответ)
+    addParticipantToGroupChatByRequest(requestId, userId).catch(err => {
+      console.error('❌ Ошибка добавления донатера в групповой чат:', err);
+      // Не прерываем выполнение, просто логируем ошибку
+    });
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
