@@ -3,6 +3,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { addUserToChat } = require('../utils/chatHelpers');
 
 const router = express.Router();
 
@@ -301,42 +302,122 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
 
 /**
  * POST /api/chats/private
- * Создать приватный чат с создателем заявки
+ * Создать приватный чат между двумя пользователями
  */
 router.post('/private', authenticate, async (req, res) => {
   try {
     const userId = req.user.userId || req.user.id;
-    const { request_id } = req.body;
+    const { user_id_1, user_id_2, request_id } = req.body;
 
-    if (!request_id) {
-      return error(res, 'request_id обязателен', 400);
+    // Определяем двух участников чата
+    let participant1, participant2;
+    
+    if (user_id_1 && user_id_2) {
+      // Новый формат: два ID пользователей передаются явно
+      participant1 = user_id_1;
+      participant2 = user_id_2;
+    } else if (request_id) {
+      // Старый формат: получаем создателя заявки
+      const [requests] = await pool.execute(
+        `SELECT created_by FROM requests WHERE id = ?`,
+        [request_id]
+      );
+
+      if (requests.length === 0) {
+        return error(res, 'Заявка не найдена', 404);
+      }
+
+      participant1 = userId;
+      participant2 = requests[0].created_by;
+    } else {
+      return error(res, 'Необходимо указать либо user_id_1 и user_id_2, либо request_id', 400);
     }
 
-    // Проверяем существование заявки
-    const [requests] = await pool.execute(
-      `SELECT created_by FROM requests WHERE id = ?`,
-      [request_id]
-    );
-
-    if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
-    }
-
-    const createdBy = requests[0].created_by;
-
-    if (userId === createdBy) {
+    // Проверяем, что пользователи разные
+    if (participant1 === participant2) {
       return error(res, 'Нельзя создать приватный чат с самим собой', 400);
     }
 
-    // Проверяем, существует ли уже чат
-    const [existing] = await pool.execute(
-      `SELECT * FROM chats 
-       WHERE type = 'private' AND request_id = ? AND user_id = ?`,
-      [request_id, userId]
+    // Проверяем существование обоих пользователей
+    const [users] = await pool.execute(
+      `SELECT id FROM users WHERE id IN (?, ?)`,
+      [participant1, participant2]
     );
 
-    if (existing.length > 0) {
-      return success(res, existing[0]);
+    if (users.length !== 2) {
+      return error(res, 'Один или оба пользователя не найдены', 404);
+    }
+
+    // Проверяем, существует ли уже чат между этими двумя пользователями
+    let existingChat = null;
+    
+    if (request_id) {
+      // Если передан request_id, сначала ищем чат по request_id и user_id
+      const [chatsByRequest] = await pool.execute(
+        `SELECT c.* FROM chats c
+         WHERE c.type = 'private' 
+         AND c.request_id = ? 
+         AND c.user_id = ?`,
+        [request_id, participant1]
+      );
+      
+      if (chatsByRequest.length > 0) {
+        // Проверяем, что оба пользователя в этом чате
+        const [participants] = await pool.execute(
+          `SELECT COUNT(*) as count FROM chat_participants 
+           WHERE chat_id = ? AND user_id IN (?, ?)`,
+          [chatsByRequest[0].id, participant1, participant2]
+        );
+        
+        if (participants[0].count === 2) {
+          existingChat = chatsByRequest[0];
+        }
+      }
+    }
+    
+    // Если чат не найден по request_id, ищем чат между двумя пользователями
+    if (!existingChat) {
+      let query, params;
+      
+      if (request_id) {
+        // Ищем чат с указанным request_id или без него
+        query = `SELECT DISTINCT c.* FROM chats c
+                 INNER JOIN chat_participants cp1 ON cp1.chat_id = c.id AND cp1.user_id = ?
+                 INNER JOIN chat_participants cp2 ON cp2.chat_id = c.id AND cp2.user_id = ?
+                 WHERE c.type = 'private'
+                 AND (c.request_id = ? OR c.request_id IS NULL)`;
+        params = [participant1, participant2, request_id];
+      } else {
+        // Ищем любой приватный чат между этими двумя пользователями
+        query = `SELECT DISTINCT c.* FROM chats c
+                 INNER JOIN chat_participants cp1 ON cp1.chat_id = c.id AND cp1.user_id = ?
+                 INNER JOIN chat_participants cp2 ON cp2.chat_id = c.id AND cp2.user_id = ?
+                 WHERE c.type = 'private'`;
+        params = [participant1, participant2];
+      }
+      
+      const [chatsByUsers] = await pool.execute(query, params);
+      
+      if (chatsByUsers.length > 0) {
+        existingChat = chatsByUsers[0];
+      }
+    }
+
+    if (existingChat) {
+      // Возвращаем существующий чат
+      const [chats] = await pool.execute(
+        `SELECT c.*, 
+         (SELECT COUNT(*) FROM messages m 
+          WHERE m.chat_id = c.id 
+          AND m.deleted_at IS NULL
+          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+         ) as unread_count
+         FROM chats c
+         WHERE c.id = ?`,
+        [userId, existingChat.id]
+      );
+      
+      return success(res, chats[0] || existingChat);
     }
 
     // Создаем новый чат
@@ -344,27 +425,49 @@ router.post('/private', authenticate, async (req, res) => {
     await pool.execute(
       `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
        VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
-      [chatId, request_id, userId, userId]
+      [chatId, request_id || null, participant1, participant1]
     );
 
-    // Добавляем участников
-    await pool.execute(
-      `INSERT INTO chat_participants (chat_id, user_id, joined_at)
-       VALUES (?, ?, NOW())`,
-      [chatId, userId]
-    );
-    await pool.execute(
-      `INSERT INTO chat_participants (chat_id, user_id, joined_at)
-       VALUES (?, ?, NOW())`,
-      [chatId, createdBy]
-    );
+    // Добавляем участников используя функцию addUserToChat (она правильно обрабатывает id)
+    try {
+      await addUserToChat(chatId, participant1);
+      await addUserToChat(chatId, participant2);
+    } catch (chatErr) {
+      // Если ошибка при добавлении участников, передаем все детали
+      const errorDetails = {
+        message: chatErr.message || 'Неизвестная ошибка',
+        originalError: chatErr.originalError ? {
+          message: chatErr.originalError.message,
+          code: chatErr.originalError.code,
+          errno: chatErr.originalError.errno,
+          sqlState: chatErr.originalError.sqlState,
+          sqlMessage: chatErr.originalError.sqlMessage
+        } : null,
+        details: chatErr.details || null,
+        chatId,
+        participant1,
+        participant2,
+        request_id: request_id || null
+      };
+      const enhancedError = new Error(`Не удалось добавить участников в приватный чат ${chatId}: ${chatErr.message}`);
+      enhancedError.originalError = chatErr.originalError || chatErr;
+      enhancedError.details = errorDetails;
+      throw enhancedError;
+    }
 
     const [newChat] = await pool.execute(
-      `SELECT * FROM chats WHERE id = ?`,
-      [chatId]
+      `SELECT c.*, 
+       (SELECT COUNT(*) FROM messages m 
+        WHERE m.chat_id = c.id 
+        AND m.deleted_at IS NULL
+        AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+       ) as unread_count
+       FROM chats c
+       WHERE c.id = ?`,
+      [userId, chatId]
     );
 
-    success(res, { ...newChat[0], unread_count: 0 }, 'Приватный чат создан', 201);
+    success(res, newChat[0], 'Приватный чат создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании приватного чата', 500, err);
   }
@@ -596,6 +699,31 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
 
       const chat = chatExists[0];
 
+      // Проверяем, есть ли пользователь в участниках
+      const [participants] = await pool.execute(
+        `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+        [chatId]
+      );
+      
+      const participantIds = participants.map(p => p.user_id);
+      
+      // Для приватных чатов: проверяем, что пользователь должен быть участником
+      if (chat.type === 'private') {
+        // Проверяем, является ли пользователь одним из участников приватного чата
+        if (!participantIds.includes(userId)) {
+          const errorDetails = {
+            message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+            chatId,
+            userId,
+            chatType: chat.type,
+            participants: participantIds,
+            chatUserId: chat.user_id,
+            chatCreatedBy: chat.created_by
+          };
+          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        }
+      }
+
       // Для групповых чатов: если пользователь создатель чата - добавляем его
       if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
         const { addUserToChat } = require('../utils/chatHelpers');
@@ -611,7 +739,14 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       }
 
       if (chats.length === 0) {
-        return error(res, 'Чат не найден или нет доступа', 404);
+        const errorDetails = {
+          message: `Пользователь ${userId} не имеет доступа к чату ${chatId}`,
+          chatId,
+          userId,
+          chatType: chat.type,
+          participants: participantIds
+        };
+        return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
       }
     }
 
@@ -724,6 +859,31 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
 
       const chat = chatExists[0];
 
+      // Проверяем, есть ли пользователь в участниках
+      const [participants] = await pool.execute(
+        `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+        [chatId]
+      );
+      
+      const participantIds = participants.map(p => p.user_id);
+      
+      // Для приватных чатов: проверяем, что пользователь должен быть участником
+      if (chat.type === 'private') {
+        // Проверяем, является ли пользователь одним из участников приватного чата
+        if (!participantIds.includes(userId)) {
+          const errorDetails = {
+            message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+            chatId,
+            userId,
+            chatType: chat.type,
+            participants: participantIds,
+            chatUserId: chat.user_id,
+            chatCreatedBy: chat.created_by
+          };
+          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        }
+      }
+
       // Для групповых чатов: если пользователь создатель чата - добавляем его
       if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
         const { addUserToChat } = require('../utils/chatHelpers');
@@ -739,7 +899,14 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       }
 
       if (chats.length === 0) {
-        return error(res, 'Чат не найден или нет доступа', 404);
+        const errorDetails = {
+          message: `Пользователь ${userId} не имеет доступа к чату ${chatId}`,
+          chatId,
+          userId,
+          chatType: chat.type,
+          participants: participantIds
+        };
+        return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
       }
     }
 
