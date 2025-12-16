@@ -590,11 +590,64 @@ router.post('/', authenticate, uploadRequestPhotos, [
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
-    // Создание группового чата для заявки (асинхронно, не блокируем ответ)
-    createGroupChatForRequest(requestId, userId, category).catch(err => {
-      console.error('❌ Ошибка создания группового чата при создании заявки:', err);
-      // Не прерываем выполнение, просто логируем ошибку
-    });
+    // Создание группового чата для заявки (СИНХРОННО - критически важно, чтобы создатель был добавлен)
+    let chatInfo = null;
+    try {
+      const chatId = await createGroupChatForRequest(requestId, userId, category);
+      
+      // Получаем информацию о чате и участниках
+      const [chats] = await pool.execute(
+        `SELECT id, type, request_id, created_by, created_at FROM chats WHERE id = ?`,
+        [chatId]
+      );
+      
+      if (chats.length > 0) {
+        const [participants] = await pool.execute(
+          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+          [chatId]
+        );
+        
+        const participantIds = participants.map(p => p.user_id);
+        
+        // Убеждаемся, что создатель всегда в массиве участников
+        if (!participantIds.includes(userId)) {
+          participantIds.push(userId);
+          // Добавляем в БД, если его там нет
+          const { addUserToChat } = require('../utils/chatHelpers');
+          await addUserToChat(chatId, userId);
+        }
+        
+        chatInfo = {
+          id: chats[0].id,
+          type: chats[0].type,
+          request_id: chats[0].request_id,
+          created_by: chats[0].created_by,
+          created_at: chats[0].created_at,
+          participants: participantIds,
+          participants_count: participantIds.length
+        };
+      }
+    } catch (chatErr) {
+      // Передаем все детали ошибки
+      const errorMessage = chatErr.message || 'Ошибка создания группового чата для заявки';
+      
+      // Добавляем все детали в объект ошибки
+      if (chatErr.originalError) {
+        chatErr.code = chatErr.originalError.code || chatErr.code;
+        chatErr.errno = chatErr.originalError.errno || chatErr.errno;
+        chatErr.sqlState = chatErr.originalError.sqlState || chatErr.sqlState;
+        chatErr.sqlMessage = chatErr.originalError.sqlMessage || chatErr.sqlMessage;
+      }
+      
+      if (chatErr.details) {
+        chatErr.sql = chatErr.details.sql || chatErr.sql;
+        chatErr.chatId = chatErr.details.chatId;
+        chatErr.userId = chatErr.details.userId;
+        chatErr.requestId = chatErr.details.requestId;
+      }
+      
+      return error(res, errorMessage, 500, chatErr);
+    }
 
     // Отправка push-уведомлений пользователям рядом (асинхронно, не блокируем ответ)
     if (latitude && longitude) {
@@ -607,12 +660,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
         longitude: parseFloat(longitude),
         photos: [...finalPhotosBefore, ...finalPhotosAfter], // Объединяем все фото
       }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомлений при создании заявки:', err);
-        // Не прерываем выполнение, просто логируем ошибку
+        // Не прерываем выполнение, просто игнорируем ошибку
       });
     }
 
-    success(res, { request: normalizedRequest }, 'Заявка создана', 201);
+    success(res, { 
+      request: normalizedRequest,
+      group_chat: chatInfo
+    }, 'Заявка создана', 201);
   } catch (err) {
     console.error('❌ Ошибка создания заявки:', err);
     console.error('❌ Stack trace:', err.stack);
@@ -1189,12 +1244,14 @@ router.post('/:id/join', authenticate, async (req, res) => {
       [userId, 'inProgress', id]
     );
 
-    // Добавление присоединившегося в групповой чат заявки (асинхронно, не блокируем ответ)
-    const { addParticipantToGroupChatByRequest } = require('../utils/chatHelpers');
-    addParticipantToGroupChatByRequest(id, userId).catch(err => {
-      console.error('❌ Ошибка добавления присоединившегося в групповой чат:', err);
-      // Не прерываем выполнение, просто логируем ошибку
-    });
+    // Добавление присоединившегося в групповой чат заявки (СИНХРОННО - важно для корректной работы)
+    try {
+      const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
+      await addUserToGroupChatByRequest(id, userId);
+    } catch (chatErr) {
+      // Передаем детали ошибки в ответ API
+      return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
+    }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
@@ -1369,12 +1426,14 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       [JSON.stringify(registeredParticipants), id]
     );
 
-    // Добавление участника события в групповой чат заявки (асинхронно, не блокируем ответ)
-    const { addParticipantToGroupChatByRequest } = require('../utils/chatHelpers');
-    addParticipantToGroupChatByRequest(id, userId).catch(err => {
-      console.error('❌ Ошибка добавления участника события в групповой чат:', err);
-      // Не прерываем выполнение, просто логируем ошибку
-    });
+    // Добавление участника события в групповой чат заявки (СИНХРОННО - важно для корректной работы)
+    try {
+      const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
+      await addUserToGroupChatByRequest(id, userId);
+    } catch (chatErr) {
+      // Передаем детали ошибки в ответ API
+      return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
+    }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
@@ -1440,6 +1499,12 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
       'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
       [JSON.stringify(registeredParticipants), id]
     );
+
+    // Удаляем пользователя из группового чата
+    const { removeUserFromGroupChatByRequest } = require('../utils/chatHelpers');
+    removeUserFromGroupChatByRequest(id, userId).catch(err => {
+      // Не прерываем выполнение, просто игнорируем ошибку
+    });
 
     success(res, null, 'Участие отменено');
   } catch (err) {
