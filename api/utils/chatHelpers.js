@@ -2,224 +2,217 @@ const pool = require('../config/database');
 const { generateId } = require('./uuid');
 
 /**
- * Создать групповой чат для заявки
- * @param {string} requestId - ID заявки
- * @param {string} createdBy - ID создателя заявки
- * @param {string} category - Категория заявки (wasteLocation, speedCleanup, event)
- * @returns {Promise<string|null>} - ID созданного чата или null при ошибке
+ * Добавить пользователя в чат
+ * @param {string} chatId - ID чата
+ * @param {string} userId - ID пользователя
  */
-async function createGroupChatForRequest(requestId, createdBy, category) {
+async function addUserToChat(chatId, userId) {
   try {
-    // Проверяем, существует ли уже групповой чат
+    // Сначала проверяем, существует ли запись
     const [existing] = await pool.execute(
-      `SELECT id FROM chats WHERE type = 'group' AND request_id = ?`,
-      [requestId]
+      `SELECT id FROM chat_participants WHERE chat_id = ? AND user_id = ?`,
+      [chatId, userId]
     );
-
+    
     if (existing.length > 0) {
-      // Чат уже существует, возвращаем его ID
-      return existing[0].id;
+      // Запись существует, просто обновляем joined_at
+      await pool.execute(
+        `UPDATE chat_participants SET joined_at = NOW() WHERE chat_id = ? AND user_id = ?`,
+        [chatId, userId]
+      );
+    } else {
+      // Записи нет, создаем новую с id
+      const participantId = generateId();
+      await pool.execute(
+        `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
+         VALUES (?, ?, ?, NOW())`,
+        [participantId, chatId, userId]
+      );
     }
-
-    // Создаем новый групповой чат
-    const chatId = generateId();
-    await pool.execute(
-      `INSERT INTO chats (id, type, request_id, created_by, created_at, last_message_at)
-       VALUES (?, 'group', ?, ?, NOW(), NOW())`,
-      [chatId, requestId, createdBy]
+    
+    // Проверяем, что запись действительно создана/обновлена
+    const [check] = await pool.execute(
+      `SELECT COUNT(*) as count FROM chat_participants WHERE chat_id = ? AND user_id = ?`,
+      [chatId, userId]
     );
-
-    // Добавляем создателя в участники
-    await addParticipantToGroupChat(chatId, createdBy);
-
-    return chatId;
+    
+    if (check[0].count === 0) {
+      throw new Error(`Запись не была создана в chat_participants для chat_id=${chatId}, user_id=${userId}`);
+    }
   } catch (err) {
-    console.error('❌ Ошибка создания группового чата для заявки:', err);
-    return null;
+    // Передаем детальную информацию об ошибке
+    const errorDetails = {
+      message: err.message,
+      code: err.code,
+      errno: err.errno,
+      sqlState: err.sqlState,
+      sqlMessage: err.sqlMessage,
+      sql: `INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ('${chatId}', '${userId}', NOW()) ON DUPLICATE KEY UPDATE joined_at = NOW()`,
+      chatId,
+      userId
+    };
+    const enhancedError = new Error(`Ошибка добавления пользователя ${userId} в чат ${chatId}: ${err.message}`);
+    enhancedError.originalError = err;
+    enhancedError.details = errorDetails;
+    throw enhancedError;
   }
 }
 
 /**
- * Добавить участника в групповой чат заявки
+ * Получить ID группового чата для заявки
  * @param {string} requestId - ID заявки
- * @param {string} userId - ID пользователя для добавления
- * @returns {Promise<boolean>} - true если успешно, false при ошибке
+ * @returns {Promise<string|null>} - ID чата или null
  */
-async function addParticipantToGroupChatByRequest(requestId, userId) {
-  try {
-    // Находим групповой чат для заявки
-    const [chats] = await pool.execute(
-      `SELECT id FROM chats WHERE type = 'group' AND request_id = ?`,
-      [requestId]
-    );
+async function getGroupChatIdByRequest(requestId) {
+  const [chats] = await pool.execute(
+    `SELECT id FROM chats WHERE type = 'group' AND request_id = ?`,
+    [requestId]
+  );
+  return chats.length > 0 ? chats[0].id : null;
+}
 
-    if (chats.length === 0) {
-      // Чат не существует, создаем его
+/**
+ * Создать групповой чат для заявки и добавить создателя
+ * @param {string} requestId - ID заявки
+ * @param {string} createdBy - ID создателя заявки
+ * @param {string} category - Категория заявки
+ * @returns {Promise<string>} - ID созданного чата
+ */
+async function createGroupChatForRequest(requestId, createdBy, category) {
+  // Проверяем, существует ли уже групповой чат
+  const existingChatId = await getGroupChatIdByRequest(requestId);
+  if (existingChatId) {
+    // Чат уже существует, добавляем создателя (на случай если его там нет)
+    await addUserToChat(existingChatId, createdBy);
+    return existingChatId;
+  }
+
+  // Создаем новый групповой чат
+  const chatId = generateId();
+  await pool.execute(
+    `INSERT INTO chats (id, type, request_id, created_by, created_at, last_message_at)
+     VALUES (?, 'group', ?, ?, NOW(), NOW())`,
+    [chatId, requestId, createdBy]
+  );
+
+  // Добавляем создателя в участники
+  try {
+    await addUserToChat(chatId, createdBy);
+  } catch (err) {
+    // Если ошибка при добавлении, передаем все детали
+    const errorDetails = {
+      message: err.message || 'Неизвестная ошибка',
+      originalError: err.originalError ? {
+        message: err.originalError.message,
+        code: err.originalError.code,
+        errno: err.originalError.errno,
+        sqlState: err.originalError.sqlState,
+        sqlMessage: err.originalError.sqlMessage
+      } : null,
+      details: err.details || null,
+      chatId,
+      createdBy,
+      requestId
+    };
+    const enhancedError = new Error(`Не удалось добавить создателя ${createdBy} в участники чата ${chatId}: ${err.message}`);
+    enhancedError.originalError = err.originalError || err;
+    enhancedError.details = errorDetails;
+    throw enhancedError;
+  }
+
+  return chatId;
+}
+
+/**
+ * Добавить пользователя в групповой чат заявки
+ * @param {string} requestId - ID заявки
+ * @param {string} userId - ID пользователя
+ */
+async function addUserToGroupChatByRequest(requestId, userId) {
+  try {
+    const chatId = await getGroupChatIdByRequest(requestId);
+    if (!chatId) {
+      // Чат не существует, получаем данные заявки и создаем чат
       const [requests] = await pool.execute(
         `SELECT created_by, category FROM requests WHERE id = ?`,
         [requestId]
       );
-
       if (requests.length === 0) {
-        return false;
+        const error = new Error(`Заявка ${requestId} не найдена`);
+        error.requestId = requestId;
+        error.userId = userId;
+        throw error;
       }
-
       const request = requests[0];
-      const chatId = await createGroupChatForRequest(requestId, request.created_by, request.category);
-      
-      if (!chatId) {
-        return false;
+      const newChatId = await createGroupChatForRequest(requestId, request.created_by, request.category);
+      // Если пользователь не создатель, добавляем его
+      if (request.created_by !== userId) {
+        await addUserToChat(newChatId, userId);
       }
-
-      // Добавляем пользователя в чат
-      return await addParticipantToGroupChat(chatId, userId);
+    } else {
+      // Чат существует, просто добавляем пользователя
+      await addUserToChat(chatId, userId);
     }
-
-    // Чат существует, добавляем пользователя
-    return await addParticipantToGroupChat(chats[0].id, userId);
   } catch (err) {
-    console.error('❌ Ошибка добавления участника в групповой чат:', err);
-    return false;
+    // Если ошибка уже обработана (из addUserToChat или createGroupChatForRequest), пробрасываем дальше
+    if (err.originalError || err.details) {
+      throw err;
+    }
+    // Иначе оборачиваем в детальную ошибку
+    const errorDetails = {
+      message: err.message,
+      requestId,
+      userId,
+      chatId: err.chatId || null
+    };
+    const enhancedError = new Error(`Ошибка добавления пользователя ${userId} в групповой чат заявки ${requestId}: ${err.message}`);
+    enhancedError.originalError = err;
+    enhancedError.details = errorDetails;
+    throw enhancedError;
   }
 }
 
 /**
- * Добавить участника в групповой чат
+ * Удалить пользователя из чата
  * @param {string} chatId - ID чата
- * @param {string} userId - ID пользователя для добавления
- * @returns {Promise<boolean>} - true если успешно, false при ошибке
+ * @param {string} userId - ID пользователя
  */
-async function addParticipantToGroupChat(chatId, userId) {
-  try {
-    await pool.execute(
-      `INSERT INTO chat_participants (chat_id, user_id, joined_at)
-       VALUES (?, ?, NOW())
-       ON DUPLICATE KEY UPDATE joined_at = joined_at`,
-      [chatId, userId]
-    );
-    return true;
-  } catch (err) {
-    console.error('❌ Ошибка добавления участника в чат:', err);
-    return false;
-  }
+async function removeUserFromChat(chatId, userId) {
+  await pool.execute(
+    `DELETE FROM chat_participants WHERE chat_id = ? AND user_id = ?`,
+    [chatId, userId]
+  );
 }
 
 /**
- * Обновить участников группового чата на основе данных заявки
- * Добавляет всех текущих участников заявки (создатель, присоединившиеся, донатеры)
+ * Удалить пользователя из группового чата заявки
  * @param {string} requestId - ID заявки
- * @returns {Promise<boolean>} - true если успешно
+ * @param {string} userId - ID пользователя
  */
-async function updateGroupChatParticipants(requestId) {
-  try {
-    // Получаем данные заявки
-    const [requests] = await pool.execute(
-      `SELECT category, created_by, joined_user_id, registered_participants 
-       FROM requests WHERE id = ?`,
-      [requestId]
-    );
-
-    if (requests.length === 0) {
-      return false;
-    }
-
-    const request = requests[0];
-
-    // Находим групповой чат
-    const [chats] = await pool.execute(
-      `SELECT id FROM chats WHERE type = 'group' AND request_id = ?`,
-      [requestId]
-    );
-
-    if (chats.length === 0) {
-      // Чат не существует, создаем его
-      const chatId = await createGroupChatForRequest(requestId, request.created_by, request.category);
-      if (!chatId) {
-        return false;
-      }
-    }
-
-    const chatId = chats[0].id;
-    const participants = new Set();
-
-    // 1. Добавляем создателя заявки
-    if (request.created_by) {
-      participants.add(request.created_by);
-    }
-
-    // 2. Для waste: добавляем joined_user_id (если есть)
-    if (request.category === 'wasteLocation' && request.joined_user_id) {
-      participants.add(request.joined_user_id);
-    }
-
-    // 3. Для event: добавляем registered_participants (если есть)
-    if (request.category === 'event' && request.registered_participants) {
-      try {
-        let registeredParticipants = [];
-        if (typeof request.registered_participants === 'string') {
-          registeredParticipants = JSON.parse(request.registered_participants);
-        } else if (Array.isArray(request.registered_participants)) {
-          registeredParticipants = request.registered_participants;
-        }
-        
-        if (Array.isArray(registeredParticipants)) {
-          registeredParticipants.forEach(id => {
-            if (id) participants.add(id);
-          });
-        }
-      } catch (e) {
-        // Игнорируем ошибки парсинга
-      }
-    }
-
-    // 4. Добавляем всех донатеров из таблицы donations
-    const [donations] = await pool.execute(
-      `SELECT DISTINCT user_id FROM donations WHERE request_id = ? AND user_id IS NOT NULL`,
-      [requestId]
-    );
-    
-    donations.forEach(donation => {
-      if (donation.user_id) {
-        participants.add(donation.user_id);
-      }
-    });
-
-    // Добавляем всех участников в chat_participants
-    for (const participantId of participants) {
-      await addParticipantToGroupChat(chatId, participantId);
-    }
-
-    return true;
-  } catch (err) {
-    console.error('❌ Ошибка обновления участников группового чата:', err);
-    return false;
+async function removeUserFromGroupChatByRequest(requestId, userId) {
+  const chatId = await getGroupChatIdByRequest(requestId);
+  if (chatId) {
+    await removeUserFromChat(chatId, userId);
   }
 }
 
 /**
  * Удалить групповой чат заявки
  * @param {string} requestId - ID заявки
- * @returns {Promise<boolean>} - true если успешно
  */
 async function deleteGroupChatForRequest(requestId) {
-  try {
-    // CASCADE должен удалить автоматически, но для надежности удаляем явно
-    await pool.execute(
-      `DELETE FROM chats WHERE type = 'group' AND request_id = ?`,
-      [requestId]
-    );
-    return true;
-  } catch (err) {
-    console.error('❌ Ошибка удаления группового чата для заявки:', err);
-    return false;
-  }
+  await pool.execute(
+    `DELETE FROM chats WHERE type = 'group' AND request_id = ?`,
+    [requestId]
+  );
 }
 
 module.exports = {
+  addUserToChat,
+  removeUserFromChat,
   createGroupChatForRequest,
-  addParticipantToGroupChatByRequest,
-  addParticipantToGroupChat,
-  updateGroupChatParticipants,
-  deleteGroupChatForRequest
+  addUserToGroupChatByRequest,
+  removeUserFromGroupChatByRequest,
+  deleteGroupChatForRequest,
+  getGroupChatIdByRequest
 };
-

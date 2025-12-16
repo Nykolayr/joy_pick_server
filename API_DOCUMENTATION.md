@@ -1645,10 +1645,30 @@ Future<void> createRequestWithPhotos({
       "photos_before": ["http://autogie1.bget.ru/uploads/photos/uuid3.jpg"],
       "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid4.jpg"],
       // ... остальные поля
+    },
+    "group_chat": {
+      "id": "uuid",
+      "type": "group",
+      "request_id": "uuid",
+      "created_by": "uuid",
+      "created_at": "2025-12-16T10:12:58.000Z",
+      "participants": ["353f958d-8796-44c7-a877-3e376eca6784"],
+      "participants_count": 1
     }
   }
 }
 ```
+
+**Поля ответа:**
+- `request` - объект созданной заявки
+- `group_chat` - информация о созданном групповом чате:
+  - `id` - ID группового чата
+  - `type` - тип чата (всегда `"group"`)
+  - `request_id` - ID заявки, для которой создан чат
+  - `created_by` - ID создателя чата (совпадает с создателем заявки)
+  - `created_at` - дата создания чата
+  - `participants` - массив ID участников чата (включая создателя)
+  - `participants_count` - количество участников в чате
 
 **Важно:**
 - Файлы автоматически сохраняются на сервере в папке `uploads/photos/`

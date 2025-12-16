@@ -527,19 +527,13 @@ router.post('/group', authenticate, async (req, res) => {
 
     // Добавляем всех участников в chat_participants
     const insertErrors = [];
+    const { addUserToChat } = require('../utils/chatHelpers');
     for (const participantId of participants) {
       try {
-        await pool.execute(
-          `INSERT INTO chat_participants (chat_id, user_id, joined_at)
-           VALUES (?, ?, NOW())
-           ON DUPLICATE KEY UPDATE joined_at = joined_at`,
-          [chatId, participantId]
-        );
+        await addUserToChat(chatId, participantId);
       } catch (err) {
-        // Сохраняем ошибки для отладки (кроме дублирования)
-        if (err.code !== 'ER_DUP_ENTRY') {
-          insertErrors.push({ participantId, error: err.message });
-        }
+        // Сохраняем ошибки для отладки
+        insertErrors.push({ participantId, error: err.message });
       }
     }
 
@@ -582,15 +576,43 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     const offsetNum = Math.max(0, parseInt(offset) || 0);
 
     // Проверяем доступ к чату
-    const [chats] = await pool.execute(
+    let [chats] = await pool.execute(
       `SELECT c.* FROM chats c
        INNER JOIN chat_participants cp ON c.id = cp.chat_id
        WHERE c.id = ? AND cp.user_id = ?`,
       [chatId, userId]
     );
 
+    // Если чат не найден через участников, проверяем, существует ли чат вообще
     if (chats.length === 0) {
-      return error(res, 'Чат не найден или нет доступа', 404);
+      const [chatExists] = await pool.execute(
+        `SELECT c.* FROM chats c WHERE c.id = ?`,
+        [chatId]
+      );
+
+      if (chatExists.length === 0) {
+        return error(res, 'Чат не найден', 404);
+      }
+
+      const chat = chatExists[0];
+
+      // Для групповых чатов: если пользователь создатель чата - добавляем его
+      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      }
+
+      if (chats.length === 0) {
+        return error(res, 'Чат не найден или нет доступа', 404);
+      }
     }
 
     // Получаем сообщения
@@ -682,15 +704,43 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
     }
 
     // Проверяем доступ к чату
-    const [chats] = await pool.execute(
+    let [chats] = await pool.execute(
       `SELECT c.* FROM chats c
        INNER JOIN chat_participants cp ON c.id = cp.chat_id
        WHERE c.id = ? AND cp.user_id = ?`,
       [chatId, userId]
     );
 
+    // Если чат не найден через участников, проверяем, существует ли чат вообще
     if (chats.length === 0) {
-      return error(res, 'Чат не найден или нет доступа', 404);
+      const [chatExists] = await pool.execute(
+        `SELECT c.* FROM chats c WHERE c.id = ?`,
+        [chatId]
+      );
+
+      if (chatExists.length === 0) {
+        return error(res, 'Чат не найден', 404);
+      }
+
+      const chat = chatExists[0];
+
+      // Для групповых чатов: если пользователь создатель чата - добавляем его
+      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      }
+
+      if (chats.length === 0) {
+        return error(res, 'Чат не найден или нет доступа', 404);
+      }
     }
 
     // Получаем всех участников чата
@@ -802,15 +852,43 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
     const { chatId } = req.params;
 
     // Проверяем доступ к чату
-    const [chats] = await pool.execute(
+    let [chats] = await pool.execute(
       `SELECT c.* FROM chats c
        INNER JOIN chat_participants cp ON c.id = cp.chat_id
        WHERE c.id = ? AND cp.user_id = ?`,
       [chatId, userId]
     );
 
+    // Если чат не найден через участников, проверяем, существует ли чат вообще
     if (chats.length === 0) {
-      return error(res, 'Чат не найден или нет доступа', 404);
+      const [chatExists] = await pool.execute(
+        `SELECT c.* FROM chats c WHERE c.id = ?`,
+        [chatId]
+      );
+
+      if (chatExists.length === 0) {
+        return error(res, 'Чат не найден', 404);
+      }
+
+      const chat = chatExists[0];
+
+      // Для групповых чатов: если пользователь создатель чата - добавляем его
+      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      }
+
+      if (chats.length === 0) {
+        return error(res, 'Чат не найден или нет доступа', 404);
+      }
     }
 
     // Получаем все непрочитанные сообщения для этого пользователя
@@ -1153,15 +1231,43 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
     const { chatId } = req.params;
 
     // Проверяем доступ к чату
-    const [chats] = await pool.execute(
+    let [chats] = await pool.execute(
       `SELECT c.* FROM chats c
        INNER JOIN chat_participants cp ON c.id = cp.chat_id
        WHERE c.id = ? AND cp.user_id = ?`,
       [chatId, userId]
     );
 
+    // Если чат не найден через участников, проверяем, существует ли чат вообще
     if (chats.length === 0) {
-      return error(res, 'Чат не найден или нет доступа', 404);
+      const [chatExists] = await pool.execute(
+        `SELECT c.* FROM chats c WHERE c.id = ?`,
+        [chatId]
+      );
+
+      if (chatExists.length === 0) {
+        return error(res, 'Чат не найден', 404);
+      }
+
+      const chat = chatExists[0];
+
+      // Для групповых чатов: если пользователь создатель чата - добавляем его
+      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      }
+
+      if (chats.length === 0) {
+        return error(res, 'Чат не найден или нет доступа', 404);
+      }
     }
 
     // Устанавливаем заголовки для SSE
