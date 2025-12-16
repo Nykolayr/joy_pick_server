@@ -15,6 +15,7 @@ const {
   sendRequestRejectedNotification,
   sendModerationNotification
 } = require('../services/pushNotification');
+const { createGroupChatForRequest } = require('../utils/chatHelpers');
 
 const router = express.Router();
 
@@ -589,6 +590,12 @@ router.post('/', authenticate, uploadRequestPhotos, [
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
+    // Создание группового чата для заявки (асинхронно, не блокируем ответ)
+    createGroupChatForRequest(requestId, userId, category).catch(err => {
+      console.error('❌ Ошибка создания группового чата при создании заявки:', err);
+      // Не прерываем выполнение, просто логируем ошибку
+    });
+
     // Отправка push-уведомлений пользователям рядом (асинхронно, не блокируем ответ)
     if (latitude && longitude) {
       sendRequestCreatedNotification({
@@ -1113,6 +1120,10 @@ router.delete('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
+    // Удаляем групповой чат заявки (CASCADE должен удалить автоматически, но для надежности удаляем явно)
+    const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
+    await deleteGroupChatForRequest(id);
+
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
     success(res, null, 'Заявка удалена');
@@ -1177,6 +1188,13 @@ router.post('/:id/join', authenticate, async (req, res) => {
       'UPDATE requests SET joined_user_id = ?, join_date = NOW(), status = ?, updated_at = NOW() WHERE id = ?',
       [userId, 'inProgress', id]
     );
+
+    // Добавление присоединившегося в групповой чат заявки (асинхронно, не блокируем ответ)
+    const { addParticipantToGroupChatByRequest } = require('../utils/chatHelpers');
+    addParticipantToGroupChatByRequest(id, userId).catch(err => {
+      console.error('❌ Ошибка добавления присоединившегося в групповой чат:', err);
+      // Не прерываем выполнение, просто логируем ошибку
+    });
 
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
@@ -1351,6 +1369,13 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       [JSON.stringify(registeredParticipants), id]
     );
 
+    // Добавление участника события в групповой чат заявки (асинхронно, не блокируем ответ)
+    const { addParticipantToGroupChatByRequest } = require('../utils/chatHelpers');
+    addParticipantToGroupChatByRequest(id, userId).catch(err => {
+      console.error('❌ Ошибка добавления участника события в групповой чат:', err);
+      // Не прерываем выполнение, просто логируем ошибку
+    });
+
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
       sendJoinNotification({
@@ -1491,7 +1516,13 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
     sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(console.error);
   }
 
-  // 6. Меняем статус на completed
+  // 6. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
+  const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
+  deleteGroupChatForRequest(requestId).catch(err => {
+    console.error('❌ Ошибка удаления группового чата при завершении заявки:', err);
+  });
+
+  // 7. Меняем статус на completed
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['completed', requestId]
@@ -1583,7 +1614,13 @@ async function handleEventApproval(requestId, creatorId) {
     sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'event' }).catch(console.error);
   }
 
-  // 7. Меняем статус на completed
+  // 7. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
+  const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
+  deleteGroupChatForRequest(requestId).catch(err => {
+    console.error('❌ Ошибка удаления группового чата при завершении события:', err);
+  });
+
+  // 8. Меняем статус на completed
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['completed', requestId]
@@ -1667,6 +1704,12 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       requestCategory: category,
     }).catch(console.error);
   }
+
+  // 5. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
+  const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
+  deleteGroupChatForRequest(requestId).catch(err => {
+    console.error('❌ Ошибка удаления группового чата при отклонении заявки:', err);
+  });
 
   console.log(`✅ Заявка ${requestId} отклонена`);
 }
