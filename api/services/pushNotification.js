@@ -492,6 +492,9 @@ async function sendJoinNotification({ requestId, requestName, requestCategory, c
     } else if (actionType === 'participated') {
       title = 'Someone joined your event';
       body = 'Someone joined your event!';
+    } else if (actionType === 'unjoined') {
+      title = 'Someone left your request';
+      body = 'Someone left your request!';
     } else {
       title = 'Someone joined your request';
       body = 'Someone joined your request!';

@@ -208,7 +208,7 @@ router.post('/login', [
 
     const user = users[0];
 
-    // Проверка: если у пользователя нет пароля (password_hash = NULL), значит он зарегистрирован через OAuth (Google/Apple)
+    // Проверка: если у пользователя нет пароля (password_hash = NULL или пустая строка), значит он зарегистрирован через OAuth (Google/Apple)
     if (!user.password_hash) {
       const authType = user.auth_type || 'google';
       const authTypeName = authType === 'google' ? 'Google' : 
@@ -605,11 +605,12 @@ router.post('/firebase', [
       } else {
         // Создаем нового пользователя
         // Для Apple Sign In email может быть null или скрытым email от Apple
+        // Для Firebase/OAuth пользователей password_hash должен быть пустой строкой (не NULL)
         await pool.execute(
           `INSERT INTO users (
             id, email, password_hash, display_name, photo_url, uid,
             first_name, second_name, phone_number, auth_type, created_time
-          ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          ) VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [userId, finalEmail || null, finalDisplayName, finalPhotoUrl, firebaseUid, firstName, secondName, phoneNumber, authType]
         );
       }

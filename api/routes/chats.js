@@ -724,6 +724,34 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
         }
       }
 
+      // Для чатов типа support: если пользователь создатель чата - добавляем его
+      if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      } else if (chat.type === 'support') {
+        // Если пользователь не создатель, проверяем, является ли он участником
+        if (!participantIds.includes(userId)) {
+          const errorDetails = {
+            message: `Пользователь ${userId} не является участником чата поддержки ${chatId}`,
+            chatId,
+            userId,
+            chatType: chat.type,
+            participants: participantIds,
+            chatUserId: chat.user_id,
+            chatCreatedBy: chat.created_by
+          };
+          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        }
+      }
+
       // Для групповых чатов: если пользователь создатель чата - добавляем его
       if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
         const { addUserToChat } = require('../utils/chatHelpers');
@@ -873,6 +901,34 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
         if (!participantIds.includes(userId)) {
           const errorDetails = {
             message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+            chatId,
+            userId,
+            chatType: chat.type,
+            participants: participantIds,
+            chatUserId: chat.user_id,
+            chatCreatedBy: chat.created_by
+          };
+          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        }
+      }
+
+      // Для чатов типа support: если пользователь создатель чата - добавляем его
+      if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
+        const { addUserToChat } = require('../utils/chatHelpers');
+        await addUserToChat(chatId, userId);
+        
+        // Повторно проверяем доступ
+        [chats] = await pool.execute(
+          `SELECT c.* FROM chats c
+           INNER JOIN chat_participants cp ON c.id = cp.chat_id
+           WHERE c.id = ? AND cp.user_id = ?`,
+          [chatId, userId]
+        );
+      } else if (chat.type === 'support') {
+        // Если пользователь не создатель, проверяем, является ли он участником
+        if (!participantIds.includes(userId)) {
+          const errorDetails = {
+            message: `Пользователь ${userId} не является участником чата поддержки ${chatId}`,
             chatId,
             userId,
             chatType: chat.type,
