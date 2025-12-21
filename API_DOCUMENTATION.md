@@ -209,6 +209,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `expires_at` | datetime | Нет | Дата истечения заявки (только для `wasteLocation`, автоматически устанавливается при создании: `created_at + 7 дней`, только чтение) |
 | `extended_count` | integer | Нет | Количество продлений заявки (только для `wasteLocation`, максимум 1, только чтение) |
 | `completion_comment` | string | Нет | Комментарий при завершении (только чтение) |
+| `participant_completions` | object | Нет | JSON объект с данными закрытия работы участниками (только для `wasteLocation` и `event`, только чтение). Ключ - `userId` (UUID), значение - объект с полями:<br>- `status`: `"inProgress"` | `"pending"` | `"rejected"` | `"approved"`<br>- `photos_after`: array[string] - массив URL фотографий "после" работы<br>- `completion_comment`: string - комментарий участника<br>- `completion_latitude`: number - широта координат при закрытии<br>- `completion_longitude`: number - долгота координат при закрытии<br>- `rejection_reason`: string - причина отказа (только для `rejected`)<br>- `completed_at`: datetime - дата и время закрытия работы |
 | `created_at` | datetime | Нет | Дата создания (только чтение) |
 | `updated_at` | datetime | Нет | Дата обновления (только чтение) |
 
@@ -251,6 +252,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "joined_user_id": null,
   "join_date": null,
   "completion_comment": null,
+  "participant_completions": {},
   "created_at": "2024-01-01T00:00:00.000Z",
   "updated_at": "2024-01-01T00:00:00.000Z"
 }
@@ -1735,10 +1737,18 @@ Future<void> createRequestWithPhotos({
 
 1. **Для заявок типа `wasteLocation`:**
    - При создании: статус `new`
-   - При присоединении исполнителя (`POST /api/requests/:id/join`): статус меняется на `inProgress`
-   - При отправке на рассмотрение: статус меняется на `pending`
-   - При одобрении (`approved`):
-     - Начисляется по 1 коину: создателю, исполнителю (`joined_user_id`), всем донатерам
+   - При присоединении исполнителя (`POST /api/requests/:id/join`): 
+     - Статус меняется на `inProgress`
+     - В `participant_completions` создается запись для исполнителя со статусом `"inProgress"`
+   - Участник может закрыть свою работу через `POST /api/requests/:requestId/participant-completion`:
+     - Статус участника в `participant_completions` меняется на `"pending"`
+     - Отправляется push-уведомление создателю
+   - Создатель одобряет/отклоняет закрытие через `PATCH /api/requests/:requestId/participant-completion/:userId`:
+     - Статус участника меняется на `"approved"` или `"rejected"`
+   - Создатель закрывает заявку через `POST /api/requests/:requestId/close-by-creator`:
+     - Статус заявки меняется на `pending` (отправка на рассмотрение)
+   - При одобрении модератором (`PUT /api/requests/:id` со статусом `approved`):
+     - Начисляется по 1 коину: создателю, **только approved участникам** (из `participant_completions`), всем донатерам
      - Деньги (cost + donations - комиссия) переводятся исполнителю
      - Статус автоматически меняется на `completed`
      - Отправляются push-уведомления всем участникам
@@ -1768,12 +1778,23 @@ Future<void> createRequestWithPhotos({
      - Отправляются push-уведомления с причиной отклонения
 
 3. **Для заявок типа `event`:**
-   - При создании: статус автоматически `inProgress`, создатель автоматически добавляется в `registered_participants`
-   - Другие пользователи могут присоединиться через `POST /api/requests/:id/participate` (добавляются в `registered_participants`)
+   - При создании: 
+     - Статус автоматически `inProgress`
+     - Создатель автоматически добавляется в `registered_participants`
+     - В `participant_completions` создается запись для создателя со статусом `"inProgress"`
+   - Другие пользователи могут присоединиться через `POST /api/requests/:id/participate`:
+     - Добавляются в `registered_participants`
+     - В `participant_completions` создается запись для участника со статусом `"inProgress"`
    - Автоматические push-уведомления отправляются всем из `registered_participants` (24ч, 2ч до события, начало события)
-   - При закрытии события (`PUT /api/requests/:id/close-event`): статус меняется на `pending`
-   - При одобрении (`approved`):
-     - Начисляется по 1 коину: заказчику, **реальным участникам** (из `actual_participants`), всем донатерам
+   - Каждый участник может закрыть свою работу через `POST /api/requests/:requestId/participant-completion` (после начала события):
+     - Статус участника в `participant_completions` меняется на `"pending"`
+     - Отправляется push-уведомление создателю
+   - Создатель одобряет/отклоняет закрытие каждого участника через `PATCH /api/requests/:requestId/participant-completion/:userId`:
+     - Статус участника меняется на `"approved"` или `"rejected"`
+   - Создатель закрывает заявку через `POST /api/requests/:requestId/close-by-creator`:
+     - Статус заявки меняется на `pending` (отправка на рассмотрение)
+   - При одобрении модератором (`PUT /api/requests/:id` со статусом `approved`):
+     - Начисляется по 1 коину: заказчику, **только approved участникам** (из `participant_completions`), всем донатерам
      - Деньги (cost + donations - комиссия) переводятся заказчику
      - Статус автоматически меняется на `completed`
      - Отправляются push-уведомления всем участникам
@@ -1960,6 +1981,206 @@ Future<void> createRequestWithPhotos({
   "message": "Событие отправлено на рассмотрение"
 }
 ```
+
+**Ошибка (400):**
+```json
+{
+  "success": false,
+  "message": "Событие еще не началось"
+}
+```
+
+---
+
+### Закрытие работы участником
+
+**POST** `/requests/:requestId/participant-completion`
+
+**Требует аутентификации**
+
+**Описание:**
+Участник закрывает свою часть работы. Доступно только для заявок типа `wasteLocation` и `event`. При закрытии:
+- Загружаются фото после работы (`photos_after`)
+- Указываются координаты места закрытия
+- Опционально указывается комментарий
+- Статус участника в `participant_completions` меняется на `"pending"` (ожидает одобрения создателем)
+- Отправляется push-уведомление создателю заявки
+
+**Требования:**
+- Пользователь должен быть участником заявки:
+  - Для `event`: в `registered_participants`
+  - Для `wasteLocation`: в `joined_user_id`
+- Для `event`: событие должно начаться (`start_date <= now()`)
+- Статус заявки должен быть `"inProgress"`
+
+**Важно:** Фотографии принимаются только в виде файлов через `multipart/form-data`. URL фотографий не принимаются.
+
+**Content-Type:** `multipart/form-data`
+
+**Поля формы:**
+- `photos_after` (file[], обязательно) - массив файлов фотографий после работы (минимум 1 фото)
+- `completion_comment` (string, опционально) - комментарий участника при закрытии работы
+- `completion_latitude` (number, обязательно) - широта координат пользователя в момент закрытия
+- `completion_longitude` (number, обязательно) - долгота координат пользователя в момент закрытия
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Работа закрыта, ожидает одобрения",
+  "data": {
+    "request": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "participant_completions": {
+        "user_id_1": {
+          "status": "pending",
+          "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+          "completion_comment": "Убрал весь мусор",
+          "completion_latitude": 56.4962847,
+          "completion_longitude": 84.9802779,
+          "rejection_reason": null,
+          "completed_at": "2025-12-21T13:35:00.000Z"
+        }
+      },
+      ...
+    }
+  }
+}
+```
+
+**Ошибки:**
+- `404` - Заявка не найдена
+- `400` - Этот тип заявки не поддерживает закрытие работы участником
+- `400` - Заявка должна быть в статусе inProgress
+- `403` - Вы не являетесь участником этой заявки
+- `400` - Событие еще не началось (только для event)
+- `400` - Необходимо загрузить минимум одно фото
+- `400` - Необходимо указать координаты
+
+---
+
+### Одобрение/отклонение закрытия работы создателем
+
+**PATCH** `/requests/:requestId/participant-completion/:userId`
+
+**Требует аутентификации** (только создатель заявки или админ)
+
+**Описание:**
+Создатель заявки одобряет или отклоняет закрытие работы участником. При одобрении статус участника меняется на `"approved"`, при отклонении - на `"rejected"` с указанием причины.
+
+**Требования:**
+- Пользователь должен быть создателем заявки (`created_by`) или админом
+- Участник должен иметь статус `"pending"` в `participant_completions`
+
+**Content-Type:** `application/json`
+
+**Body:**
+```json
+{
+  "action": "approve" | "reject",
+  "rejection_reason": "string" // Обязательно при action="reject"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Закрытие работы одобрено",
+  "data": {
+    "request": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "participant_completions": {
+        "user_id_1": {
+          "status": "approved",
+          "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+          "completion_comment": "Убрал весь мусор",
+          "completion_latitude": 56.4962847,
+          "completion_longitude": 84.9802779,
+          "rejection_reason": null,
+          "completed_at": "2025-12-21T13:35:00.000Z"
+        }
+      },
+      ...
+    }
+  }
+}
+```
+
+**Ошибки:**
+- `404` - Заявка не найдена
+- `404` - Участник не найден в participant_completions
+- `400` - Необходимо указать action: approve или reject
+- `400` - При отклонении необходимо указать rejection_reason
+- `400` - Статус участника должен быть pending
+- `403` - Доступ запрещен. Только создатель заявки может одобрять/отклонять закрытие работы
+
+---
+
+### Закрытие заявки создателем
+
+**POST** `/requests/:requestId/close-by-creator`
+
+**Требует аутентификации** (только создатель заявки или админ)
+
+**Описание:**
+Создатель заявки закрывает заявку и отправляет её на рассмотрение. При закрытии:
+- Статус заявки меняется на `"pending"` (для рассмотрения в админке)
+- Опционально указывается комментарий
+- **Важно:** При одобрении заявки модератором коины получают только участники со статусом `"approved"` в `participant_completions`
+
+**Требования:**
+- Пользователь должен быть создателем заявки (`created_by`) или админом
+- Заявка должна быть в статусе `"inProgress"`
+- Тип заявки: `wasteLocation` или `event`
+
+**Content-Type:** `application/json`
+
+**Body:**
+```json
+{
+  "completion_comment": "string" // Опционально
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Заявка закрыта и отправлена на рассмотрение",
+  "data": {
+    "request": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "pending",
+      "completion_comment": "Все участники выполнили работу",
+      "participant_completions": {
+        "user_id_1": {
+          "status": "approved",
+          ...
+        },
+        "user_id_2": {
+          "status": "pending",
+          ...
+        }
+      },
+      ...
+    }
+  }
+}
+```
+
+**Ошибки:**
+- `404` - Заявка не найдена
+- `400` - Этот тип заявки не поддерживает закрытие создателем
+- `400` - Заявка должна быть в статусе inProgress
+- `403` - Доступ запрещен. Только создатель заявки может закрыть её
+
+**Важно о начислении коинов:**
+- Коины начисляются только при одобрении заявки модератором (`PUT /api/requests/:id` со статусом `approved`)
+- Получают коины только участники со статусом `"approved"` на момент закрытия заявки создателем
+- Если участник закрыл работу после закрытия заявки создателем, он не получит коины
+
+---
 
 **Ошибка (400):**
 ```json
