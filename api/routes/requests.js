@@ -60,6 +60,10 @@ router.get('/', async (req, res) => {
     if (status) {
       conditions.push('r.status = ?');
       params.push(status);
+    } else {
+      // Исключаем архивные заявки из общего списка, если статус не указан явно
+      conditions.push('r.status != ?');
+      params.push('archived');
     }
 
     if (city) {
@@ -173,6 +177,19 @@ router.get('/', async (req, res) => {
         }
       } else {
         result.registered_participants = [];
+      }
+      
+      // Обработка participant_completions из JSON поля
+      if (request.participant_completions) {
+        try {
+          result.participant_completions = typeof request.participant_completions === 'string' 
+            ? JSON.parse(request.participant_completions) 
+            : request.participant_completions;
+        } catch (e) {
+          result.participant_completions = {};
+        }
+      } else {
+        result.participant_completions = {};
       }
       
       // Преобразование булевых значений
@@ -329,6 +346,19 @@ router.get('/:id', async (req, res) => {
       }
     } else {
       request.registered_participants = [];
+    }
+    
+    // Обработка participant_completions из JSON поля
+    if (request.participant_completions) {
+      try {
+        request.participant_completions = typeof request.participant_completions === 'string' 
+          ? JSON.parse(request.participant_completions) 
+          : request.participant_completions;
+      } catch (e) {
+        request.participant_completions = {};
+      }
+    } else {
+      request.participant_completions = {};
     }
     
     request.only_foot = Boolean(request.only_foot);
@@ -521,6 +551,17 @@ router.post('/', authenticate, uploadRequestPhotos, [
         expiresAt
       ]
     );
+
+    // Инициализация participant_completions для создателя event заявки
+    if (category === 'event') {
+      try {
+        const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+        await initializeParticipantCompletion(requestId, userId);
+      } catch (completionErr) {
+        // Передаем детали ошибки в ответ API
+        return error(res, 'Ошибка инициализации participant_completion для создателя', 500, completionErr);
+      }
+    }
 
     // Получение созданной заявки
     const [requests] = await pool.execute(
@@ -1140,6 +1181,19 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     } else {
       request.actual_participants = [];
     }
+    
+    // Обработка participant_completions из JSON поля
+    if (request.participant_completions) {
+      try {
+        request.participant_completions = typeof request.participant_completions === 'string' 
+          ? JSON.parse(request.participant_completions) 
+          : request.participant_completions;
+      } catch (e) {
+        request.participant_completions = {};
+      }
+    } else {
+      request.participant_completions = {};
+    }
 
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
@@ -1243,6 +1297,15 @@ router.post('/:id/join', authenticate, async (req, res) => {
       'UPDATE requests SET joined_user_id = ?, join_date = NOW(), status = ?, updated_at = NOW() WHERE id = ?',
       [userId, 'inProgress', id]
     );
+
+    // Инициализация participant_completions для присоединившегося участника
+    try {
+      const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+      await initializeParticipantCompletion(id, userId);
+    } catch (completionErr) {
+      // Передаем детали ошибки в ответ API
+      return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+    }
 
     // Добавление присоединившегося в групповой чат заявки (СИНХРОННО - важно для корректной работы)
     try {
@@ -1426,6 +1489,15 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       [JSON.stringify(registeredParticipants), id]
     );
 
+    // Инициализация participant_completions для присоединившегося участника
+    try {
+      const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+      await initializeParticipantCompletion(id, userId);
+    } catch (completionErr) {
+      // Передаем детали ошибки в ответ API
+      return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+    }
+
     // Добавление участника события в групповой чат заявки (СИНХРОННО - важно для корректной работы)
     try {
       const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
@@ -1530,14 +1602,21 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
     console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
   }
 
-  // 2. Начисляем коины исполнителю
-  if (executorId && !awardedUserIds.has(executorId)) {
-    await pool.execute(
-      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-      [coinsToAward, coinsToAward, executorId]
-    );
-    awardedUserIds.add(executorId);
-    console.log(`✅ Начислено ${coinsToAward} коин исполнителю заявки ${requestId}`);
+  // 2. Начисляем коины только approved участникам из participant_completions
+  const { getApprovedParticipants } = require('../utils/participantCompletions');
+  const approvedParticipants = await getApprovedParticipants(requestId);
+  
+  const executorUserIds = [];
+  for (const participantId of approvedParticipants) {
+    if (participantId && !awardedUserIds.has(participantId)) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, participantId]
+      );
+      awardedUserIds.add(participantId);
+      executorUserIds.push(participantId);
+      console.log(`✅ Начислено ${coinsToAward} коин approved участнику ${participantId} за заявку ${requestId}`);
+    }
   }
 
   // 3. Начисляем коины донатерам
@@ -1574,8 +1653,8 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
   if (creatorId) {
     sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'wasteLocation' }).catch(console.error);
   }
-  if (executorId) {
-    sendRequestApprovedNotification({ userIds: [executorId], requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(console.error);
+  if (executorUserIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: executorUserIds, requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(console.error);
   }
   if (donorUserIds.length > 0) {
     sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(console.error);
@@ -1602,21 +1681,11 @@ async function handleEventApproval(requestId, creatorId) {
   const coinsToAward = 1;
   const awardedUserIds = new Set();
 
-  // 1. Получаем actual_participants из заявки
+  // 1. Получаем cost из заявки
   const [requestData] = await pool.execute(
-    'SELECT actual_participants, cost FROM requests WHERE id = ?',
+    'SELECT cost FROM requests WHERE id = ?',
     [requestId]
   );
-  let actualParticipants = [];
-  if (requestData[0]?.actual_participants) {
-    try {
-      actualParticipants = typeof requestData[0].actual_participants === 'string'
-        ? JSON.parse(requestData[0].actual_participants)
-        : requestData[0].actual_participants;
-    } catch (e) {
-      console.error('Ошибка парсинга actual_participants:', e);
-    }
-  }
 
   // 2. Начисляем коины заказчику
   if (creatorId) {
@@ -1628,9 +1697,12 @@ async function handleEventApproval(requestId, creatorId) {
     console.log(`✅ Начислено ${coinsToAward} коин заказчику заявки ${requestId}`);
   }
 
-  // 3. Начисляем коины реальным участникам (только из actual_participants)
+  // 3. Начисляем коины только approved участникам из participant_completions
+  const { getApprovedParticipants } = require('../utils/participantCompletions');
+  const approvedParticipants = await getApprovedParticipants(requestId);
+  
   const participantUserIds = [];
-  for (const participantId of actualParticipants) {
+  for (const participantId of approvedParticipants) {
     if (participantId && !awardedUserIds.has(participantId)) {
       await pool.execute(
         'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
@@ -1638,7 +1710,7 @@ async function handleEventApproval(requestId, creatorId) {
       );
       awardedUserIds.add(participantId);
       participantUserIds.push(participantId);
-      console.log(`✅ Начислено ${coinsToAward} коин участнику ${participantId} за заявку ${requestId}`);
+      console.log(`✅ Начислено ${coinsToAward} коин approved участнику ${participantId} за заявку ${requestId}`);
     }
   }
 
@@ -1928,6 +2000,334 @@ router.post('/:id/extend', authenticate, async (req, res) => {
     success(res, normalizedRequest, 200);
   } catch (err) {
     error(res, 'Ошибка при продлении заявки', 500, err);
+  }
+});
+
+/**
+ * POST /api/requests/:requestId/participant-completion
+ * Закрытие работы участником
+ */
+router.post('/:requestId/participant-completion', authenticate, uploadRequestPhotos, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const userId = req.user.userId;
+
+    // Получаем заявку
+    const [requests] = await pool.execute(
+      'SELECT id, category, status, created_by, joined_user_id, registered_participants, start_date FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверка типа заявки
+    if (request.category !== 'event' && request.category !== 'wasteLocation') {
+      return error(res, 'Этот тип заявки не поддерживает закрытие работы участником', 400);
+    }
+
+    // Проверка статуса заявки
+    if (request.status !== 'inProgress') {
+      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+    }
+
+    // Проверка, что пользователь является участником
+    let isParticipant = false;
+    if (request.category === 'event') {
+      let registeredParticipants = [];
+      if (request.registered_participants) {
+        try {
+          registeredParticipants = typeof request.registered_participants === 'string'
+            ? JSON.parse(request.registered_participants)
+            : request.registered_participants;
+        } catch (e) {
+          registeredParticipants = [];
+        }
+      }
+      isParticipant = registeredParticipants.includes(userId);
+    } else if (request.category === 'wasteLocation') {
+      isParticipant = request.joined_user_id === userId;
+    }
+
+    if (!isParticipant) {
+      return error(res, 'Вы не являетесь участником этой заявки', 403);
+    }
+
+    // Для event: проверка, что событие началось
+    if (request.category === 'event' && request.start_date) {
+      const startDate = new Date(request.start_date);
+      const now = new Date();
+      if (startDate > now) {
+        return error(res, 'Событие еще не началось', 400);
+      }
+    }
+
+    // Получаем данные из формы
+    const uploadedPhotosAfter = req.files?.photos_after || [];
+    const completionComment = req.body.completion_comment || null;
+    const completionLatitude = parseFloat(req.body.completion_latitude);
+    const completionLongitude = parseFloat(req.body.completion_longitude);
+
+    // Валидация
+    if (uploadedPhotosAfter.length === 0) {
+      return error(res, 'Необходимо загрузить минимум одно фото', 400);
+    }
+
+    if (isNaN(completionLatitude) || isNaN(completionLongitude)) {
+      return error(res, 'Необходимо указать координаты', 400);
+    }
+
+    // Сохраняем фото и получаем URL
+    const photosAfterUrls = uploadedPhotosAfter.map(file => getFileUrlFromPath(file.path));
+
+    // Обновляем participant_completions
+    const { updateParticipantCompletion } = require('../utils/participantCompletions');
+    await updateParticipantCompletion(requestId, userId, {
+      status: 'pending',
+      photos_after: photosAfterUrls,
+      completion_comment: completionComment,
+      completion_latitude: completionLatitude,
+      completion_longitude: completionLongitude,
+      completed_at: new Date().toISOString()
+    });
+
+    // Отправляем push-уведомление создателю
+    const { sendRequestSubmittedNotification } = require('../services/pushNotification');
+    if (request.created_by) {
+      sendRequestSubmittedNotification({
+        requestId: requestId,
+        requestName: request.name || 'Request',
+        requestCategory: request.category,
+        creatorId: request.created_by,
+        participantId: userId
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при закрытии работы участником:', err);
+      });
+    }
+
+    // Получаем обновленную заявку
+    const [updatedRequests] = await pool.execute(
+      'SELECT * FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    const updatedRequest = updatedRequests[0];
+
+    // Обработка JSON полей
+    if (updatedRequest.participant_completions) {
+      try {
+        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
+          ? JSON.parse(updatedRequest.participant_completions)
+          : updatedRequest.participant_completions;
+      } catch (e) {
+        updatedRequest.participant_completions = {};
+      }
+    } else {
+      updatedRequest.participant_completions = {};
+    }
+
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Работа закрыта, ожидает одобрения');
+  } catch (err) {
+    error(res, 'Ошибка при закрытии работы', 500, err);
+  }
+});
+
+/**
+ * PATCH /api/requests/:requestId/participant-completion/:userId
+ * Одобрение/отклонение закрытия работы создателем
+ */
+router.patch('/:requestId/participant-completion/:userId', authenticate, async (req, res) => {
+  try {
+    const { requestId, userId } = req.params;
+    const currentUserId = req.user.userId;
+    const { action, rejection_reason } = req.body;
+
+    // Валидация action
+    if (!action || (action !== 'approve' && action !== 'reject')) {
+      return error(res, 'Необходимо указать action: approve или reject', 400);
+    }
+
+    if (action === 'reject' && !rejection_reason) {
+      return error(res, 'При отклонении необходимо указать rejection_reason', 400);
+    }
+
+    // Получаем заявку
+    const [requests] = await pool.execute(
+      'SELECT id, category, created_by, participant_completions FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверка прав доступа (только создатель может одобрять/отклонять)
+    if (request.created_by !== currentUserId && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен. Только создатель заявки может одобрять/отклонять закрытие работы', 403);
+    }
+
+    // Получаем participant_completions
+    const { getParticipantCompletions, updateParticipantCompletion } = require('../utils/participantCompletions');
+    const completions = await getParticipantCompletions(requestId);
+
+    if (!completions[userId]) {
+      return error(res, 'Участник не найден в participant_completions', 404);
+    }
+
+    // Проверка статуса (должен быть pending)
+    if (completions[userId].status !== 'pending') {
+      return error(res, 'Статус участника должен быть pending', 400);
+    }
+
+    // Обновляем статус
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    const updateData = {
+      status: newStatus
+    };
+
+    if (action === 'reject') {
+      updateData.rejection_reason = rejection_reason;
+    }
+
+    await updateParticipantCompletion(requestId, userId, updateData);
+
+    // Отправляем push-уведомление участнику
+    const { sendRequestRejectedNotification, sendRequestApprovedNotification } = require('../services/pushNotification');
+    if (action === 'reject') {
+      sendRequestRejectedNotification({
+        userIds: [userId],
+        requestId: requestId,
+        messageType: 'participant',
+        rejectionMessage: `Ваше закрытие работы отклонено. Причина: ${rejection_reason}`,
+        requestCategory: request.category
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при отклонении:', err);
+      });
+    } else {
+      sendRequestApprovedNotification({
+        userIds: [userId],
+        requestId: requestId,
+        requestCategory: request.category
+      }).catch(err => {
+        console.error('❌ Ошибка отправки push-уведомления при одобрении:', err);
+      });
+    }
+
+    // Получаем обновленную заявку
+    const [updatedRequests] = await pool.execute(
+      'SELECT * FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    const updatedRequest = updatedRequests[0];
+
+    // Обработка JSON полей
+    if (updatedRequest.participant_completions) {
+      try {
+        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
+          ? JSON.parse(updatedRequest.participant_completions)
+          : updatedRequest.participant_completions;
+      } catch (e) {
+        updatedRequest.participant_completions = {};
+      }
+    } else {
+      updatedRequest.participant_completions = {};
+    }
+
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'approve' ? 'Закрытие работы одобрено' : 'Закрытие работы отклонено');
+  } catch (err) {
+    error(res, 'Ошибка при одобрении/отклонении закрытия работы', 500, err);
+  }
+});
+
+/**
+ * POST /api/requests/:requestId/close-by-creator
+ * Закрытие заявки создателем
+ */
+router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const userId = req.user.userId;
+    const { completion_comment } = req.body;
+
+    // Получаем заявку
+    const [requests] = await pool.execute(
+      'SELECT id, category, status, created_by FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Заявка не найдена', 404);
+    }
+
+    const request = requests[0];
+
+    // Проверка типа заявки
+    if (request.category !== 'event' && request.category !== 'wasteLocation') {
+      return error(res, 'Этот тип заявки не поддерживает закрытие создателем', 400);
+    }
+
+    // Проверка прав доступа (только создатель может закрыть)
+    if (request.created_by !== userId && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен. Только создатель заявки может закрыть её', 403);
+    }
+
+    // Проверка статуса
+    if (request.status !== 'inProgress') {
+      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+    }
+
+    // Обновляем статус заявки на pending
+    const updates = ['status = ?', 'updated_at = NOW()'];
+    const params = ['pending'];
+
+    if (completion_comment) {
+      updates.push('completion_comment = ?');
+      params.push(completion_comment);
+    }
+
+    await pool.execute(
+      `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
+      [...params, requestId]
+    );
+
+    // Получаем список approved участников и начисляем коины
+    const { getApprovedParticipants } = require('../utils/participantCompletions');
+    const approvedParticipants = await getApprovedParticipants(requestId);
+
+    // Начисляем коины только approved участникам
+    // Логика начисления коинов будет в обработке одобрения заявки (PUT /api/requests/:id со статусом approved)
+    // Здесь мы только закрываем заявку
+
+    // Получаем обновленную заявку
+    const [updatedRequests] = await pool.execute(
+      'SELECT * FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    const updatedRequest = updatedRequests[0];
+
+    // Обработка JSON полей
+    if (updatedRequest.participant_completions) {
+      try {
+        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
+          ? JSON.parse(updatedRequest.participant_completions)
+          : updatedRequest.participant_completions;
+      } catch (e) {
+        updatedRequest.participant_completions = {};
+      }
+    } else {
+      updatedRequest.participant_completions = {};
+    }
+
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Заявка закрыта и отправлена на рассмотрение');
+  } catch (err) {
+    error(res, 'Ошибка при закрытии заявки', 500, err);
   }
 });
 

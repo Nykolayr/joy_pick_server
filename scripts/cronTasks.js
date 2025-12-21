@@ -442,7 +442,7 @@ async function notifyInactiveWasteRequests() {
 }
 
 /**
- * Удаление неактивных waste заявок
+ * Архивирование неактивных waste заявок
  * TODO: После проверки вернуть комментарий "через 8 дней" (сейчас 2 дня для тестирования: 1 день + 1 день ожидания)
  */
 async function deleteInactiveRequests() {
@@ -450,7 +450,7 @@ async function deleteInactiveRequests() {
     // TODO: После проверки изменить комментарий на "прошло 8 дней (7 дней + 1 день ожидания)" (сейчас 2 дня для тестирования)
     // Находим все waste заявки со статусом new, где прошло 2 дня (1 день + 1 день ожидания после пуша)
     // expires_at = created_at + 1 день (время отправки пуша)
-    // Удаление происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
+    // Архивирование происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
     // Это эквивалентно expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)
     const [requests] = await pool.execute(
       `SELECT id, created_by, cost, category
@@ -484,7 +484,7 @@ async function deleteInactiveRequests() {
           userIds: [request.created_by],
           requestId: request.id,
           messageType: 'creator',
-          rejectionMessage: 'Your request was deleted due to inactivity',
+          rejectionMessage: 'Your request was archived due to inactivity',
           requestCategory: 'wasteLocation',
         });
 
@@ -494,20 +494,20 @@ async function deleteInactiveRequests() {
             userIds: donorUserIds,
             requestId: request.id,
             messageType: 'donor',
-            rejectionMessage: 'Request you donated to was deleted',
+            rejectionMessage: 'Request you donated to was archived',
             requestCategory: 'wasteLocation',
           });
         }
 
-        // Удаляем заявку
-        await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+        // Архивируем заявку (переводим в статус archived)
+        await pool.execute('UPDATE requests SET status = ? WHERE id = ?', ['archived', request.id]);
         
         // Записываем действие
         await logCronAction(
           'deleteInactiveRequests',
           request.id,
           request.category || 'wasteLocation',
-          `Удаление неактивной заявки ${request.id} (8 дней без присоединения)`,
+          `Архивирование неактивной заявки ${request.id} (8 дней без присоединения)`,
           'completed',
           { donorCount: donations.length }
         );
@@ -520,7 +520,7 @@ async function deleteInactiveRequests() {
           'deleteInactiveRequests',
           request.id,
           request.category || 'wasteLocation',
-          `Ошибка при удалении неактивной заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          `Ошибка при архивировании неактивной заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
           'error',
           {
             error: error.message || 'Неизвестная ошибка',

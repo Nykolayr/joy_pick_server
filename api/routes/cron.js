@@ -331,9 +331,9 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
       });
     }
 
-    // 4.2. Удаление неактивных waste заявок (через 1 день после пуша)
+    // 4.2. Архивирование неактивных waste заявок (через 1 день после пуша)
     // expires_at = created_at + 1 день (время отправки пуша)
-    // Удаление происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
+    // Архивирование происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
     const [wasteForDeletion] = await pool.execute(
       `SELECT id, name, expires_at, category
        FROM requests 
@@ -348,19 +348,19 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
     for (const request of wasteForDeletion) {
       const expiresAt = new Date(request.expires_at);
       const now = new Date();
-      // Время удаления = expires_at + 1 день (через 1 день после пуша)
+      // Время архивирования = expires_at + 1 день (через 1 день после пуша)
       const deleteTime = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
       
-      // Показываем только если удаление запланировано в ближайшие 24 часа
+      // Показываем только если архивирование запланировано в ближайшие 24 часа
       if (deleteTime <= now && deleteTime > new Date(now.getTime() - 24 * 60 * 60 * 1000)) {
         scheduledActions.push({
           action_type: 'deleteInactiveRequests',
           request_id: request.id,
           request_category: request.category,
           request_name: request.name,
-          action_description: `Удаление неактивной заявки "${request.name}" (через 1 день после уведомления)`,
+          action_description: `Архивирование неактивной заявки "${request.name}" (через 1 день после уведомления)`,
           scheduled_at: deleteTime.toISOString(),
-          time_until: 0 // уже должно быть удалено
+          time_until: 0 // уже должно быть архивировано
         });
       }
     }
