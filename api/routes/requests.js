@@ -911,7 +911,11 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         requestJoinedUserId = currentRequest[0].joined_user_id;
 
         // Проверяем изменение статуса на pending (отправка на рассмотрение)
+        // КРИТИЧЕСКИ ВАЖНО: Для event и wasteLocation изменение статуса на pending разрешено ТОЛЬКО через /close-by-creator
         if (status === 'pending' && oldStatus !== 'pending') {
+          if (requestCategory === 'event' || requestCategory === 'wasteLocation') {
+            return error(res, 'Для заявок типа event и wasteLocation используйте POST /api/requests/:requestId/close-by-creator для закрытия заявки', 400);
+          }
           statusChangedToPending = true;
         }
 
@@ -997,9 +1001,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     
     // Обработка отсоединения от заявки (joined_user_id и join_date = null)
     // Пустые строки приравниваются к null
+    let normalizedJoinedUserId = null;
+    let executorUnjoined = false; // Флаг для отслеживания отсоединения исполнителя от waste заявки
+    let unjoinedUserId = null; // ID пользователя, который отсоединился
+    
     if (joined_user_id !== undefined) {
       // Приравниваем пустую строку к null
-      const normalizedJoinedUserId = (joined_user_id === '' || joined_user_id === null) ? null : joined_user_id;
+      normalizedJoinedUserId = (joined_user_id === '' || joined_user_id === null) ? null : joined_user_id;
       
       // Валидация: joined_user_id должен быть UUID из БД (поле id) или null
       // НЕ принимаем Firebase UID - только UUID из базы данных
@@ -1016,6 +1024,28 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         
         if (users.length === 0) {
           return error(res, 'Пользователь с указанным ID не найден в базе данных', 404);
+        }
+      }
+      
+      // Проверяем отсоединение: если был присоединен исполнитель, а теперь null
+      // Получаем текущее значение joined_user_id из заявки
+      if (normalizedJoinedUserId === null) {
+        const [currentRequest] = await pool.execute(
+          'SELECT category, joined_user_id, created_by, name FROM requests WHERE id = ?',
+          [id]
+        );
+        
+        if (currentRequest.length > 0) {
+          const currentJoinedUserId = currentRequest[0].joined_user_id;
+          const currentCategory = currentRequest[0].category;
+          
+          // Если был присоединен исполнитель и теперь отсоединяется (только для wasteLocation)
+          if (currentJoinedUserId && currentJoinedUserId !== null && currentCategory === 'wasteLocation') {
+            executorUnjoined = true;
+            unjoinedUserId = currentJoinedUserId;
+            requestCreatedBy = currentRequest[0].created_by; // Сохраняем для уведомления
+            requestCategory = currentCategory;
+          }
         }
       }
       
@@ -1098,10 +1128,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     if (statusChangedToApproved) {
       try {
         if (requestCategory === 'wasteLocation') {
-          // Для waste: начислить коины, перевести деньги исполнителю, отправить пуши, статус -> completed
-          await handleWasteApproval(id, requestCreatedBy, requestJoinedUserId);
+          // Для waste: начислить коины, перевести деньги исполнителю, отправить пуши, статус -> archived
+          await handleWasteApproval(id, requestCreatedBy);
         } else if (requestCategory === 'event') {
-          // Для event: начислить коины (только реальным участникам), перевести деньги заказчику, отправить пуши, статус -> completed
+          // Для event: начислить коины (только реальным участникам), перевести деньги заказчику, отправить пуши, статус -> archived
           await handleEventApproval(id, requestCreatedBy);
         } else if (requestCategory === 'speedCleanup') {
           // Для speedCleanup: начислить коин создателю (если >= 20 минут), отправить пуш, статус остается approved
@@ -1121,6 +1151,34 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
+    // 4. Обработка отсоединения исполнителя от waste заявки
+    if (executorUnjoined && unjoinedUserId && requestCreatedBy) {
+      try {
+        // Получаем данные заявки для уведомления
+        const [requestData] = await pool.execute(
+          'SELECT name FROM requests WHERE id = ?',
+          [id]
+        );
+
+        if (requestData.length > 0) {
+          const requestName = requestData[0].name || 'Request';
+          
+          // Отправляем push-уведомление создателю
+          sendJoinNotification({
+            requestId: id,
+            requestName: requestName,
+            requestCategory: requestCategory || 'wasteLocation',
+            creatorId: requestCreatedBy,
+            actionUserId: unjoinedUserId,
+            actionType: 'unjoined',
+          }).catch(err => {
+            console.error('❌ Ошибка отправки push-уведомления при отсоединении исполнителя:', err);
+          });
+        }
+      } catch (error) {
+        console.error('❌ Ошибка обработки отсоединения исполнителя:', error);
+      }
+    }
 
     // Получение обновленной заявки
     const [requests] = await pool.execute(
@@ -1339,100 +1397,12 @@ router.post('/:id/join', authenticate, async (req, res) => {
 
 /**
  * PUT /api/requests/:id/close-event
- * Закрытие события (для event)
- * Принимает photos_after и actual_participants, меняет статус на pending
+ * @deprecated Используйте POST /api/requests/:requestId/close-by-creator
+ * Этот эндпоинт отключен в пользу новой системы participant_completions
+ * Для закрытия event и waste заявок используйте POST /api/requests/:requestId/close-by-creator
  */
 router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.userId;
-
-    // Проверка существования заявки
-    const [requests] = await pool.execute(
-      'SELECT id, category, status, created_by, start_date FROM requests WHERE id = ?',
-      [id]
-    );
-
-    if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
-    }
-
-    const request = requests[0];
-
-    // Проверка типа заявки
-    if (request.category !== 'event') {
-      return error(res, 'Это не событие', 400);
-    }
-
-    // Проверка прав доступа (только создатель может закрыть)
-    if (request.created_by !== userId && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
-    }
-
-    // Проверка статуса
-    if (request.status !== 'inProgress') {
-      return error(res, 'Событие уже закрыто или не началось', 400);
-    }
-
-    // Проверка времени (событие должно начаться)
-    if (request.start_date) {
-      const startDate = new Date(request.start_date);
-      const now = new Date();
-      if (now < startDate) {
-        return error(res, 'Событие еще не началось', 400);
-      }
-    }
-
-    const { actual_participants } = req.body;
-
-    // Обработка загруженных файлов photos_after (только файлы, URL не принимаем)
-    const uploadedPhotosAfter = [];
-    if (req.files && req.files.photos_after && Array.isArray(req.files.photos_after)) {
-      for (const file of req.files.photos_after) {
-        const fileUrl = getFileUrlFromPath(file.path);
-        if (fileUrl) uploadedPhotosAfter.push(fileUrl);
-      }
-    }
-
-    // Сохраняем actual_participants и photos_after в JSON поля
-    const updates = [];
-    const params = [];
-    
-    if (actual_participants !== undefined) {
-      // Валидация: все ID в actual_participants должны быть UUID из БД
-      if (Array.isArray(actual_participants)) {
-        for (const participantId of actual_participants) {
-          if (participantId && !participantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-            return error(res, `actual_participants содержит невалидный ID: ${participantId}. Все ID должны быть UUID из базы данных (поле id из таблицы users).`, 400);
-          }
-        }
-      }
-      updates.push('actual_participants = ?');
-      params.push(Array.isArray(actual_participants) ? JSON.stringify(actual_participants) : null);
-    }
-    
-    // Сохраняем photos_after в JSON поле (только если загружены файлы)
-    if (uploadedPhotosAfter.length > 0) {
-      updates.push('photos_after = ?');
-      params.push(JSON.stringify(uploadedPhotosAfter));
-    }
-
-    // Меняем статус на pending
-    updates.push('status = ?');
-    params.push('pending');
-    updates.push('updated_at = NOW()');
-    params.push(id);
-
-    await pool.execute(
-      `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
-
-    success(res, null, 'Событие отправлено на рассмотрение');
-  } catch (err) {
-    console.error('Ошибка закрытия события:', err);
-    error(res, 'Ошибка при закрытии события', 500, err);
-  }
+  return error(res, 'Этот эндпоинт отключен. Используйте POST /api/requests/:requestId/close-by-creator для закрытия заявок типа event и wasteLocation', 410);
 });
 
 /**
@@ -1588,7 +1558,7 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
 /**
  * Обработка одобрения заявки типа wasteLocation
  */
-async function handleWasteApproval(requestId, creatorId, executorId) {
+async function handleWasteApproval(requestId, creatorId) {
   const coinsToAward = 1;
   const awardedUserIds = new Set();
 
@@ -1666,12 +1636,12 @@ async function handleWasteApproval(requestId, creatorId, executorId) {
     console.error('❌ Ошибка удаления группового чата при завершении заявки:', err);
   });
 
-  // 7. Меняем статус на completed
+  // 7. Меняем статус на archived
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-    ['completed', requestId]
+    ['archived', requestId]
   );
-  console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+  console.log(`✅ Заявка ${requestId} переведена в статус archived`);
 }
 
 /**
@@ -1757,12 +1727,12 @@ async function handleEventApproval(requestId, creatorId) {
     console.error('❌ Ошибка удаления группового чата при завершении события:', err);
   });
 
-  // 8. Меняем статус на completed
+  // 8. Меняем статус на archived
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-    ['completed', requestId]
+    ['archived', requestId]
   );
-  console.log(`✅ Заявка ${requestId} переведена в статус completed`);
+  console.log(`✅ Заявка ${requestId} переведена в статус archived`);
 }
 
 /**
@@ -1848,7 +1818,13 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
     console.error('❌ Ошибка удаления группового чата при отклонении заявки:', err);
   });
 
-  console.log(`✅ Заявка ${requestId} отклонена`);
+  // 6. Устанавливаем статус на rejected (на случай, если он еще не установлен)
+  await pool.execute(
+    'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+    ['rejected', requestId]
+  );
+
+  console.log(`✅ Заявка ${requestId} отклонена, статус установлен на rejected`);
 }
 
 /**
@@ -2272,9 +2248,10 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
       return error(res, 'Этот тип заявки не поддерживает закрытие создателем', 400);
     }
 
-    // Проверка прав доступа (только создатель может закрыть)
-    if (request.created_by !== userId && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен. Только создатель заявки может закрыть её', 403);
+    // Проверка прав доступа (только создатель может закрыть для event и waste)
+    // СТРОГАЯ ПРОВЕРКА: только создатель, админ не может закрывать заявку для этих типов
+    if (request.created_by !== userId) {
+      return error(res, 'Только создатель заявки может закрыть заявку', 403);
     }
 
     // Проверка статуса
@@ -2296,13 +2273,8 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
       [...params, requestId]
     );
 
-    // Получаем список approved участников и начисляем коины
-    const { getApprovedParticipants } = require('../utils/participantCompletions');
-    const approvedParticipants = await getApprovedParticipants(requestId);
-
-    // Начисляем коины только approved участникам
-    // Логика начисления коинов будет в обработке одобрения заявки (PUT /api/requests/:id со статусом approved)
-    // Здесь мы только закрываем заявку
+    // Коины НЕ начисляются при закрытии создателем
+    // Коины начисляются только при одобрении модератором (в handleWasteApproval/handleEventApproval)
 
     // Получаем обновленную заявку
     const [updatedRequests] = await pool.execute(

@@ -103,15 +103,14 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
 /**
  * GET /api/users/:id
  * Получение данных пользователя по ID
+ * Любой авторизованный пользователь может получить данные другого пользователя
  */
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Пользователь может видеть только свои данные, если он не админ
-    if (req.user.userId !== id && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
-    }
+    const currentUserId = req.user.userId;
+    const isAdmin = req.user.isAdmin;
+    const isOwnProfile = currentUserId === id;
 
     const [users] = await pool.execute(
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
@@ -126,7 +125,20 @@ router.get('/:id', authenticate, async (req, res) => {
       return error(res, 'Пользователь не найден', 404);
     }
 
-    success(res, { user: users[0] });
+    const user = users[0];
+
+    // Если пользователь запрашивает не свой профиль и не админ, скрываем чувствительные данные
+    if (!isOwnProfile && !isAdmin) {
+      // Удаляем чувствительные поля
+      delete user.fcm_token;
+      delete user.admin;
+      delete user.stripe_id;
+      // Можно также скрыть email и phone_number, если нужно
+      // delete user.email;
+      // delete user.phone_number;
+    }
+
+    success(res, { user });
   } catch (err) {
     console.error('Ошибка получения пользователя:', err);
     error(res, 'Ошибка при получении данных пользователя', 500, err);
