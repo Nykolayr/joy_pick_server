@@ -1572,21 +1572,21 @@ async function handleWasteApproval(requestId, creatorId) {
     console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
   }
 
-  // 2. Начисляем коины только approved участникам из participant_completions
-  const { getApprovedParticipants } = require('../utils/participantCompletions');
-  const approvedParticipants = await getApprovedParticipants(requestId);
-  
+  // 2. Начисляем коины исполнителю (joined_user_id) для wasteLocation
+  const [requestDataForExecutor] = await pool.execute(
+    'SELECT joined_user_id FROM requests WHERE id = ?',
+    [requestId]
+  );
   const executorUserIds = [];
-  for (const participantId of approvedParticipants) {
-    if (participantId && !awardedUserIds.has(participantId)) {
-      await pool.execute(
-        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-        [coinsToAward, coinsToAward, participantId]
-      );
-      awardedUserIds.add(participantId);
-      executorUserIds.push(participantId);
-      console.log(`✅ Начислено ${coinsToAward} коин approved участнику ${participantId} за заявку ${requestId}`);
-    }
+  const executorId = requestDataForExecutor[0]?.joined_user_id;
+  if (executorId && !awardedUserIds.has(executorId)) {
+    await pool.execute(
+      'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+      [coinsToAward, coinsToAward, executorId]
+    );
+    awardedUserIds.add(executorId);
+    executorUserIds.push(executorId);
+    console.log(`✅ Начислено ${coinsToAward} коин исполнителю ${executorId} за заявку ${requestId}`);
   }
 
   // 3. Начисляем коины донатерам
@@ -2070,18 +2070,45 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
       completed_at: new Date().toISOString()
     });
 
-    // Отправляем push-уведомление создателю
-    const { sendRequestSubmittedNotification } = require('../services/pushNotification');
-    if (request.created_by) {
-      sendRequestSubmittedNotification({
+    // Для wasteLocation: сразу меняем статус заявки на pending и отправляем уведомление админам
+    // Для event: только обновляем participant_completions, статус заявки остается inProgress
+    if (request.category === 'wasteLocation') {
+      // Меняем статус заявки на pending (отправка на модерацию)
+      await pool.execute(
+        'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+        ['pending', requestId]
+      );
+
+      // Получаем информацию о заявке для уведомления админам
+      const [requestInfo] = await pool.execute(
+        'SELECT r.name, u.display_name as creator_name FROM requests r LEFT JOIN users u ON r.created_by = u.id WHERE r.id = ?',
+        [requestId]
+      );
+
+      // Отправляем push-уведомление админам о новой заявке на модерации
+      const { sendModerationNotification } = require('../services/pushNotification');
+      sendModerationNotification({
         requestId: requestId,
-        requestName: request.name || 'Request',
-        requestCategory: request.category,
-        creatorId: request.created_by,
-        participantId: userId
+        requestName: requestInfo[0]?.name || 'Unnamed Request',
+        requestCategory: 'wasteLocation',
+        creatorName: requestInfo[0]?.creator_name || 'Unknown User',
       }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления при закрытии работы участником:', err);
+        console.error('❌ Ошибка отправки push-уведомления модераторам:', err);
       });
+    } else {
+      // Для event: отправляем push-уведомление создателю
+      const { sendRequestSubmittedNotification } = require('../services/pushNotification');
+      if (request.created_by) {
+        sendRequestSubmittedNotification({
+          requestId: requestId,
+          requestName: request.name || 'Request',
+          requestCategory: request.category,
+          creatorId: request.created_by,
+          participantId: userId
+        }).catch(err => {
+          console.error('❌ Ошибка отправки push-уведомления при закрытии работы участником:', err);
+        });
+      }
     }
 
     // Получаем обновленную заявку
@@ -2105,7 +2132,10 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
       updatedRequest.participant_completions = {};
     }
 
-    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Работа закрыта, ожидает одобрения');
+    const successMessage = request.category === 'wasteLocation' 
+      ? 'Заявка закрыта и отправлена на модерацию' 
+      : 'Работа закрыта, ожидает одобрения';
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, successMessage);
   } catch (err) {
     error(res, 'Ошибка при закрытии работы', 500, err);
   }
@@ -2141,6 +2171,11 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
     }
 
     const request = requests[0];
+
+    // Для wasteLocation: одобрение/отклонение недоступно
+    if (request.category === 'wasteLocation') {
+      return error(res, 'Для заявок типа wasteLocation одобрение/отклонение недоступно', 403);
+    }
 
     // Проверка прав доступа (только создатель может одобрять/отклонять)
     if (request.created_by !== currentUserId && !req.user.isAdmin) {
@@ -2243,12 +2278,17 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
 
     const request = requests[0];
 
+    // Для wasteLocation: создатель не может закрывать заявку
+    if (request.category === 'wasteLocation') {
+      return error(res, 'Для заявок типа wasteLocation создатель не может закрывать заявку', 403);
+    }
+
     // Проверка типа заявки
-    if (request.category !== 'event' && request.category !== 'wasteLocation') {
+    if (request.category !== 'event') {
       return error(res, 'Этот тип заявки не поддерживает закрытие создателем', 400);
     }
 
-    // Проверка прав доступа (только создатель может закрыть для event и waste)
+    // Проверка прав доступа (только создатель может закрыть для event)
     // СТРОГАЯ ПРОВЕРКА: только создатель, админ не может закрывать заявку для этих типов
     if (request.created_by !== userId) {
       return error(res, 'Только создатель заявки может закрыть заявку', 403);
