@@ -179,6 +179,13 @@ router.get('/', async (req, res) => {
         result.registered_participants = [];
       }
       
+      // КРИТИЧЕСКИ ВАЖНО: Для event заявок создатель всегда должен быть в списке участников
+      if (request.category === 'event' && request.created_by) {
+        if (!result.registered_participants.includes(request.created_by)) {
+          result.registered_participants.push(request.created_by);
+        }
+      }
+      
       // Обработка participant_completions из JSON поля
       if (request.participant_completions) {
         try {
@@ -346,6 +353,19 @@ router.get('/:id', async (req, res) => {
       }
     } else {
       request.registered_participants = [];
+    }
+    
+    // КРИТИЧЕСКИ ВАЖНО: Для event заявок создатель всегда должен быть в списке участников
+    if (request.category === 'event' && request.created_by) {
+      if (!request.registered_participants.includes(request.created_by)) {
+        console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants для заявки ${id}, добавляем обратно`);
+        request.registered_participants.push(request.created_by);
+        // Сохраняем исправленный список в базу данных
+        await pool.execute(
+          'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
+          [JSON.stringify(request.registered_participants), id]
+        );
+      }
     }
     
     // Обработка participant_completions из JSON поля
@@ -553,10 +573,11 @@ router.post('/', authenticate, uploadRequestPhotos, [
     );
 
     // Инициализация participant_completions для создателя event заявки
+    // Создатель автоматически одобрен (не требует подтверждения от заказчика)
     if (category === 'event') {
       try {
         const { initializeParticipantCompletion } = require('../utils/participantCompletions');
-        await initializeParticipantCompletion(requestId, userId);
+        await initializeParticipantCompletion(requestId, userId, true); // true = isCreator
       } catch (completionErr) {
         // Передаем детали ошибки в ответ API
         return error(res, 'Ошибка инициализации participant_completion для создателя', 500, completionErr);
@@ -1416,7 +1437,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
 
     // Проверка существования заявки
     const [requests] = await pool.execute(
-      'SELECT id, category, name, created_by FROM requests WHERE id = ?',
+      'SELECT id, category, name, created_by, registered_participants FROM requests WHERE id = ?',
       [id]
     );
 
@@ -1447,6 +1468,13 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       }
     }
 
+    // КРИТИЧЕСКИ ВАЖНО: Создатель всегда должен быть в списке участников
+    // Если его там нет, добавляем его обратно
+    if (!registeredParticipants.includes(request.created_by)) {
+      console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants, добавляем обратно`);
+      registeredParticipants.push(request.created_by);
+    }
+
     // Проверка, не участвует ли уже
     if (registeredParticipants.includes(userId)) {
       return error(res, 'Вы уже участвуете в этом событии', 409);
@@ -1454,6 +1482,13 @@ router.post('/:id/participate', authenticate, async (req, res) => {
 
     // Добавляем пользователя в список участников
     registeredParticipants.push(userId);
+    
+    // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что создатель остается в списке
+    // (на случай, если он был удален по какой-то причине)
+    if (!registeredParticipants.includes(request.created_by)) {
+      registeredParticipants.push(request.created_by);
+    }
+    
     await pool.execute(
       'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
       [JSON.stringify(registeredParticipants), id]
@@ -1509,7 +1544,7 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
 
     // Получаем текущий список зарегистрированных участников
     const [requests] = await pool.execute(
-      'SELECT id, category, registered_participants FROM requests WHERE id = ?',
+      'SELECT id, category, created_by, registered_participants FROM requests WHERE id = ?',
       [id]
     );
 
@@ -1521,6 +1556,11 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
 
     if (request.category !== 'event') {
       return error(res, 'Это не событие', 400);
+    }
+
+    // КРИТИЧЕСКИ ВАЖНО: Создатель не может отменить участие (он всегда остается участником)
+    if (request.created_by === userId) {
+      return error(res, 'Создатель события не может отменить участие', 400);
     }
 
     // Получаем текущий список участников
@@ -1537,6 +1577,13 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
 
     // Удаляем пользователя из списка участников
     registeredParticipants = registeredParticipants.filter(p => p !== userId);
+    
+    // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что создатель всегда остается в списке
+    if (request.created_by && !registeredParticipants.includes(request.created_by)) {
+      console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants после удаления, добавляем обратно`);
+      registeredParticipants.push(request.created_by);
+    }
+    
     await pool.execute(
       'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
       [JSON.stringify(registeredParticipants), id]
@@ -1657,23 +1704,29 @@ async function handleEventApproval(requestId, creatorId) {
     [requestId]
   );
 
-  // 2. Начисляем коины заказчику
+  // 2. Начисляем коины заказчику (создателю заявки)
   if (creatorId) {
     await pool.execute(
       'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
       [coinsToAward, coinsToAward, creatorId]
     );
-    awardedUserIds.add(creatorId);
+    // НЕ добавляем creatorId в awardedUserIds, так как создатель также является участником
+    // и должен получить коины и как заказчик, и как approved участник
     console.log(`✅ Начислено ${coinsToAward} коин заказчику заявки ${requestId}`);
   }
 
   // 3. Начисляем коины только approved участникам из participant_completions
+  // КРИТИЧЕСКИ ВАЖНО: Создатель также является участником и автоматически одобрен
+  // Он получает коины и как заказчик (за создание заявки), и как approved участник (за участие)
   const { getApprovedParticipants } = require('../utils/participantCompletions');
   const approvedParticipants = await getApprovedParticipants(requestId);
   
   const participantUserIds = [];
   for (const participantId of approvedParticipants) {
-    if (participantId && !awardedUserIds.has(participantId)) {
+    if (participantId) {
+      // Для создателя: начисляем коины как за участие (coins_from_participation)
+      // Для остальных участников: также начисляем коины как за участие
+      // Создатель получает коины дважды: как заказчик (уже начислено выше) и как участник (начисляем здесь)
       await pool.execute(
         'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
         [coinsToAward, coinsToAward, participantId]
