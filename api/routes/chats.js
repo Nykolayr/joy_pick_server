@@ -141,7 +141,6 @@ router.get('/', authenticate, async (req, res) => {
           chat.type = validation.expectedType;
           // Автоматически исправляем тип в БД, если он неверный
           if (validation.expectedType !== validation.actualType) {
-            console.warn(`⚠️ Исправление типа чата ${chat.id}: ${validation.actualType} → ${validation.expectedType}`);
             await pool.execute(
               'UPDATE chats SET type = ? WHERE id = ?',
               [validation.expectedType, chat.id]
@@ -154,7 +153,6 @@ router.get('/', authenticate, async (req, res) => {
       // Валидация типа чата
       const validation = validateChatType({ ...chat, participants_count: participantsCount });
       if (!validation.isValid) {
-        console.warn(`⚠️ Несоответствие типа чата ${chat.id}:`, validation.errors);
       }
 
       if (chat.last_message_id) {
@@ -230,7 +228,6 @@ router.get('/support', authenticate, async (req, res) => {
     // Валидация типа чата
     const validation = validateChatType({ ...chat, participants_count: participantsCount });
     if (!validation.isValid) {
-      console.warn(`⚠️ Несоответствие типа support чата ${chat.id}:`, validation.errors);
     }
 
     success(res, chat);
@@ -270,7 +267,6 @@ router.post('/support', authenticate, async (req, res) => {
       chat.participants_count = participantsCount;
       chat.type = 'support'; // Явно указываем тип
       
-      console.log(`ℹ️ Возвращен существующий support чат для пользователя ${userId}`);
       return success(res, chat);
     }
 
@@ -324,7 +320,6 @@ router.post('/support', authenticate, async (req, res) => {
     chat.participants_count = participantsCount;
     chat.type = 'support'; // Явно указываем тип
 
-    console.log(`✅ Создан новый support чат ${chatId} для пользователя ${userId}`);
     success(res, chat, 'Чат техподдержки создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании чата техподдержки', 500, err);
@@ -350,9 +345,7 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
       return error(res, 'Заявка не найдена', 404);
     }
 
-    const createdBy = requests[0].created_by;
-
-    // Ищем чат
+    // Ищем приватный чат по request_id и типу (один приватный чат на заявку)
     const [chats] = await pool.execute(
       `SELECT c.*, 
         (SELECT COUNT(*) FROM messages m 
@@ -362,9 +355,8 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
         ) as unread_count
        FROM chats c
        WHERE c.type = 'private' 
-       AND c.request_id = ? 
-       AND c.user_id = ?`,
-      [userId, requestId, userId]
+       AND c.request_id = ?`,
+      [userId, requestId]
     );
 
     if (chats.length === 0) {
@@ -374,13 +366,7 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
     const chat = chats[0];
     const participantsCount = await getParticipantsCount(chat.id);
     chat.participants_count = participantsCount;
-    chat.type = 'private'; // Явно указываем тип
-
-    // Валидация типа чата
-    const validation = validateChatType({ ...chat, participants_count: participantsCount });
-    if (!validation.isValid) {
-      console.warn(`⚠️ Несоответствие типа private чата ${chat.id}:`, validation.errors);
-    }
+    chat.type = 'private';
 
     success(res, chat);
   } catch (err) {
@@ -436,16 +422,20 @@ router.post('/private', authenticate, async (req, res) => {
       return error(res, 'Один или оба пользователя не найдены', 404);
     }
 
-    // Валидация: для private чата request_id должен быть указан, user_id должен быть указан
+    // Валидация: для private чата request_id должен быть указан
     if (!request_id) {
       return error(res, 'Для private чата request_id обязателен', 400);
     }
 
-    // Проверяем, существует ли уже private чат для этой пары пользователей и заявки
-    const existingChat = await findExistingPrivateChat(request_id, participant1, participant2);
+    // Проверяем, существует ли уже private чат для этой заявки (один приватный чат на заявку)
+    const [existingChats] = await pool.execute(
+      `SELECT * FROM chats WHERE type = 'private' AND request_id = ?`,
+      [request_id]
+    );
 
-    if (existingChat) {
+    if (existingChats.length > 0) {
       // Возвращаем существующий чат
+      const existingChat = existingChats[0];
       const participantsCount = await getParticipantsCount(existingChat.id);
       const [chats] = await pool.execute(
         `SELECT c.*, 
@@ -461,9 +451,8 @@ router.post('/private', authenticate, async (req, res) => {
       
       const chat = chats[0] || existingChat;
       chat.participants_count = participantsCount;
-      chat.type = 'private'; // Явно указываем тип
+      chat.type = 'private';
       
-      console.log(`ℹ️ Возвращен существующий private чат для заявки ${request_id} и пользователей ${participant1}, ${participant2}`);
       return success(res, chat);
     }
 
@@ -520,15 +509,8 @@ router.post('/private', authenticate, async (req, res) => {
 
     const chat = newChat[0];
     chat.participants_count = participantsCount;
-    chat.type = 'private'; // Явно указываем тип
+    chat.type = 'private';
 
-    // Проверяем валидность созданного чата
-    const validation = validateChatType({ ...chat, participants_count: participantsCount });
-    if (!validation.isValid) {
-      console.warn(`⚠️ Предупреждение: созданный private чат ${chatId} имеет несоответствия:`, validation.errors);
-    }
-
-    console.log(`✅ Создан новый private чат ${chatId} для заявки ${request_id} и пользователей ${participant1}, ${participant2}`);
     success(res, chat, 'Приватный чат создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании приватного чата', 500, err);
@@ -579,7 +561,6 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
     // Валидация типа чата
     const validation = validateChatType({ ...chat, participants_count: participantsCount });
     if (!validation.isValid) {
-      console.warn(`⚠️ Несоответствие типа group чата ${chat.id}:`, validation.errors);
     }
 
     success(res, chat);
@@ -637,7 +618,6 @@ router.post('/group', authenticate, async (req, res) => {
       chat.participants_count = participantsCount;
       chat.type = 'group'; // Явно указываем тип
       
-      console.log(`ℹ️ Возвращен существующий group чат для заявки ${request_id}`);
       return success(res, chat);
     }
 
@@ -744,15 +724,12 @@ router.post('/group', authenticate, async (req, res) => {
     // Проверяем валидность созданного чата
     const validation = validateChatType({ ...chat, participants_count: participantsCount });
     if (!validation.isValid) {
-      console.warn(`⚠️ Предупреждение: созданный group чат ${chatId} имеет несоответствия:`, validation.errors);
     }
 
     // Проверяем минимальное количество участников
     if (participantsCount < 2) {
-      console.warn(`⚠️ Предупреждение: group чат ${chatId} имеет менее 2 участников (${participantsCount})`);
     }
 
-    console.log(`✅ Создан новый group чат ${chatId} для заявки ${request_id} с ${participantsCount} участниками`);
     success(res, chat, 'Групповой чат создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании группового чата', 500, err);
@@ -1087,6 +1064,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
         unreadBy.length > 0 ? JSON.stringify(unreadBy) : null
       ]
     );
+    
 
     // Обновляем last_message_at в чате
     await pool.execute(
@@ -1116,7 +1094,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       type: 'new_message',
       success: true,
       id: messageData.id,
-      chat_id: messageData.chat_id,
+      chat_id: chatId, // Используем chatId из URL, а не из messageData (на случай ошибки)
       sender_id: messageData.sender_id,
       message: messageData.message,
       message_type: messageData.message_type,
@@ -1144,9 +1122,10 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       // Socket.io не доступен, но сообщение сохранено
     }
 
+    // Возвращаем chat_id из URL (правильный), а не из messageData (на случай ошибки)
     success(res, {
       id: messageData.id,
-      chat_id: messageData.chat_id,
+      chat_id: chatId, // Используем chatId из URL
       sender_id: messageData.sender_id,
       message: messageData.message,
       message_type: messageData.message_type,
