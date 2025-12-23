@@ -57,9 +57,10 @@ async function saveParticipantCompletions(requestId, completions) {
  * Инициализировать запись для участника в participant_completions
  * @param {string} requestId - ID заявки
  * @param {string} userId - ID пользователя
+ * @param {boolean} isCreator - Является ли пользователь создателем заявки (по умолчанию false)
  * @returns {Promise<void>}
  */
-async function initializeParticipantCompletion(requestId, userId) {
+async function initializeParticipantCompletion(requestId, userId, isCreator = false) {
   try {
     const completions = await getParticipantCompletions(requestId);
     
@@ -68,9 +69,13 @@ async function initializeParticipantCompletion(requestId, userId) {
       return;
     }
 
-    // Создаем новую запись со статусом inProgress
+    // Для создателя: статус сразу 'approved' (не требует подтверждения от заказчика)
+    // Для остальных участников: статус 'inProgress' (требует подтверждения)
+    const status = isCreator ? 'approved' : 'inProgress';
+
+    // Создаем новую запись
     completions[userId] = {
-      status: 'inProgress',
+      status: status,
       photos_after: [],
       completion_comment: null,
       completion_latitude: null,
