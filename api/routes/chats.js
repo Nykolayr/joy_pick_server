@@ -4,6 +4,14 @@ const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { addUserToChat } = require('../utils/chatHelpers');
+const {
+  validateChatType,
+  getParticipantsCount,
+  validateAndFixChatType,
+  findExistingSupportChat,
+  findExistingPrivateChat,
+  findExistingGroupChat
+} = require('../utils/chatValidation');
 
 const router = express.Router();
 
@@ -119,8 +127,36 @@ router.get('/', authenticate, async (req, res) => {
 
     const [chats] = await pool.execute(query, params);
 
-    // Получаем последние сообщения для каждого чата
+    // Получаем последние сообщения и валидируем типы чатов
     for (const chat of chats) {
+      // Получаем количество участников
+      const participantsCount = await getParticipantsCount(chat.id);
+      chat.participants_count = participantsCount;
+      
+      // Явно указываем тип чата
+      if (!chat.type) {
+        // Если тип не указан, определяем его по полям
+        const validation = validateChatType({ ...chat, participants_count: participantsCount });
+        if (validation.expectedType) {
+          chat.type = validation.expectedType;
+          // Автоматически исправляем тип в БД, если он неверный
+          if (validation.expectedType !== validation.actualType) {
+            console.warn(`⚠️ Исправление типа чата ${chat.id}: ${validation.actualType} → ${validation.expectedType}`);
+            await pool.execute(
+              'UPDATE chats SET type = ? WHERE id = ?',
+              [validation.expectedType, chat.id]
+            );
+            chat.type = validation.expectedType;
+          }
+        }
+      }
+
+      // Валидация типа чата
+      const validation = validateChatType({ ...chat, participants_count: participantsCount });
+      if (!validation.isValid) {
+        console.warn(`⚠️ Несоответствие типа чата ${chat.id}:`, validation.errors);
+      }
+
       if (chat.last_message_id) {
         const [messages] = await pool.execute(
           `SELECT id, message, sender_id, created_at 
@@ -186,7 +222,18 @@ router.get('/support', authenticate, async (req, res) => {
       return error(res, 'Чат техподдержки не найден', 404);
     }
 
-    success(res, chats[0]);
+    const chat = chats[0];
+    const participantsCount = await getParticipantsCount(chat.id);
+    chat.participants_count = participantsCount;
+    chat.type = 'support'; // Явно указываем тип
+
+    // Валидация типа чата
+    const validation = validateChatType({ ...chat, participants_count: participantsCount });
+    if (!validation.isValid) {
+      console.warn(`⚠️ Несоответствие типа support чата ${chat.id}:`, validation.errors);
+    }
+
+    success(res, chat);
   } catch (err) {
     error(res, 'Ошибка при получении чата техподдержки', 500, err);
   }
@@ -200,14 +247,31 @@ router.post('/support', authenticate, async (req, res) => {
   try {
     const userId = req.user.userId || req.user.id;
 
+    // Валидация: для support чата request_id должен быть null, user_id должен быть ID текущего пользователя
     // Проверяем, существует ли уже чат
-    const [existing] = await pool.execute(
-      `SELECT * FROM chats WHERE type = 'support' AND user_id = ?`,
-      [userId]
-    );
+    const existingChat = await findExistingSupportChat(userId);
 
-    if (existing.length > 0) {
-      return success(res, existing[0]);
+    if (existingChat) {
+      // Возвращаем существующий чат
+      const participantsCount = await getParticipantsCount(existingChat.id);
+      const [chats] = await pool.execute(
+        `SELECT c.*, 
+         (SELECT COUNT(*) FROM messages m 
+          WHERE m.chat_id = c.id 
+          AND m.deleted_at IS NULL
+          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+         ) as unread_count
+         FROM chats c
+         WHERE c.id = ?`,
+        [userId, existingChat.id]
+      );
+      
+      const chat = chats[0] || existingChat;
+      chat.participants_count = participantsCount;
+      chat.type = 'support'; // Явно указываем тип
+      
+      console.log(`ℹ️ Возвращен существующий support чат для пользователя ${userId}`);
+      return success(res, chat);
     }
 
     // Создаем новый чат
@@ -243,12 +307,25 @@ router.post('/support', authenticate, async (req, res) => {
       }
     }
 
+    const participantsCount = await getParticipantsCount(chatId);
     const [newChat] = await pool.execute(
-      `SELECT * FROM chats WHERE id = ?`,
-      [chatId]
+      `SELECT c.*, 
+       (SELECT COUNT(*) FROM messages m 
+        WHERE m.chat_id = c.id 
+        AND m.deleted_at IS NULL
+        AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+       ) as unread_count
+       FROM chats c
+       WHERE c.id = ?`,
+      [userId, chatId]
     );
 
-    success(res, { ...newChat[0], unread_count: 0 }, 'Чат техподдержки создан', 201);
+    const chat = newChat[0];
+    chat.participants_count = participantsCount;
+    chat.type = 'support'; // Явно указываем тип
+
+    console.log(`✅ Создан новый support чат ${chatId} для пользователя ${userId}`);
+    success(res, chat, 'Чат техподдержки создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании чата техподдержки', 500, err);
   }
@@ -294,7 +371,18 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
       return error(res, 'Приватный чат не найден', 404);
     }
 
-    success(res, chats[0]);
+    const chat = chats[0];
+    const participantsCount = await getParticipantsCount(chat.id);
+    chat.participants_count = participantsCount;
+    chat.type = 'private'; // Явно указываем тип
+
+    // Валидация типа чата
+    const validation = validateChatType({ ...chat, participants_count: participantsCount });
+    if (!validation.isValid) {
+      console.warn(`⚠️ Несоответствие типа private чата ${chat.id}:`, validation.errors);
+    }
+
+    success(res, chat);
   } catch (err) {
     error(res, 'Ошибка при получении приватного чата', 500, err);
   }
@@ -348,63 +436,17 @@ router.post('/private', authenticate, async (req, res) => {
       return error(res, 'Один или оба пользователя не найдены', 404);
     }
 
-    // Проверяем, существует ли уже чат между этими двумя пользователями
-    let existingChat = null;
-    
-    if (request_id) {
-      // Если передан request_id, сначала ищем чат по request_id и user_id
-      const [chatsByRequest] = await pool.execute(
-        `SELECT c.* FROM chats c
-         WHERE c.type = 'private' 
-         AND c.request_id = ? 
-         AND c.user_id = ?`,
-        [request_id, participant1]
-      );
-      
-      if (chatsByRequest.length > 0) {
-        // Проверяем, что оба пользователя в этом чате
-        const [participants] = await pool.execute(
-          `SELECT COUNT(*) as count FROM chat_participants 
-           WHERE chat_id = ? AND user_id IN (?, ?)`,
-          [chatsByRequest[0].id, participant1, participant2]
-        );
-        
-        if (participants[0].count === 2) {
-          existingChat = chatsByRequest[0];
-        }
-      }
+    // Валидация: для private чата request_id должен быть указан, user_id должен быть указан
+    if (!request_id) {
+      return error(res, 'Для private чата request_id обязателен', 400);
     }
-    
-    // Если чат не найден по request_id, ищем чат между двумя пользователями
-    if (!existingChat) {
-      let query, params;
-      
-      if (request_id) {
-        // Ищем чат с указанным request_id или без него
-        query = `SELECT DISTINCT c.* FROM chats c
-                 INNER JOIN chat_participants cp1 ON cp1.chat_id = c.id AND cp1.user_id = ?
-                 INNER JOIN chat_participants cp2 ON cp2.chat_id = c.id AND cp2.user_id = ?
-                 WHERE c.type = 'private'
-                 AND (c.request_id = ? OR c.request_id IS NULL)`;
-        params = [participant1, participant2, request_id];
-      } else {
-        // Ищем любой приватный чат между этими двумя пользователями
-        query = `SELECT DISTINCT c.* FROM chats c
-                 INNER JOIN chat_participants cp1 ON cp1.chat_id = c.id AND cp1.user_id = ?
-                 INNER JOIN chat_participants cp2 ON cp2.chat_id = c.id AND cp2.user_id = ?
-                 WHERE c.type = 'private'`;
-        params = [participant1, participant2];
-      }
-      
-      const [chatsByUsers] = await pool.execute(query, params);
-      
-      if (chatsByUsers.length > 0) {
-        existingChat = chatsByUsers[0];
-      }
-    }
+
+    // Проверяем, существует ли уже private чат для этой пары пользователей и заявки
+    const existingChat = await findExistingPrivateChat(request_id, participant1, participant2);
 
     if (existingChat) {
       // Возвращаем существующий чат
+      const participantsCount = await getParticipantsCount(existingChat.id);
       const [chats] = await pool.execute(
         `SELECT c.*, 
          (SELECT COUNT(*) FROM messages m 
@@ -417,15 +459,21 @@ router.post('/private', authenticate, async (req, res) => {
         [userId, existingChat.id]
       );
       
-      return success(res, chats[0] || existingChat);
+      const chat = chats[0] || existingChat;
+      chat.participants_count = participantsCount;
+      chat.type = 'private'; // Явно указываем тип
+      
+      console.log(`ℹ️ Возвращен существующий private чат для заявки ${request_id} и пользователей ${participant1}, ${participant2}`);
+      return success(res, chat);
     }
 
     // Создаем новый чат
     const chatId = generateId();
+    // Для private чата: request_id обязателен, user_id = ID одного из участников (используем participant1)
     await pool.execute(
       `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
        VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
-      [chatId, request_id || null, participant1, participant1]
+      [chatId, request_id, participant1, participant1]
     );
 
     // Добавляем участников используя функцию addUserToChat (она правильно обрабатывает id)
@@ -455,6 +503,9 @@ router.post('/private', authenticate, async (req, res) => {
       throw enhancedError;
     }
 
+    const participantsCount = await getParticipantsCount(chatId);
+    
+    // Валидация созданного чата
     const [newChat] = await pool.execute(
       `SELECT c.*, 
        (SELECT COUNT(*) FROM messages m 
@@ -467,7 +518,18 @@ router.post('/private', authenticate, async (req, res) => {
       [userId, chatId]
     );
 
-    success(res, newChat[0], 'Приватный чат создан', 201);
+    const chat = newChat[0];
+    chat.participants_count = participantsCount;
+    chat.type = 'private'; // Явно указываем тип
+
+    // Проверяем валидность созданного чата
+    const validation = validateChatType({ ...chat, participants_count: participantsCount });
+    if (!validation.isValid) {
+      console.warn(`⚠️ Предупреждение: созданный private чат ${chatId} имеет несоответствия:`, validation.errors);
+    }
+
+    console.log(`✅ Создан новый private чат ${chatId} для заявки ${request_id} и пользователей ${participant1}, ${participant2}`);
+    success(res, chat, 'Приватный чат создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании приватного чата', 500, err);
   }
@@ -499,8 +561,7 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count,
-        (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+        ) as unread_count
        FROM chats c
        WHERE c.type = 'group' AND c.request_id = ?`,
       [userId, requestId]
@@ -510,7 +571,18 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
       return error(res, 'Групповой чат не найден', 404);
     }
 
-    success(res, chats[0]);
+    const chat = chats[0];
+    const participantsCount = await getParticipantsCount(chat.id);
+    chat.participants_count = participantsCount;
+    chat.type = 'group'; // Явно указываем тип
+
+    // Валидация типа чата
+    const validation = validateChatType({ ...chat, participants_count: participantsCount });
+    if (!validation.isValid) {
+      console.warn(`⚠️ Несоответствие типа group чата ${chat.id}:`, validation.errors);
+    }
+
+    success(res, chat);
   } catch (err) {
     error(res, 'Ошибка при получении группового чата', 500, err);
   }
@@ -542,34 +614,39 @@ router.post('/group', authenticate, async (req, res) => {
 
     const request = requests[0];
 
+    // Валидация: для group чата request_id должен быть указан, user_id должен быть NULL
     // Проверяем, существует ли уже групповой чат для этой заявки
-    const [existing] = await pool.execute(
-      `SELECT * FROM chats WHERE type = 'group' AND request_id = ?`,
-      [request_id]
-    );
+    const existingChat = await findExistingGroupChat(request_id);
 
-    if (existing.length > 0) {
+    if (existingChat) {
       // Возвращаем существующий чат
+      const participantsCount = await getParticipantsCount(existingChat.id);
       const [chats] = await pool.execute(
         `SELECT c.*, 
           (SELECT COUNT(*) FROM messages m 
            WHERE m.chat_id = c.id 
            AND m.deleted_at IS NULL
            AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-          ) as unread_count,
-          (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+          ) as unread_count
          FROM chats c
          WHERE c.id = ?`,
-        [userId, existing[0].id]
+        [userId, existingChat.id]
       );
-      return success(res, chats[0]);
+      
+      const chat = chats[0] || existingChat;
+      chat.participants_count = participantsCount;
+      chat.type = 'group'; // Явно указываем тип
+      
+      console.log(`ℹ️ Возвращен существующий group чат для заявки ${request_id}`);
+      return success(res, chat);
     }
 
     // Создаем новый групповой чат
     const chatId = generateId();
+    // Для group чата: request_id обязателен, user_id должен быть NULL
     await pool.execute(
-      `INSERT INTO chats (id, type, request_id, created_by, created_at, last_message_at)
-       VALUES (?, 'group', ?, ?, NOW(), NOW())`,
+      `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
+       VALUES (?, 'group', ?, NULL, ?, NOW(), NOW())`,
       [chatId, request_id, request.created_by]
     );
 
@@ -645,6 +722,8 @@ router.post('/group', authenticate, async (req, res) => {
       return error(res, 'Ошибка при добавлении участников в чат', 500, { insertErrors });
     }
 
+    const participantsCount = await getParticipantsCount(chatId);
+    
     // Получаем созданный чат
     const [newChat] = await pool.execute(
       `SELECT c.*, 
@@ -652,14 +731,29 @@ router.post('/group', authenticate, async (req, res) => {
          WHERE m.chat_id = c.id 
          AND m.deleted_at IS NULL
          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count,
-        (SELECT COUNT(*) FROM chat_participants WHERE chat_id = c.id) as participants_count
+        ) as unread_count
        FROM chats c
        WHERE c.id = ?`,
       [userId, chatId]
     );
 
-    success(res, newChat[0], 'Групповой чат создан', 201);
+    const chat = newChat[0];
+    chat.participants_count = participantsCount;
+    chat.type = 'group'; // Явно указываем тип
+
+    // Проверяем валидность созданного чата
+    const validation = validateChatType({ ...chat, participants_count: participantsCount });
+    if (!validation.isValid) {
+      console.warn(`⚠️ Предупреждение: созданный group чат ${chatId} имеет несоответствия:`, validation.errors);
+    }
+
+    // Проверяем минимальное количество участников
+    if (participantsCount < 2) {
+      console.warn(`⚠️ Предупреждение: group чат ${chatId} имеет менее 2 участников (${participantsCount})`);
+    }
+
+    console.log(`✅ Создан новый group чат ${chatId} для заявки ${request_id} с ${participantsCount} участниками`);
+    success(res, chat, 'Групповой чат создан', 201);
   } catch (err) {
     error(res, 'Ошибка при создании группового чата', 500, err);
   }
