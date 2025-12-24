@@ -51,6 +51,79 @@ function safeParseJsonArray(value) {
 }
 
 /**
+ * Автоматически добавляет участников в приватный чат, если они не добавлены
+ * @param {string} chatId - ID чата
+ * @param {string} userId - ID пользователя, который пытается получить доступ
+ * @param {object} chat - Объект чата из БД
+ * @returns {Promise<boolean>} - true если пользователь теперь является участником, false если нет
+ */
+async function ensurePrivateChatParticipants(chatId, userId, chat) {
+  if (chat.type !== 'private' || !chat.request_id) {
+    return false;
+  }
+
+  // Получаем создателя заявки
+  const [requests] = await pool.execute(
+    `SELECT created_by FROM requests WHERE id = ?`,
+    [chat.request_id]
+  );
+
+  if (requests.length === 0) {
+    return false;
+  }
+
+  const requestCreatorId = requests[0].created_by;
+  
+  // Получаем существующих участников из chat_participants
+  const [existingParticipants] = await pool.execute(
+    `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+    [chatId]
+  );
+  const existingParticipantIds = existingParticipants.map(p => p.user_id);
+  
+  // Определяем обоих участников приватного чата
+  // Участники: создатель заявки и другой пользователь (не создатель заявки)
+  let participant1, participant2;
+  
+  if (userId === requestCreatorId) {
+    // Текущий пользователь - создатель заявки
+    participant1 = requestCreatorId;
+    // Второй участник - это тот, кто НЕ является создателем заявки
+    // Может быть chat.user_id или chat.created_by, или уже существующий участник
+    if (existingParticipantIds.length > 0) {
+      // Берем первого существующего участника, который не является создателем заявки
+      participant2 = existingParticipantIds.find(id => id !== requestCreatorId);
+      if (!participant2) {
+        // Если все существующие участники - создатель заявки, берем chat.user_id или chat.created_by
+        participant2 = (chat.user_id && chat.user_id !== requestCreatorId) ? chat.user_id : 
+                       (chat.created_by && chat.created_by !== requestCreatorId) ? chat.created_by : null;
+      }
+    } else {
+      // Нет существующих участников, берем из chat
+      participant2 = (chat.user_id && chat.user_id !== requestCreatorId) ? chat.user_id : 
+                     (chat.created_by && chat.created_by !== requestCreatorId) ? chat.created_by : null;
+    }
+  } else {
+    // Текущий пользователь - НЕ создатель заявки
+    participant1 = userId;
+    participant2 = requestCreatorId;
+  }
+
+  if (!participant2 || participant1 === participant2) {
+    return false;
+  }
+
+  // Добавляем обоих участников
+  try {
+    await addUserToChat(chatId, participant1);
+    await addUserToChat(chatId, participant2);
+    return true;
+  } catch (addErr) {
+    return false;
+  }
+}
+
+/**
  * Отправка события через SSE всем подключенным клиентам чата
  * @param {string} chatId - ID чата
  * @param {object} event - Событие для отправки
@@ -95,6 +168,7 @@ router.get('/', authenticate, async (req, res) => {
     // КРИТИЧЕСКИ ВАЖНО: Для support чатов фильтруем по владельцу (user_id)
     // Для остальных типов - по участию в chat_participants
     // Это нужно, чтобы админы не видели все support чаты других пользователей
+    // КРИТИЧЕСКИ ВАЖНО: Возвращаем только чаты, где есть хотя бы одно сообщение
     let query = `
       SELECT DISTINCT c.*, 
         (SELECT COUNT(*) FROM messages m 
@@ -112,6 +186,11 @@ router.get('/', authenticate, async (req, res) => {
         (c.type = 'support' AND c.user_id = ?) 
         OR 
         (c.type != 'support' AND cp.user_id = ?)
+      )
+      AND EXISTS (
+        SELECT 1 FROM messages m 
+        WHERE m.chat_id = c.id 
+        AND m.deleted_at IS NULL
       )
     `;
     const params = [userId, userId, userId];
@@ -168,7 +247,7 @@ router.get('/', authenticate, async (req, res) => {
       }
     }
 
-    // Получаем общее количество
+    // Получаем общее количество (только чаты с сообщениями)
     let countQuery = `
       SELECT COUNT(DISTINCT c.id) as total
       FROM chats c
@@ -177,6 +256,11 @@ router.get('/', authenticate, async (req, res) => {
         (c.type = 'support' AND c.user_id = ?) 
         OR 
         (c.type != 'support' AND cp.user_id = ?)
+      )
+      AND EXISTS (
+        SELECT 1 FROM messages m 
+        WHERE m.chat_id = c.id 
+        AND m.deleted_at IS NULL
       )
     `;
     const countParams = [userId, userId];
@@ -436,6 +520,17 @@ router.post('/private', authenticate, async (req, res) => {
     if (existingChats.length > 0) {
       // Возвращаем существующий чат
       const existingChat = existingChats[0];
+      
+      // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что оба участника добавлены в chat_participants
+      // Это нужно на случай, если чат был создан ранее, но участники не были добавлены правильно
+      try {
+        await addUserToChat(existingChat.id, participant1);
+        await addUserToChat(existingChat.id, participant2);
+      } catch (chatErr) {
+        // Если ошибка при добавлении участников, все равно возвращаем чат
+        // но передаем информацию об ошибке в ответе
+      }
+      
       const participantsCount = await getParticipantsCount(existingChat.id);
       const [chats] = await pool.execute(
         `SELECT c.*, 
@@ -778,26 +873,34 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       
       const participantIds = participants.map(p => p.user_id);
       
-      // Для приватных чатов: проверяем, что пользователь должен быть участником
+      // Для приватных чатов: автоматически добавляем участников, если они не добавлены
       if (chat.type === 'private') {
-        // Проверяем, является ли пользователь одним из участников приватного чата
         if (!participantIds.includes(userId)) {
-          const errorDetails = {
-            message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
-            chatId,
-            userId,
-            chatType: chat.type,
-            participants: participantIds,
-            chatUserId: chat.user_id,
-            chatCreatedBy: chat.created_by
-          };
-          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          const added = await ensurePrivateChatParticipants(chatId, userId, chat);
+          if (!added) {
+            const errorDetails = {
+              message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+              chatId,
+              userId,
+              chatType: chat.type,
+              participants: participantIds,
+              chatUserId: chat.user_id,
+              chatCreatedBy: chat.created_by
+            };
+            return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          }
+          // Повторно проверяем доступ после добавления
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
         }
       }
 
       // Для чатов типа support: если пользователь создатель чата - добавляем его
       if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
-        const { addUserToChat } = require('../utils/chatHelpers');
         await addUserToChat(chatId, userId);
         
         // Повторно проверяем доступ
@@ -825,7 +928,6 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
 
       // Для групповых чатов: если пользователь создатель чата - добавляем его
       if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        const { addUserToChat } = require('../utils/chatHelpers');
         await addUserToChat(chatId, userId);
         
         // Повторно проверяем доступ
@@ -966,26 +1068,34 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       
       const participantIds = participants.map(p => p.user_id);
       
-      // Для приватных чатов: проверяем, что пользователь должен быть участником
+      // Для приватных чатов: автоматически добавляем участников, если они не добавлены
       if (chat.type === 'private') {
-        // Проверяем, является ли пользователь одним из участников приватного чата
         if (!participantIds.includes(userId)) {
-          const errorDetails = {
-            message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
-            chatId,
-            userId,
-            chatType: chat.type,
-            participants: participantIds,
-            chatUserId: chat.user_id,
-            chatCreatedBy: chat.created_by
-          };
-          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          const added = await ensurePrivateChatParticipants(chatId, userId, chat);
+          if (!added) {
+            const errorDetails = {
+              message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+              chatId,
+              userId,
+              chatType: chat.type,
+              participants: participantIds,
+              chatUserId: chat.user_id,
+              chatCreatedBy: chat.created_by
+            };
+            return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          }
+          // Повторно проверяем доступ после добавления
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
         }
       }
 
       // Для чатов типа support: если пользователь создатель чата - добавляем его
       if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
-        const { addUserToChat } = require('../utils/chatHelpers');
         await addUserToChat(chatId, userId);
         
         // Повторно проверяем доступ
@@ -1013,7 +1123,6 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
 
       // Для групповых чатов: если пользователь создатель чата - добавляем его
       if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        const { addUserToChat } = require('../utils/chatHelpers');
         await addUserToChat(chatId, userId);
         
         // Повторно проверяем доступ
