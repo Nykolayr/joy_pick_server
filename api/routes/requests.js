@@ -198,6 +198,26 @@ router.get('/', async (req, res) => {
       } else {
         result.participant_completions = {};
       }
+
+      // Обработка group_chat_id
+      if (request.group_chat_id) {
+        result.group_chat_id = request.group_chat_id;
+      } else {
+        result.group_chat_id = null;
+      }
+
+      // Обработка private_chats из JSON поля (для event заявок)
+      if (request.private_chats) {
+        try {
+          result.private_chats = typeof request.private_chats === 'string' 
+            ? JSON.parse(request.private_chats) 
+            : request.private_chats;
+        } catch (e) {
+          result.private_chats = [];
+        }
+      } else {
+        result.private_chats = [];
+      }
       
       // Преобразование булевых значений
       result.only_foot = Boolean(result.only_foot);
@@ -251,7 +271,6 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Ошибка получения заявок:', err);
     error(res, 'Ошибка при получении списка заявок', 500, err);
   }
 });
@@ -358,7 +377,6 @@ router.get('/:id', async (req, res) => {
     // КРИТИЧЕСКИ ВАЖНО: Для event заявок создатель всегда должен быть в списке участников
     if (request.category === 'event' && request.created_by) {
       if (!request.registered_participants.includes(request.created_by)) {
-        console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants для заявки ${id}, добавляем обратно`);
         request.registered_participants.push(request.created_by);
         // Сохраняем исправленный список в базу данных
         await pool.execute(
@@ -379,6 +397,26 @@ router.get('/:id', async (req, res) => {
       }
     } else {
       request.participant_completions = {};
+    }
+
+    // Обработка group_chat_id
+    if (request.group_chat_id) {
+      request.group_chat_id = request.group_chat_id;
+    } else {
+      request.group_chat_id = null;
+    }
+
+    // Обработка private_chats из JSON поля (для event заявок)
+    if (request.private_chats) {
+      try {
+        request.private_chats = typeof request.private_chats === 'string' 
+          ? JSON.parse(request.private_chats) 
+          : request.private_chats;
+      } catch (e) {
+        request.private_chats = [];
+      }
+    } else {
+      request.private_chats = [];
     }
     
     request.only_foot = Boolean(request.only_foot);
@@ -459,14 +497,6 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     }
 
-    // Логируем входящие данные для отладки
-    console.log('📥 Данные запроса на создание заявки:', {
-      category: bodyData.category,
-      name: bodyData.name,
-      hasFiles: !!req.files,
-      filesCount: req.files ? Object.keys(req.files).length : 0,
-      bodyKeys: Object.keys(bodyData)
-    });
 
     const {
       category,
@@ -534,14 +564,26 @@ router.post('/', authenticate, uploadRequestPhotos, [
       ? new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
       : null;
 
-    // Создание заявки с фото в JSON полях
+    // Для event заявок инициализируем пустой массив приватных чатов
+    let privateChats = null;
+    if (category === 'event') {
+      privateChats = JSON.stringify([]);
+    }
+
+    // КРИТИЧЕСКИ ВАЖНО: Сначала создаем заявку БЕЗ group_chat_id (NULL)
+    // Потом создадим групповой чат и обновим заявку
+    // Это нужно, чтобы избежать ошибки внешнего ключа (request_id должен существовать в таблице requests)
     await pool.execute(
       `INSERT INTO requests (
         id, user_id, category, name, description, latitude, longitude, city,
-        garbage_size, only_foot, possible_by_car, cost, reward_amount,
-        start_date, end_date, status, priority, created_by, target_amount,
-        plant_tree, trash_pickup_only, photos_before, photos_after, waste_types, registered_participants, expires_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        garbage_size, only_foot, possible_by_car, cost, reward_amount, is_open,
+        start_date, end_date, status, priority, assigned_to, notes, created_by,
+        taken_by, total_contributed, target_amount, joined_user_id, join_date,
+        payment_intent_id, completion_comment, plant_tree, trash_pickup_only,
+        created_at, updated_at, rejection_reason, rejection_message, actual_participants,
+        photos_before, photos_after, registered_participants, waste_types, expires_at,
+        extended_count, participant_completions, group_chat_id, private_chats
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -556,21 +598,53 @@ router.post('/', authenticate, uploadRequestPhotos, [
         possible_by_car,
         cost || null,
         reward_amount || null,
+        true, // is_open по умолчанию true
         start_date || null,
         end_date || null,
         defaultStatus,
         priority,
+        null, // assigned_to
+        null, // notes
         userId, // created_by использует тот же userId
+        null, // taken_by
+        null, // total_contributed
         target_amount || null,
+        null, // joined_user_id
+        null, // join_date
+        null, // payment_intent_id
+        null, // completion_comment
         plant_tree,
         trash_pickup_only,
+        null, // rejection_reason
+        null, // rejection_message
+        null, // actual_participants
         finalPhotosBefore.length > 0 ? JSON.stringify(finalPhotosBefore) : null,
         finalPhotosAfter.length > 0 ? JSON.stringify(finalPhotosAfter) : null,
-        processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
         registeredParticipants,
-        expiresAt
+        processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
+        expiresAt,
+        0, // extended_count (NOT NULL, default 0)
+        null, // participant_completions
+        null, // group_chat_id пока NULL, обновим после создания чата
+        privateChats
       ]
     );
+
+    // КРИТИЧЕСКИ ВАЖНО: Теперь создаем групповой чат (заявка уже существует в БД)
+    let groupChatId = null;
+    try {
+      groupChatId = await createGroupChatForRequest(requestId, userId, category);
+      
+      // Обновляем заявку с group_chat_id
+      await pool.execute(
+        'UPDATE requests SET group_chat_id = ? WHERE id = ?',
+        [groupChatId, requestId]
+      );
+    } catch (chatErr) {
+      // Если не удалось создать чат, удаляем заявку и возвращаем ошибку
+      await pool.execute('DELETE FROM requests WHERE id = ?', [requestId]);
+      return error(res, 'Ошибка при создании группового чата', 500, chatErr);
+    }
 
     // Инициализация participant_completions для создателя event заявки
     // Создатель автоматически одобрен (не требует подтверждения от заказчика)
@@ -649,67 +723,27 @@ router.post('/', authenticate, uploadRequestPhotos, [
     request.contributions = {};
     request.donations = [];
 
+    // Обработка group_chat_id и private_chats из БД
+    if (request.group_chat_id) {
+      request.group_chat_id = request.group_chat_id;
+    } else {
+      request.group_chat_id = null;
+    }
+
+    if (request.private_chats) {
+      try {
+        request.private_chats = typeof request.private_chats === 'string' 
+          ? JSON.parse(request.private_chats) 
+          : request.private_chats;
+      } catch (e) {
+        request.private_chats = [];
+      }
+    } else {
+      request.private_chats = [];
+    }
+
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
-
-    // Создание группового чата для заявки (СИНХРОННО - критически важно, чтобы создатель был добавлен)
-    let chatInfo = null;
-    try {
-      const chatId = await createGroupChatForRequest(requestId, userId, category);
-      
-      // Получаем информацию о чате и участниках
-      const [chats] = await pool.execute(
-        `SELECT id, type, request_id, created_by, created_at FROM chats WHERE id = ?`,
-        [chatId]
-      );
-      
-      if (chats.length > 0) {
-        const [participants] = await pool.execute(
-          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-          [chatId]
-        );
-        
-        const participantIds = participants.map(p => p.user_id);
-        
-        // Убеждаемся, что создатель всегда в массиве участников
-        if (!participantIds.includes(userId)) {
-          participantIds.push(userId);
-          // Добавляем в БД, если его там нет
-          const { addUserToChat } = require('../utils/chatHelpers');
-          await addUserToChat(chatId, userId);
-        }
-        
-        chatInfo = {
-          id: chats[0].id,
-          type: chats[0].type,
-          request_id: chats[0].request_id,
-          created_by: chats[0].created_by,
-          created_at: chats[0].created_at,
-          participants: participantIds,
-          participants_count: participantIds.length
-        };
-      }
-    } catch (chatErr) {
-      // Передаем все детали ошибки
-      const errorMessage = chatErr.message || 'Ошибка создания группового чата для заявки';
-      
-      // Добавляем все детали в объект ошибки
-      if (chatErr.originalError) {
-        chatErr.code = chatErr.originalError.code || chatErr.code;
-        chatErr.errno = chatErr.originalError.errno || chatErr.errno;
-        chatErr.sqlState = chatErr.originalError.sqlState || chatErr.sqlState;
-        chatErr.sqlMessage = chatErr.originalError.sqlMessage || chatErr.sqlMessage;
-      }
-      
-      if (chatErr.details) {
-        chatErr.sql = chatErr.details.sql || chatErr.sql;
-        chatErr.chatId = chatErr.details.chatId;
-        chatErr.userId = chatErr.details.userId;
-        chatErr.requestId = chatErr.details.requestId;
-      }
-      
-      return error(res, errorMessage, 500, chatErr);
-    }
 
     // Отправка push-уведомлений пользователям рядом (асинхронно, не блокируем ответ)
     if (latitude && longitude) {
@@ -727,12 +761,9 @@ router.post('/', authenticate, uploadRequestPhotos, [
     }
 
     success(res, { 
-      request: normalizedRequest,
-      group_chat: chatInfo
+      request: normalizedRequest
     }, 'Заявка создана', 201);
   } catch (err) {
-    console.error('❌ Ошибка создания заявки:', err);
-    console.error('❌ Stack trace:', err.stack);
     // Возвращаем детальную ошибку клиенту
     error(res, 'Ошибка при создании заявки', 500, err);
   }
@@ -1126,9 +1157,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
             userIds: [requestCreatedBy],
             requestId: id,
             requestCategory: requestInfo.category || requestCategory,
-          }).catch(err => {
-            console.error('❌ Ошибка отправки push-уведомления при отправке на рассмотрение:', err);
-          });
+          }).catch(() => {});
 
           // Отправляем пуш-уведомление всем модераторам
           sendModerationNotification({
@@ -1136,12 +1165,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
             requestName: requestInfo.name || 'Unnamed Request',
             requestCategory: requestInfo.category || requestCategory,
             creatorName: requestInfo.creator_name || 'Unknown User',
-          }).catch(err => {
-            console.error('❌ Ошибка отправки push-уведомления модераторам:', err);
-          });
+          }).catch(() => {});
         }
       } catch (error) {
-        console.error('❌ Ошибка обработки отправки на рассмотрение:', error);
+        // Игнорируем ошибки обработки отправки на рассмотрение
       }
     }
 
@@ -1159,7 +1186,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
           await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
         }
       } catch (error) {
-        console.error('❌ Ошибка обработки одобрения заявки:', error);
+        // Игнорируем ошибки обработки одобрения заявки
       }
     }
 
@@ -1168,7 +1195,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       try {
         await handleRequestRejection(id, requestCategory, requestCreatedBy, rejection_reason, rejection_message);
       } catch (error) {
-        console.error('❌ Ошибка обработки отклонения заявки:', error);
+        // Игнорируем ошибки обработки отклонения заявки
       }
     }
 
@@ -1193,11 +1220,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
             actionUserId: unjoinedUserId,
             actionType: 'unjoined',
           }).catch(err => {
-            console.error('❌ Ошибка отправки push-уведомления при отсоединении исполнителя:', err);
           });
         }
       } catch (error) {
-        console.error('❌ Ошибка обработки отсоединения исполнителя:', error);
+        // Игнорируем ошибки обработки отсоединения исполнителя
       }
     }
 
@@ -1279,7 +1305,6 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     success(res, { request: normalizedRequest }, 'Заявка обновлена');
   } catch (err) {
-    console.error('Ошибка обновления заявки:', err);
     error(res, 'Ошибка при обновлении заявки', 500, err);
   }
 });
@@ -1316,7 +1341,6 @@ router.delete('/:id', authenticate, async (req, res) => {
 
     success(res, null, 'Заявка удалена');
   } catch (err) {
-    console.error('Ошибка удаления заявки:', err);
     error(res, 'Ошибка при удалении заявки', 500, err);
   }
 });
@@ -1405,13 +1429,11 @@ router.post('/:id/join', authenticate, async (req, res) => {
         actionUserId: userId,
         actionType: 'joined',
       }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления при присоединении:', err);
       });
     }
 
     success(res, null, 'Вы присоединились к заявке');
   } catch (err) {
-    console.error('Ошибка присоединения к заявке:', err);
     error(res, 'Ошибка при присоединении к заявке', 500, err);
   }
 });
@@ -1471,7 +1493,6 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     // КРИТИЧЕСКИ ВАЖНО: Создатель всегда должен быть в списке участников
     // Если его там нет, добавляем его обратно
     if (!registeredParticipants.includes(request.created_by)) {
-      console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants, добавляем обратно`);
       registeredParticipants.push(request.created_by);
     }
 
@@ -1512,6 +1533,57 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
     }
 
+    // КРИТИЧЕСКИ ВАЖНО: Создаем приватный чат между участником и создателем
+    // и добавляем его в массив private_chats заявки
+    try {
+      const { generateId } = require('../utils/uuid');
+      const { addUserToChat } = require('../utils/chatHelpers');
+      
+      // Создаем приватный чат
+      const privateChatId = generateId();
+      await pool.execute(
+        `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
+         VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
+        [privateChatId, id, userId, userId]
+      );
+
+      // Добавляем обоих участников в чат
+      await addUserToChat(privateChatId, userId);
+      await addUserToChat(privateChatId, request.created_by);
+
+      // Получаем текущий массив private_chats
+      const [requestData] = await pool.execute(
+        'SELECT private_chats FROM requests WHERE id = ?',
+        [id]
+      );
+      
+      let privateChats = [];
+      if (requestData[0].private_chats) {
+        try {
+          privateChats = typeof requestData[0].private_chats === 'string'
+            ? JSON.parse(requestData[0].private_chats)
+            : requestData[0].private_chats;
+        } catch (e) {
+          privateChats = [];
+        }
+      }
+
+      // Добавляем новый приватный чат в массив
+      privateChats.push({
+        chat_id: privateChatId,
+        user_id: userId
+      });
+
+      // Обновляем массив private_chats в заявке
+      await pool.execute(
+        'UPDATE requests SET private_chats = ?, updated_at = NOW() WHERE id = ?',
+        [JSON.stringify(privateChats), id]
+      );
+    } catch (privateChatErr) {
+      // Передаем детали ошибки в ответ API
+      return error(res, 'Ошибка создания приватного чата', 500, privateChatErr);
+    }
+
     // Отправка push-уведомления создателю заявки (асинхронно)
     if (request.created_by) {
       sendJoinNotification({
@@ -1522,13 +1594,11 @@ router.post('/:id/participate', authenticate, async (req, res) => {
         actionUserId: userId,
         actionType: 'participated',
       }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления при участии:', err);
       });
     }
 
     success(res, null, 'Вы присоединились к событию');
   } catch (err) {
-    console.error('Ошибка участия в событии:', err);
     error(res, 'Ошибка при участии в событии', 500, err);
   }
 });
@@ -1580,7 +1650,6 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     
     // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что создатель всегда остается в списке
     if (request.created_by && !registeredParticipants.includes(request.created_by)) {
-      console.log(`⚠️ Создатель ${request.created_by} отсутствует в registered_participants после удаления, добавляем обратно`);
       registeredParticipants.push(request.created_by);
     }
     
@@ -1595,9 +1664,39 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
       // Не прерываем выполнение, просто игнорируем ошибку
     });
 
+    // КРИТИЧЕСКИ ВАЖНО: Удаляем приватный чат из массива private_chats
+    try {
+      // Получаем текущий массив private_chats
+      const [requestData] = await pool.execute(
+        'SELECT private_chats FROM requests WHERE id = ?',
+        [id]
+      );
+      
+      let privateChats = [];
+      if (requestData[0].private_chats) {
+        try {
+          privateChats = typeof requestData[0].private_chats === 'string'
+            ? JSON.parse(requestData[0].private_chats)
+            : requestData[0].private_chats;
+        } catch (e) {
+          privateChats = [];
+        }
+      }
+
+      // Удаляем приватный чат для этого пользователя из массива
+      privateChats = privateChats.filter(chat => chat.user_id !== userId);
+
+      // Обновляем массив private_chats в заявке
+      await pool.execute(
+        'UPDATE requests SET private_chats = ?, updated_at = NOW() WHERE id = ?',
+        [JSON.stringify(privateChats), id]
+      );
+    } catch (privateChatErr) {
+      // Не прерываем выполнение, просто игнорируем ошибку
+    }
+
     success(res, null, 'Участие отменено');
   } catch (err) {
-    console.error('Ошибка отмены участия:', err);
     error(res, 'Ошибка при отмене участия', 500, err);
   }
 });
@@ -1616,7 +1715,6 @@ async function handleWasteApproval(requestId, creatorId) {
       [coinsToAward, coinsToAward, creatorId]
     );
     awardedUserIds.add(creatorId);
-    console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
   }
 
   // 2. Начисляем коины исполнителю (joined_user_id) для wasteLocation
@@ -1633,7 +1731,6 @@ async function handleWasteApproval(requestId, creatorId) {
     );
     awardedUserIds.add(executorId);
     executorUserIds.push(executorId);
-    console.log(`✅ Начислено ${coinsToAward} коин исполнителю ${executorId} за заявку ${requestId}`);
   }
 
   // 3. Начисляем коины донатерам
@@ -1650,7 +1747,6 @@ async function handleWasteApproval(requestId, creatorId) {
       );
       awardedUserIds.add(donation.user_id);
       donorUserIds.push(donation.user_id);
-      console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${requestId}`);
     }
   }
 
@@ -1664,31 +1760,27 @@ async function handleWasteApproval(requestId, creatorId) {
   const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
-  console.log(`💰 Переведено ${amountToTransfer} исполнителю заявки ${requestId} (из ${totalAmount}, комиссия ${commission})`);
 
   // 5. Отправляем push-уведомления
   if (creatorId) {
-    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'wasteLocation' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'wasteLocation' }).catch(() => {});
   }
   if (executorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: executorUserIds, requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: executorUserIds, requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(() => {});
   }
   if (donorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(() => {});
   }
 
   // 6. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
   const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
-  deleteGroupChatForRequest(requestId).catch(err => {
-    console.error('❌ Ошибка удаления группового чата при завершении заявки:', err);
-  });
+  deleteGroupChatForRequest(requestId).catch(() => {});
 
   // 7. Меняем статус на archived
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['archived', requestId]
   );
-  console.log(`✅ Заявка ${requestId} переведена в статус archived`);
 }
 
 /**
@@ -1712,7 +1804,6 @@ async function handleEventApproval(requestId, creatorId) {
     );
     // НЕ добавляем creatorId в awardedUserIds, так как создатель также является участником
     // и должен получить коины и как заказчик, и как approved участник
-    console.log(`✅ Начислено ${coinsToAward} коин заказчику заявки ${requestId}`);
   }
 
   // 3. Начисляем коины только approved участникам из participant_completions
@@ -1733,7 +1824,6 @@ async function handleEventApproval(requestId, creatorId) {
       );
       awardedUserIds.add(participantId);
       participantUserIds.push(participantId);
-      console.log(`✅ Начислено ${coinsToAward} коин approved участнику ${participantId} за заявку ${requestId}`);
     }
   }
 
@@ -1751,7 +1841,6 @@ async function handleEventApproval(requestId, creatorId) {
       );
       awardedUserIds.add(donation.user_id);
       donorUserIds.push(donation.user_id);
-      console.log(`✅ Начислено ${coinsToAward} коин донатеру ${donation.user_id} за заявку ${requestId}`);
     }
   }
 
@@ -1761,31 +1850,27 @@ async function handleEventApproval(requestId, creatorId) {
   const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
-  console.log(`💰 Переведено ${amountToTransfer} заказчику заявки ${requestId} (из ${totalAmount}, комиссия ${commission})`);
 
   // 6. Отправляем push-уведомления
   if (creatorId) {
-    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'event' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'event' }).catch(() => {});
   }
   if (participantUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant', requestCategory: 'event' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant', requestCategory: 'event' }).catch(() => {});
   }
   if (donorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'event' }).catch(console.error);
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'event' }).catch(() => {});
   }
 
   // 7. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
   const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
-  deleteGroupChatForRequest(requestId).catch(err => {
-    console.error('❌ Ошибка удаления группового чата при завершении события:', err);
-  });
+  deleteGroupChatForRequest(requestId).catch(() => {});
 
   // 8. Меняем статус на archived
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['archived', requestId]
   );
-  console.log(`✅ Заявка ${requestId} переведена в статус archived`);
 }
 
 /**
@@ -1799,7 +1884,6 @@ async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
       'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
       [coinsToAward, coinsToAward, creatorId]
     );
-    console.log(`✅ Начислено ${coinsToAward} коин создателю заявки ${requestId}`);
   }
 
   // 2. Отправляем push-уведомление создателю
@@ -1807,11 +1891,10 @@ async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
     sendSpeedCleanupNotification({
       userIds: [creatorId],
       earnedCoin: earnedCoin,
-    }).catch(console.error);
+    }).catch(() => {});
   }
 
   // 3. Статус остается approved (не меняем на completed)
-  console.log(`✅ Заявка ${requestId} одобрена, статус остается approved`);
 }
 
 /**
@@ -1828,7 +1911,6 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
   );
   if (requestData[0]?.cost && requestData[0].cost > 0) {
     // TODO: Реализовать возврат денег через платежную систему
-    console.log(`💰 Возвращено ${requestData[0].cost} создателю заявки ${requestId}`);
   }
 
   // 3. Возвращаем деньги донатерам
@@ -1840,7 +1922,6 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
   for (const donation of donations) {
     if (donation.amount && donation.amount > 0) {
       // TODO: Реализовать возврат денег через платежную систему
-      console.log(`💰 Возвращено ${donation.amount} донатеру ${donation.user_id} заявки ${requestId}`);
       donorUserIds.push(donation.user_id);
     }
   }
@@ -1853,7 +1934,7 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       messageType: 'creator',
       rejectionMessage: finalMessage,
       requestCategory: category,
-    }).catch(console.error);
+    }).catch(() => {});
   }
   if (donorUserIds.length > 0) {
     sendRequestRejectedNotification({
@@ -1862,22 +1943,18 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       messageType: 'donor',
       rejectionMessage: finalMessage,
       requestCategory: category,
-    }).catch(console.error);
+    }).catch(() => {});
   }
 
   // 5. Удаляем групповой чат заявки (асинхронно, не блокируем выполнение)
   const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
-  deleteGroupChatForRequest(requestId).catch(err => {
-    console.error('❌ Ошибка удаления группового чата при отклонении заявки:', err);
-  });
+  deleteGroupChatForRequest(requestId).catch(() => {});
 
   // 6. Устанавливаем статус на rejected (на случай, если он еще не установлен)
   await pool.execute(
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['rejected', requestId]
   );
-
-  console.log(`✅ Заявка ${requestId} отклонена, статус установлен на rejected`);
 }
 
 /**
@@ -2145,9 +2222,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
         requestName: requestInfo[0]?.name || 'Unnamed Request',
         requestCategory: 'wasteLocation',
         creatorName: requestInfo[0]?.creator_name || 'Unknown User',
-      }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления модераторам:', err);
-      });
+      }).catch(() => {});
     } else {
       // Для event: отправляем push-уведомление создателю
       const { sendRequestSubmittedNotification } = require('../services/pushNotification');
@@ -2158,9 +2233,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
           requestCategory: request.category,
           creatorId: request.created_by,
           participantId: userId
-        }).catch(err => {
-          console.error('❌ Ошибка отправки push-уведомления при закрытии работы участником:', err);
-        });
+        }).catch(() => {});
       }
     }
 
@@ -2269,17 +2342,13 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
         messageType: 'participant',
         rejectionMessage: `Ваше закрытие работы отклонено. Причина: ${rejection_reason}`,
         requestCategory: request.category
-      }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления при отклонении:', err);
-      });
+      }).catch(() => {});
     } else {
       sendRequestApprovedNotification({
         userIds: [userId],
         requestId: requestId,
         requestCategory: request.category
-      }).catch(err => {
-        console.error('❌ Ошибка отправки push-уведомления при одобрении:', err);
-      });
+      }).catch(() => {});
     }
 
     // Получаем обновленную заявку
