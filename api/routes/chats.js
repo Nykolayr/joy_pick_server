@@ -926,17 +926,27 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
         }
       }
 
-      // Для групповых чатов: если пользователь создатель чата - добавляем его
-      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
+      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
+      if (chat.type === 'group' && chat.request_id) {
+        // Проверяем, есть ли пользователь в участниках
+        const [participants] = await pool.execute(
+          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+          [chatId]
         );
+        const participantIds = participants.map(p => p.user_id);
+        
+        if (!participantIds.includes(userId)) {
+          // Пользователь не является участником - автоматически добавляем его
+          await addUserToChat(chatId, userId);
+          
+          // Повторно проверяем доступ
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
+        }
       }
 
       if (chats.length === 0) {
@@ -1121,17 +1131,27 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
         }
       }
 
-      // Для групповых чатов: если пользователь создатель чата - добавляем его
-      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
+      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
+      if (chat.type === 'group' && chat.request_id) {
+        // Проверяем, есть ли пользователь в участниках
+        const [participants] = await pool.execute(
+          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+          [chatId]
         );
+        const participantIds = participants.map(p => p.user_id);
+        
+        if (!participantIds.includes(userId)) {
+          // Пользователь не является участником - автоматически добавляем его
+          await addUserToChat(chatId, userId);
+          
+          // Повторно проверяем доступ
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
+        }
       }
 
       if (chats.length === 0) {
@@ -1277,18 +1297,28 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
 
       const chat = chatExists[0];
 
-      // Для групповых чатов: если пользователь создатель чата - добавляем его
-      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        const { addUserToChat } = require('../utils/chatHelpers');
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
+      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
+      if (chat.type === 'group' && chat.request_id) {
+        // Проверяем, есть ли пользователь в участниках
+        const [participants] = await pool.execute(
+          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+          [chatId]
         );
+        const participantIds = participants.map(p => p.user_id);
+        
+        if (!participantIds.includes(userId)) {
+          // Пользователь не является участником - автоматически добавляем его
+          const { addUserToChat } = require('../utils/chatHelpers');
+          await addUserToChat(chatId, userId);
+          
+          // Повторно проверяем доступ
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
+        }
       }
 
       if (chats.length === 0) {
@@ -1656,18 +1686,28 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
 
       const chat = chatExists[0];
 
-      // Для групповых чатов: если пользователь создатель чата - добавляем его
-      if (chat.type === 'group' && chat.request_id && chat.created_by === userId) {
-        const { addUserToChat } = require('../utils/chatHelpers');
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
+      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
+      if (chat.type === 'group' && chat.request_id) {
+        // Проверяем, есть ли пользователь в участниках
+        const [participants] = await pool.execute(
+          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+          [chatId]
         );
+        const participantIds = participants.map(p => p.user_id);
+        
+        if (!participantIds.includes(userId)) {
+          // Пользователь не является участником - автоматически добавляем его
+          const { addUserToChat } = require('../utils/chatHelpers');
+          await addUserToChat(chatId, userId);
+          
+          // Повторно проверяем доступ
+          [chats] = await pool.execute(
+            `SELECT c.* FROM chats c
+             INNER JOIN chat_participants cp ON c.id = cp.chat_id
+             WHERE c.id = ? AND cp.user_id = ?`,
+            [chatId, userId]
+          );
+        }
       }
 
       if (chats.length === 0) {
