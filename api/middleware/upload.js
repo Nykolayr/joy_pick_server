@@ -122,6 +122,7 @@ function getFileUrlFromPath(filepath) {
 }
 
 module.exports = {
+  upload,
   uploadRequestPhotos,
   uploadPartnerPhotos,
   uploadUserAvatar,

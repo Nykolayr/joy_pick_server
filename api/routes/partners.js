@@ -4,7 +4,8 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
-const { uploadPartnerPhotos, getFileUrlFromPath } = require('../middleware/upload');
+const { upload } = require('../middleware/upload');
+const path = require('path');
 
 const router = express.Router();
 
@@ -14,37 +15,24 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 20, city, latitude, longitude, radius = 10000 } = req.query;
+    const { page = 1, limit = 20, latitude, longitude, radius = 10000 } = req.query;
     
     // Валидация и преобразование параметров пагинации
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20)); // Максимум 100 на странице
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    let query = `
-      SELECT p.*,
-       GROUP_CONCAT(DISTINCT pp.photo_url) as photos,
-       GROUP_CONCAT(DISTINCT pt.type_name) as partner_types
-      FROM partners p
-      LEFT JOIN partner_photos pp ON p.id = pp.partner_id
-      LEFT JOIN partner_types pt ON p.id = pt.partner_id
-    `;
-
+    let query = 'SELECT * FROM partners';
     const conditions = [];
     const params = [];
-
-    if (city) {
-      conditions.push('p.city = ?');
-      params.push(city);
-    }
 
     // Фильтр по радиусу
     if (latitude && longitude) {
       conditions.push(`
         (6371000 * acos(
-          cos(radians(?)) * cos(radians(p.latitude)) *
-          cos(radians(p.longitude) - radians(?)) +
-          sin(radians(?)) * sin(radians(p.latitude))
+          cos(radians(?)) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians(?)) +
+          sin(radians(?)) * sin(radians(latitude))
         )) <= ?
       `);
       params.push(parseFloat(latitude), parseFloat(longitude), parseFloat(latitude), parseFloat(radius));
@@ -54,16 +42,27 @@ router.get('/', async (req, res) => {
       query += ' WHERE ' + conditions.join(' AND ');
     }
 
-    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
-    query += ` GROUP BY p.id ORDER BY p.rating DESC, p.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    query += ` ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [partners] = await pool.execute(query, params);
 
-    // Обработка результатов
+    // Обработка JSON полей
     const processedPartners = partners.map(partner => {
-      const result = Object.assign({}, partner);
-      result.photos = partner.photos ? partner.photos.split(',') : [];
-      result.partner_types = partner.partner_types ? partner.partner_types.split(',') : [];
+      const result = { ...partner };
+      
+      // Парсим photo_urls
+      if (result.photo_urls) {
+        try {
+          result.photo_urls = typeof result.photo_urls === 'string' 
+            ? JSON.parse(result.photo_urls) 
+            : result.photo_urls;
+        } catch (e) {
+          result.photo_urls = [];
+        }
+      } else {
+        result.photo_urls = [];
+      }
+      
       return result;
     });
 
@@ -72,20 +71,15 @@ router.get('/', async (req, res) => {
     const countParams = [];
     const countConditions = [];
     
-    // Строим условия для COUNT запроса, исключая условие радиуса
     if (conditions.length > 0) {
       let paramIndex = 0;
       for (let i = 0; i < conditions.length; i++) {
         const condition = conditions[i];
-        // Пропускаем условие радиуса (оно содержит '6371000')
         if (!condition.includes('6371000')) {
           countConditions.push(condition);
-          // Добавляем соответствующий параметр
           countParams.push(params[paramIndex]);
           paramIndex++;
         } else {
-          // Условие радиуса использует 4 параметра (latitude, longitude, latitude, radius)
-          // Пропускаем их все
           paramIndex += 4;
         }
       }
@@ -108,7 +102,6 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Ошибка получения партнеров:', err);
     error(res, 'Ошибка при получении списка партнеров', 500, err);
   }
 });
@@ -122,14 +115,7 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
     const [partners] = await pool.execute(
-      `SELECT p.*,
-       GROUP_CONCAT(DISTINCT pp.photo_url) as photos,
-       GROUP_CONCAT(DISTINCT pt.type_name) as partner_types
-      FROM partners p
-      LEFT JOIN partner_photos pp ON p.id = pp.partner_id
-      LEFT JOIN partner_types pt ON p.id = pt.partner_id
-      WHERE p.id = ?
-      GROUP BY p.id`,
+      'SELECT * FROM partners WHERE id = ?',
       [id]
     );
 
@@ -138,12 +124,22 @@ router.get('/:id', async (req, res) => {
     }
 
     const partner = partners[0];
-    partner.photos = partner.photos ? partner.photos.split(',') : [];
-    partner.partner_types = partner.partner_types ? partner.partner_types.split(',') : [];
+    
+    // Парсим photo_urls
+    if (partner.photo_urls) {
+      try {
+        partner.photo_urls = typeof partner.photo_urls === 'string' 
+          ? JSON.parse(partner.photo_urls) 
+          : partner.photo_urls;
+      } catch (e) {
+        partner.photo_urls = [];
+      }
+    } else {
+      partner.photo_urls = [];
+    }
 
     success(res, { partner });
   } catch (err) {
-    console.error('Ошибка получения партнера:', err);
     error(res, 'Ошибка при получении партнера', 500, err);
   }
 });
@@ -151,17 +147,15 @@ router.get('/:id', async (req, res) => {
 /**
  * POST /api/partners
  * Создание партнера (только для админов)
- * Поддерживает загрузку файлов через multipart/form-data:
- * - photos: массив файлов для фото партнера
- * 
- * Также поддерживает отправку URL через JSON (для обратной совместимости)
+ * Поддерживает multipart/form-data с файлами
  */
-router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
+router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
   body('name').notEmpty().withMessage('Название обязательно'),
-  body('description').optional().isString(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
-  body('city').optional().isString()
+  body('address').optional().isString(),
+  body('activity').optional().isString(),
+  body('website_url').optional().isURL()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -171,10 +165,10 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
 
     // Обработка загруженных файлов
     const uploadedPhotos = [];
-    if (req.files && req.files.photos && Array.isArray(req.files.photos)) {
-      for (const file of req.files.photos) {
-        const fileUrl = getFileUrlFromPath(file.path);
-        if (fileUrl) uploadedPhotos.push(fileUrl);
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const fileUrl = `http://autogie1.bget.ru/uploads/photos/${path.basename(file.path)}`;
+        uploadedPhotos.push(fileUrl);
       }
     }
 
@@ -190,67 +184,58 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
 
     const {
       name,
-      description,
       latitude,
       longitude,
-      city,
-      rating = 0,
-      photos = [],
-      partner_types = []
+      address,
+      activity,
+      website_url,
+      photo_urls = []
     } = bodyData;
 
     // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
-    const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photos) ? photos : []);
+    const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photo_urls) ? photo_urls : []);
 
     const partnerId = generateId();
 
     // Создание партнера
     await pool.execute(
-      `INSERT INTO partners (id, name, description, latitude, longitude, city, rating)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [partnerId, name, description || null, latitude || null, longitude || null, city || null, rating]
+      `INSERT INTO partners (id, name, photo_urls, latitude, longitude, address, activity, website_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        partnerId,
+        name,
+        finalPhotos.length > 0 ? JSON.stringify(finalPhotos) : null,
+        latitude || null,
+        longitude || null,
+        address || null,
+        activity || null,
+        website_url || null
+      ]
     );
-
-    // Добавление фотографий
-    if (finalPhotos.length > 0) {
-      for (const photoUrl of finalPhotos) {
-        await pool.execute(
-          'INSERT INTO partner_photos (id, partner_id, photo_url) VALUES (?, ?, ?)',
-          [generateId(), partnerId, photoUrl]
-        );
-      }
-    }
-
-    // Добавление типов
-    if (partner_types.length > 0) {
-      for (const typeName of partner_types) {
-        await pool.execute(
-          'INSERT INTO partner_types (id, partner_id, type_name) VALUES (?, ?, ?)',
-          [generateId(), partnerId, typeName]
-        );
-      }
-    }
 
     // Получение созданного партнера
     const [partners] = await pool.execute(
-      `SELECT p.*,
-       GROUP_CONCAT(DISTINCT pp.photo_url) as photos,
-       GROUP_CONCAT(DISTINCT pt.type_name) as partner_types
-      FROM partners p
-      LEFT JOIN partner_photos pp ON p.id = pp.partner_id
-      LEFT JOIN partner_types pt ON p.id = pt.partner_id
-      WHERE p.id = ?
-      GROUP BY p.id`,
+      'SELECT * FROM partners WHERE id = ?',
       [partnerId]
     );
 
     const partner = partners[0];
-    partner.photos = partner.photos ? partner.photos.split(',') : [];
-    partner.partner_types = partner.partner_types ? partner.partner_types.split(',') : [];
+    
+    // Парсим photo_urls
+    if (partner.photo_urls) {
+      try {
+        partner.photo_urls = typeof partner.photo_urls === 'string' 
+          ? JSON.parse(partner.photo_urls) 
+          : partner.photo_urls;
+      } catch (e) {
+        partner.photo_urls = [];
+      }
+    } else {
+      partner.photo_urls = [];
+    }
 
     success(res, { partner }, 'Партнер создан', 201);
   } catch (err) {
-    console.error('Ошибка создания партнера:', err);
     error(res, 'Ошибка при создании партнера', 500, err);
   }
 });
@@ -258,17 +243,46 @@ router.post('/', authenticate, requireAdmin, uploadPartnerPhotos, [
 /**
  * PUT /api/partners/:id
  * Обновление партнера (только для админов)
+ * Поддерживает multipart/form-data с файлами
  */
-router.put('/:id', authenticate, requireAdmin, async (req, res) => {
+router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, latitude, longitude, city, rating, photos, partner_types } = req.body;
 
     // Проверка существования
-    const [existing] = await pool.execute('SELECT id FROM partners WHERE id = ?', [id]);
+    const [existing] = await pool.execute('SELECT * FROM partners WHERE id = ?', [id]);
     if (existing.length === 0) {
       return error(res, 'Партнер не найден', 404);
     }
+
+    // Обработка загруженных файлов
+    const uploadedPhotos = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const fileUrl = `http://autogie1.bget.ru/uploads/photos/${path.basename(file.path)}`;
+        uploadedPhotos.push(fileUrl);
+      }
+    }
+
+    // Парсим JSON данные
+    let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        // Если не JSON, используем как есть
+      }
+    }
+
+    const {
+      name,
+      latitude,
+      longitude,
+      address,
+      activity,
+      website_url,
+      photo_urls
+    } = bodyData;
 
     const updates = [];
     const params = [];
@@ -276,10 +290,6 @@ router.put('/:id', authenticate, requireAdmin, async (req, res) => {
     if (name !== undefined) {
       updates.push('name = ?');
       params.push(name);
-    }
-    if (description !== undefined) {
-      updates.push('description = ?');
-      params.push(description);
     }
     if (latitude !== undefined) {
       updates.push('latitude = ?');
@@ -289,13 +299,26 @@ router.put('/:id', authenticate, requireAdmin, async (req, res) => {
       updates.push('longitude = ?');
       params.push(longitude);
     }
-    if (city !== undefined) {
-      updates.push('city = ?');
-      params.push(city);
+    if (address !== undefined) {
+      updates.push('address = ?');
+      params.push(address);
     }
-    if (rating !== undefined) {
-      updates.push('rating = ?');
-      params.push(rating);
+    if (activity !== undefined) {
+      updates.push('activity = ?');
+      params.push(activity);
+    }
+    if (website_url !== undefined) {
+      updates.push('website_url = ?');
+      params.push(website_url);
+    }
+
+    // Обновление фотографий
+    if (uploadedPhotos.length > 0 || photo_urls !== undefined) {
+      const finalPhotos = uploadedPhotos.length > 0 
+        ? uploadedPhotos 
+        : (Array.isArray(photo_urls) ? photo_urls : []);
+      updates.push('photo_urls = ?');
+      params.push(finalPhotos.length > 0 ? JSON.stringify(finalPhotos) : null);
     }
 
     if (updates.length > 0) {
@@ -304,51 +327,29 @@ router.put('/:id', authenticate, requireAdmin, async (req, res) => {
       await pool.execute(`UPDATE partners SET ${updates.join(', ')} WHERE id = ?`, params);
     }
 
-    // Обновление фотографий и типов, если указаны
-    if (photos !== undefined) {
-      await pool.execute('DELETE FROM partner_photos WHERE partner_id = ?', [id]);
-      if (photos.length > 0) {
-        for (const photoUrl of photos) {
-          await pool.execute(
-            'INSERT INTO partner_photos (id, partner_id, photo_url) VALUES (?, ?, ?)',
-            [generateId(), id, photoUrl]
-          );
-        }
-      }
-    }
-
-    if (partner_types !== undefined) {
-      await pool.execute('DELETE FROM partner_types WHERE partner_id = ?', [id]);
-      if (partner_types.length > 0) {
-        for (const typeName of partner_types) {
-          await pool.execute(
-            'INSERT INTO partner_types (id, partner_id, type_name) VALUES (?, ?, ?)',
-            [generateId(), id, typeName]
-          );
-        }
-      }
-    }
-
     // Получение обновленного партнера
     const [partners] = await pool.execute(
-      `SELECT p.*,
-       GROUP_CONCAT(DISTINCT pp.photo_url) as photos,
-       GROUP_CONCAT(DISTINCT pt.type_name) as partner_types
-      FROM partners p
-      LEFT JOIN partner_photos pp ON p.id = pp.partner_id
-      LEFT JOIN partner_types pt ON p.id = pt.partner_id
-      WHERE p.id = ?
-      GROUP BY p.id`,
+      'SELECT * FROM partners WHERE id = ?',
       [id]
     );
 
     const partner = partners[0];
-    partner.photos = partner.photos ? partner.photos.split(',') : [];
-    partner.partner_types = partner.partner_types ? partner.partner_types.split(',') : [];
+    
+    // Парсим photo_urls
+    if (partner.photo_urls) {
+      try {
+        partner.photo_urls = typeof partner.photo_urls === 'string' 
+          ? JSON.parse(partner.photo_urls) 
+          : partner.photo_urls;
+      } catch (e) {
+        partner.photo_urls = [];
+      }
+    } else {
+      partner.photo_urls = [];
+    }
 
     success(res, { partner }, 'Партнер обновлен');
   } catch (err) {
-    console.error('Ошибка обновления партнера:', err);
     error(res, 'Ошибка при обновлении партнера', 500, err);
   }
 });
@@ -370,10 +371,8 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
 
     success(res, null, 'Партнер удален');
   } catch (err) {
-    console.error('Ошибка удаления партнера:', err);
     error(res, 'Ошибка при удалении партнера', 500, err);
   }
 });
 
 module.exports = router;
-
