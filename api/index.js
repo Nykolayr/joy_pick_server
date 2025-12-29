@@ -15,6 +15,7 @@ const requestRoutes = require('./routes/requests');
 const donationRoutes = require('./routes/donations');
 const participantRoutes = require('./routes/participants');
 const partnerRoutes = require('./routes/partners');
+const recyclingStationsRoutes = require('./routes/recyclingStations');
 const migrationRoutes = require('./routes/migration');
 const notificationRoutes = require('./routes/notifications');
 const wasteTypesRoutes = require('./routes/wasteTypes');
@@ -47,6 +48,7 @@ app.use('/requests', requestRoutes);
 app.use('/donations', donationRoutes);
 app.use('/participants', participantRoutes);
 app.use('/partners', partnerRoutes);
+app.use('/recycling-stations', recyclingStationsRoutes);
 app.use('/migration', migrationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/waste-types', wasteTypesRoutes);
@@ -114,6 +116,7 @@ app.get('/', (req, res) => {
       donations: '/api/donations',
       participants: '/api/participants',
       partners: '/api/partners',
+      recyclingStations: '/api/recycling-stations',
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
@@ -138,6 +141,7 @@ app.get('/info', (req, res) => {
       donations: '/api/donations',
       participants: '/api/participants',
       partners: '/api/partners',
+      recyclingStations: '/api/recycling-stations',
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',

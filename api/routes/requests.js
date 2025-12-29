@@ -1497,34 +1497,35 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     }
 
     // Проверка, не участвует ли уже
-    if (registeredParticipants.includes(userId)) {
-      return error(res, 'Вы уже участвуете в этом событии', 409);
-    }
-
-    // Добавляем пользователя в список участников
-    registeredParticipants.push(userId);
+    const isAlreadyParticipant = registeredParticipants.includes(userId);
     
-    // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что создатель остается в списке
-    // (на случай, если он был удален по какой-то причине)
-    if (!registeredParticipants.includes(request.created_by)) {
-      registeredParticipants.push(request.created_by);
-    }
-    
-    await pool.execute(
-      'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
-      [JSON.stringify(registeredParticipants), id]
-    );
+    if (!isAlreadyParticipant) {
+      // Добавляем пользователя в список участников
+      registeredParticipants.push(userId);
+      
+      // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что создатель остается в списке
+      // (на случай, если он был удален по какой-то причине)
+      if (!registeredParticipants.includes(request.created_by)) {
+        registeredParticipants.push(request.created_by);
+      }
+      
+      await pool.execute(
+        'UPDATE requests SET registered_participants = ?, updated_at = NOW() WHERE id = ?',
+        [JSON.stringify(registeredParticipants), id]
+      );
 
-    // Инициализация participant_completions для присоединившегося участника
-    try {
-      const { initializeParticipantCompletion } = require('../utils/participantCompletions');
-      await initializeParticipantCompletion(id, userId);
-    } catch (completionErr) {
-      // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+      // Инициализация participant_completions для присоединившегося участника
+      try {
+        const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+        await initializeParticipantCompletion(id, userId);
+      } catch (completionErr) {
+        // Передаем детали ошибки в ответ API
+        return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+      }
     }
 
     // Добавление участника события в групповой чат заявки (СИНХРОННО - важно для корректной работы)
+    // Выполняем всегда, даже если пользователь уже участник (на случай, если он был удален из чата)
     try {
       const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
       await addUserToGroupChatByRequest(id, userId);
@@ -1539,18 +1540,6 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       const { generateId } = require('../utils/uuid');
       const { addUserToChat } = require('../utils/chatHelpers');
       
-      // Создаем приватный чат
-      const privateChatId = generateId();
-      await pool.execute(
-        `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
-         VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
-        [privateChatId, id, userId, userId]
-      );
-
-      // Добавляем обоих участников в чат
-      await addUserToChat(privateChatId, userId);
-      await addUserToChat(privateChatId, request.created_by);
-
       // Получаем текущий массив private_chats
       const [requestData] = await pool.execute(
         'SELECT private_chats FROM requests WHERE id = ?',
@@ -1568,13 +1557,117 @@ router.post('/:id/participate', authenticate, async (req, res) => {
         }
       }
 
-      // Добавляем новый приватный чат в массив
-      privateChats.push({
-        chat_id: privateChatId,
-        user_id: userId
-      });
+      // Проверяем, существует ли уже приватный чат для этого участника
+      const existingPrivateChat = privateChats.find(pc => pc.user_id === userId);
+      let privateChatId;
+
+      // Сначала проверяем БД на наличие чата для этого request_id и user_id
+      const [existingChatsInDb] = await pool.execute(
+        `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
+        [id, userId]
+      );
+
+      if (existingChatsInDb.length > 0) {
+        // Чат уже существует в БД
+        privateChatId = existingChatsInDb[0].id;
+        
+        // Если его нет в массиве private_chats, добавляем
+        if (!existingPrivateChat) {
+          privateChats.push({
+            chat_id: privateChatId,
+            user_id: userId
+          });
+        } else if (existingPrivateChat.chat_id !== privateChatId) {
+          // Обновляем chat_id в массиве, если он не совпадает
+          existingPrivateChat.chat_id = privateChatId;
+        }
+      } else if (existingPrivateChat && existingPrivateChat.chat_id) {
+        // Чат есть в массиве, но не в БД - проверяем, существует ли он
+        const [chatCheck] = await pool.execute(
+          'SELECT id FROM chats WHERE id = ?',
+          [existingPrivateChat.chat_id]
+        );
+
+        if (chatCheck.length > 0) {
+          // Чат существует, используем его
+          privateChatId = existingPrivateChat.chat_id;
+        } else {
+          // Чат не существует, создаем новый
+          privateChatId = generateId();
+          try {
+            await pool.execute(
+              `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
+               VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
+              [privateChatId, id, userId, userId]
+            );
+            existingPrivateChat.chat_id = privateChatId;
+          } catch (insertErr) {
+            // Если ошибка дубликата - ищем существующий чат
+            if (insertErr.code === 'ER_DUP_ENTRY') {
+              const [duplicateChats] = await pool.execute(
+                `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
+                [id, userId]
+              );
+              if (duplicateChats.length > 0) {
+                privateChatId = duplicateChats[0].id;
+                existingPrivateChat.chat_id = privateChatId;
+              } else {
+                throw insertErr;
+              }
+            } else {
+              throw insertErr;
+            }
+          }
+        }
+      } else {
+        // Создаем новый приватный чат
+        privateChatId = generateId();
+        try {
+          await pool.execute(
+            `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
+             VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
+            [privateChatId, id, userId, userId]
+          );
+        } catch (insertErr) {
+          // Если ошибка дубликата - ищем существующий чат
+          if (insertErr.code === 'ER_DUP_ENTRY') {
+            const [duplicateChats] = await pool.execute(
+              `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
+              [id, userId]
+            );
+            if (duplicateChats.length > 0) {
+              privateChatId = duplicateChats[0].id;
+            } else {
+              // Пробуем найти по другому критерию (может быть индекс на type+request_id)
+              const [altChats] = await pool.execute(
+                `SELECT id FROM chats WHERE type = 'private' AND request_id = ? LIMIT 1`,
+                [id]
+              );
+              if (altChats.length > 0) {
+                privateChatId = altChats[0].id;
+              } else {
+                throw insertErr;
+              }
+            }
+          } else {
+            throw insertErr;
+          }
+        }
+
+        // Добавляем новый приватный чат в массив
+        privateChats.push({
+          chat_id: privateChatId,
+          user_id: userId
+        });
+      }
+
+      // Добавляем обоих участников в чат (если они еще не добавлены)
+      await addUserToChat(privateChatId, userId);
+      await addUserToChat(privateChatId, request.created_by);
 
       // Обновляем массив private_chats в заявке
+      // Если пользователь уже был участником и чат уже был в массиве, обновление не изменит данные
+      // Но если чат был создан или найден в БД, но не был в массиве - обновим массив
       await pool.execute(
         'UPDATE requests SET private_chats = ?, updated_at = NOW() WHERE id = ?',
         [JSON.stringify(privateChats), id]
@@ -1585,7 +1678,8 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
-    if (request.created_by) {
+    // Отправляем только если пользователь новый участник
+    if (!isAlreadyParticipant && request.created_by) {
       sendJoinNotification({
         requestId: id,
         requestName: request.name || 'Event',
@@ -1597,7 +1691,11 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       });
     }
 
-    success(res, null, 'Вы присоединились к событию');
+    // Возвращаем успешный ответ (даже если пользователь уже был участником)
+    const message = isAlreadyParticipant 
+      ? 'Вы уже участвуете в этом событии' 
+      : 'Вы присоединились к событию';
+    success(res, null, message);
   } catch (err) {
     error(res, 'Ошибка при участии в событии', 500, err);
   }
