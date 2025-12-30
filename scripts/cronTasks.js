@@ -443,23 +443,41 @@ async function notifyInactiveWasteRequests() {
 
 /**
  * Архивирование неактивных waste заявок
- * TODO: После проверки вернуть комментарий "через 8 дней" (сейчас 2 дня для тестирования: 1 день + 1 день ожидания)
+ * Архивирует заявки типа wasteLocation:
+ * 1. Со статусом 'new', если прошло 2 суток с момента создания и никто не взялся за исполнение
+ * 2. Со статусом 'inProgress', если прошло 2 суток с момента присоединения и заявка не выполнена
  */
 async function deleteInactiveRequests() {
   try {
-    // TODO: После проверки изменить комментарий на "прошло 8 дней (7 дней + 1 день ожидания)" (сейчас 2 дня для тестирования)
-    // Находим все waste заявки со статусом new, где прошло 2 дня (1 день + 1 день ожидания после пуша)
-    // expires_at = created_at + 1 день (время отправки пуша)
-    // Архивирование происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
-    // Это эквивалентно expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)
-    const [requests] = await pool.execute(
+    // 1. Находим все waste заявки со статусом new, где прошло 2 суток с момента создания
+    // и никто не взялся за исполнение (joined_user_id IS NULL)
+    const [newRequests] = await pool.execute(
       `SELECT id, created_by, cost, category
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'new' 
-         AND expires_at IS NOT NULL
-         AND expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)`
+         AND joined_user_id IS NULL
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
     );
+
+    // 2. Находим все waste заявки со статусом inProgress, где прошло 2 суток с момента присоединения
+    // и заявка не выполнена (статус все еще inProgress, а не completed или approved)
+    const [inProgressRequests] = await pool.execute(
+      `SELECT id, created_by, cost, category, joined_user_id
+       FROM requests 
+       WHERE category = 'wasteLocation'
+         AND status = 'inProgress' 
+         AND joined_user_id IS NOT NULL
+         AND join_date IS NOT NULL
+         AND join_date <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
+    );
+
+    // Объединяем оба списка
+    const requests = [...newRequests, ...inProgressRequests];
+
+    if (requests.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
 
     if (requests.length === 0) {
       return { processed: 0, errors: 0 };
@@ -478,16 +496,36 @@ async function deleteInactiveRequests() {
 
         // TODO: Возврат денег создателю и донатерам через платежную систему
 
-        // Отправляем пуши
+        // Определяем тип архивирования для сообщения
+        const isInProgress = request.joined_user_id !== null && request.joined_user_id !== undefined;
+        const archiveReason = isInProgress 
+          ? '2 суток без выполнения после присоединения'
+          : '2 суток без присоединения';
+
+        // Отправляем пуши создателю
         const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
         await sendRequestRejectedNotification({
           userIds: [request.created_by],
           requestId: request.id,
           messageType: 'creator',
-          rejectionMessage: 'Your request was archived due to inactivity',
+          rejectionMessage: isInProgress 
+            ? 'Your request was archived because it was not completed on time'
+            : 'Your request was archived due to inactivity',
           requestCategory: 'wasteLocation',
         });
 
+        // Отправляем пуш исполнителю, если заявка была взята
+        if (isInProgress) {
+          await sendRequestRejectedNotification({
+            userIds: [request.joined_user_id],
+            requestId: request.id,
+            messageType: 'executor',
+            rejectionMessage: 'The request you took was archived because it was not completed on time',
+            requestCategory: 'wasteLocation',
+          });
+        }
+
+        // Отправляем пуши донатерам
         const donorUserIds = donations.map(d => d.user_id).filter(Boolean);
         if (donorUserIds.length > 0) {
           await sendRequestRejectedNotification({
@@ -507,9 +545,13 @@ async function deleteInactiveRequests() {
           'deleteInactiveRequests',
           request.id,
           request.category || 'wasteLocation',
-          `Архивирование неактивной заявки ${request.id} (8 дней без присоединения)`,
+          `Архивирование неактивной заявки ${request.id} (${archiveReason})`,
           'completed',
-          { donorCount: donations.length }
+          { 
+            donorCount: donations.length,
+            wasInProgress: isInProgress,
+            joinedUserId: request.joined_user_id || null
+          }
         );
         
         processed++;
