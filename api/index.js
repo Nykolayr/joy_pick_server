@@ -21,6 +21,8 @@ const notificationRoutes = require('./routes/notifications');
 const wasteTypesRoutes = require('./routes/wasteTypes');
 const cronRoutes = require('./routes/cron');
 const chatRoutes = require('./routes/chats');
+const stripeRoutes = require('./routes/stripe');
+const paymentRoutes = require('./routes/payments');
 
 const app = express();
 
@@ -54,6 +56,8 @@ app.use('/notifications', notificationRoutes);
 app.use('/waste-types', wasteTypesRoutes);
 app.use('/cron', cronRoutes);
 app.use('/chats', chatRoutes);
+app.use('/stripe', stripeRoutes);
+app.use('/payments', paymentRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {
@@ -121,6 +125,8 @@ app.get('/', (req, res) => {
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
       chats: '/api/chats',
+      stripe: '/api/stripe',
+      payments: '/api/payments',
       info: '/api/info',
       health: '/api/health'
     }
@@ -147,6 +153,8 @@ app.get('/info', (req, res) => {
       wasteTypes: '/api/waste-types',
       chats: '/api/chats',
       cron: '/api/cron',
+      stripe: '/api/stripe',
+      payments: '/api/payments',
       info: '/api/info',
       health: '/api/health',
       healthDb: '/api/health/db'

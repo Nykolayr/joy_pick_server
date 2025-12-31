@@ -990,6 +990,52 @@ async function sendModerationNotification({ requestId, requestName, requestCateg
   }
 }
 
+/**
+ * Отправка push-уведомления волонтёру о получении выплаты
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {string} options.transferId - ID transfer
+ * @param {number} options.amountCents - Сумма в центах
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendTransferPaidNotification({ userIds, transferId, amountCents }) {
+  const amountDollars = (amountCents / 100).toFixed(2);
+  
+  return await sendNotificationToUsers({
+    title: 'Payment Received',
+    body: `You received $${amountDollars} for completing the request`,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'transferPaid',
+      transferId: transferId,
+      amountCents: amountCents.toString(),
+      initialPageName: 'PaymentsHistory',
+    },
+  });
+}
+
+/**
+ * Отправка push-уведомления волонтёру об ошибке выплаты
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей
+ * @param {string} options.transferId - ID transfer
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendTransferFailedNotification({ userIds, transferId }) {
+  return await sendNotificationToUsers({
+    title: 'Payment Failed',
+    body: 'There was an error processing your payment. Please contact support.',
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'transferFailed',
+      transferId: transferId,
+      initialPageName: 'PaymentsHistory',
+    },
+  });
+}
+
 module.exports = {
   sendPushNotifications,
   sendRequestCreatedNotification,
@@ -1004,6 +1050,8 @@ module.exports = {
   sendRequestExpiredNotification,
   sendEventTimeNotification,
   sendModerationNotification,
+  sendTransferPaidNotification,
+  sendTransferFailedNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
 };

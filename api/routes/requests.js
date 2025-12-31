@@ -16,6 +16,7 @@ const {
   sendModerationNotification
 } = require('../services/pushNotification');
 const { createGroupChatForRequest } = require('../utils/chatHelpers');
+const stripe = require('../config/stripe');
 
 const router = express.Router();
 
@@ -2560,6 +2561,420 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Заявка закрыта и отправлена на рассмотрение');
   } catch (err) {
     error(res, 'Ошибка при закрытии заявки', 500, err);
+  }
+});
+
+/**
+ * POST /api/requests/create-with-payment
+ * Атомарное создание заявки с платежом
+ * Создает заявку и PaymentIntent в одной транзакции
+ */
+router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
+  body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Некорректная категория'),
+  body('name').notEmpty().withMessage('Название обязательно'),
+  body('description').optional().isString(),
+  body('latitude').optional().isFloat(),
+  body('longitude').optional().isFloat(),
+  body('city').optional().isString(),
+  body('require_payment').optional().isBoolean(),
+  body('amount_cents').optional().isInt({ min: 50 }).withMessage('Минимум 50 центов'),
+  body('request_category').optional().isString()
+], async (req, res) => {
+  let connection = null;
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+    }
+
+    // Обработка загруженных файлов
+    const uploadedPhotosBefore = [];
+    const uploadedPhotosAfter = [];
+
+    if (req.files) {
+      if (req.files.photos_before && Array.isArray(req.files.photos_before)) {
+        for (const file of req.files.photos_before) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosBefore.push(fileUrl);
+        }
+      }
+
+      if (req.files.photos_after && Array.isArray(req.files.photos_after)) {
+        for (const file of req.files.photos_after) {
+          const fileUrl = getFileUrlFromPath(file.path);
+          if (fileUrl) uploadedPhotosAfter.push(fileUrl);
+        }
+      }
+    }
+
+    // Парсим данные
+    let bodyData = req.body;
+    if (typeof req.body === 'string') {
+      try {
+        bodyData = JSON.parse(req.body);
+      } catch (e) {
+        // Если не JSON, используем как есть
+      }
+    }
+
+    const {
+      category,
+      name,
+      description,
+      latitude,
+      longitude,
+      city,
+      garbage_size,
+      only_foot = false,
+      possible_by_car = false,
+      cost,
+      reward_amount,
+      start_date,
+      end_date,
+      status,
+      priority = 'medium',
+      waste_types = [],
+      target_amount,
+      plant_tree = false,
+      trash_pickup_only = false,
+      require_payment = false,
+      amount_cents,
+      request_category
+    } = bodyData;
+
+    // Обработка waste_types
+    let processedWasteTypes = [];
+    if (waste_types) {
+      if (Array.isArray(waste_types)) {
+        processedWasteTypes = waste_types;
+      } else if (typeof waste_types === 'string') {
+        try {
+          processedWasteTypes = JSON.parse(waste_types);
+        } catch (e) {
+          processedWasteTypes = waste_types.split(',').map(t => t.trim()).filter(t => t);
+        }
+      }
+    }
+
+    const requestId = generateId();
+    const userId = req.user.userId;
+
+    // Определяем сумму для платежа
+    let paymentAmountCents = null;
+    if (require_payment) {
+      if (amount_cents) {
+        paymentAmountCents = parseInt(amount_cents);
+      } else if (cost) {
+        paymentAmountCents = Math.round(parseFloat(cost) * 100);
+      } else {
+        return error(res, 'Если require_payment = true, необходимо указать amount_cents или cost', 400);
+      }
+
+      if (paymentAmountCents < 50) {
+        return error(res, 'Минимум 50 центов (требование Stripe)', 400);
+      }
+    }
+
+    // Определяем статус заявки
+    let requestStatus;
+    if (require_payment && paymentAmountCents > 0) {
+      requestStatus = 'pending_payment';
+    } else {
+      // Стандартная логика по категории
+      if (category === 'wasteLocation' || category === 'speedCleanup') {
+        requestStatus = status || 'new';
+      } else if (category === 'event') {
+        requestStatus = 'inProgress';
+      } else {
+        requestStatus = 'new';
+      }
+    }
+
+    // Начинаем транзакцию
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+      // Для event: создатель автоматически становится участником
+      let registeredParticipants = null;
+      if (category === 'event') {
+        registeredParticipants = JSON.stringify([userId]);
+      }
+
+      const expiresAt = category === 'wasteLocation' 
+        ? new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+        : null;
+
+      let privateChats = null;
+      if (category === 'event') {
+        privateChats = JSON.stringify([]);
+      }
+
+      // Создаем заявку в БД (пока без group_chat_id и payment_intent_id)
+      await connection.execute(
+        `INSERT INTO requests (
+          id, user_id, category, name, description, latitude, longitude, city,
+          garbage_size, only_foot, possible_by_car, cost, reward_amount, is_open,
+          start_date, end_date, status, priority, assigned_to, notes, created_by,
+          taken_by, total_contributed, target_amount, joined_user_id, join_date,
+          payment_intent_id, completion_comment, plant_tree, trash_pickup_only,
+          created_at, updated_at, rejection_reason, rejection_message, actual_participants,
+          photos_before, photos_after, registered_participants, waste_types, expires_at,
+          extended_count, participant_completions, group_chat_id, private_chats
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          requestId,
+          userId,
+          category,
+          name,
+          description || null,
+          latitude || null,
+          longitude || null,
+          city || null,
+          garbage_size || null,
+          only_foot,
+          possible_by_car,
+          cost || null,
+          reward_amount || null,
+          true, // is_open
+          start_date || null,
+          end_date || null,
+          requestStatus,
+          priority,
+          null, // assigned_to
+          null, // notes
+          userId, // created_by
+          null, // taken_by
+          null, // total_contributed
+          target_amount || null,
+          null, // joined_user_id
+          null, // join_date
+          null, // payment_intent_id (обновим после создания PaymentIntent)
+          null, // completion_comment
+          plant_tree,
+          trash_pickup_only,
+          null, // rejection_reason
+          null, // rejection_message
+          null, // actual_participants
+          uploadedPhotosBefore.length > 0 ? JSON.stringify(uploadedPhotosBefore) : null,
+          uploadedPhotosAfter.length > 0 ? JSON.stringify(uploadedPhotosAfter) : null,
+          registeredParticipants,
+          processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
+          expiresAt,
+          0, // extended_count
+          null, // participant_completions
+          null, // group_chat_id (обновим после создания чата)
+          privateChats
+        ]
+      );
+
+      // Создаем PaymentIntent если требуется
+      let paymentIntent = null;
+      let clientSecret = null;
+      let stripePaymentIntentId = null;
+
+      if (require_payment && paymentAmountCents > 0) {
+        try {
+          const stripePaymentIntent = await stripe.paymentIntents.create({
+            amount: paymentAmountCents,
+            currency: 'usd',
+            payment_method_types: ['card'],
+            capture_method: 'manual',
+            metadata: {
+              request_id: requestId,
+              user_id: userId,
+              request_category: request_category || category,
+              type: 'request_payment'
+            }
+          });
+
+          stripePaymentIntentId = stripePaymentIntent.id;
+          clientSecret = stripePaymentIntent.client_secret;
+
+          // Обновляем заявку с payment_intent_id
+          await connection.execute(
+            'UPDATE requests SET payment_intent_id = ? WHERE id = ?',
+            [stripePaymentIntentId, requestId]
+          );
+
+          // Сохраняем PaymentIntent в БД
+          const paymentIntentId = generateId();
+          await connection.execute(
+            `INSERT INTO payment_intents (id, payment_intent_id, user_id, request_id, amount_cents, currency, status, type, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              paymentIntentId,
+              stripePaymentIntentId,
+              userId,
+              requestId,
+              paymentAmountCents,
+              'usd',
+              stripePaymentIntent.status,
+              'request_payment',
+              JSON.stringify({
+                request_id: requestId,
+                user_id: userId,
+                request_category: request_category || category,
+                type: 'request_payment'
+              })
+            ]
+          );
+
+          paymentIntent = {
+            payment_intent_id: stripePaymentIntentId,
+            client_secret: clientSecret
+          };
+        } catch (stripeErr) {
+          // Если ошибка при создании PaymentIntent, откатываем транзакцию
+          await connection.rollback();
+          connection.release();
+          return error(res, 'Ошибка при создании PaymentIntent', 500, stripeErr);
+        }
+      }
+
+      // Создаем групповой чат
+      let groupChatId = null;
+      try {
+        groupChatId = await createGroupChatForRequest(requestId, userId, category);
+        
+        // Обновляем заявку с group_chat_id
+        await connection.execute(
+          'UPDATE requests SET group_chat_id = ? WHERE id = ?',
+          [groupChatId, requestId]
+        );
+      } catch (chatErr) {
+        // Если не удалось создать чат, откатываем транзакцию
+        await connection.rollback();
+        connection.release();
+        return error(res, 'Ошибка при создании группового чата', 500, chatErr);
+      }
+
+      // Инициализация participant_completions для создателя event заявки
+      if (category === 'event') {
+        try {
+          const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+          await initializeParticipantCompletion(requestId, userId, true);
+        } catch (completionErr) {
+          // Если ошибка, откатываем транзакцию
+          await connection.rollback();
+          connection.release();
+          return error(res, 'Ошибка инициализации participant_completion для создателя', 500, completionErr);
+        }
+      }
+
+      // Фиксируем транзакцию
+      await connection.commit();
+      connection.release();
+      connection = null;
+
+      // Получаем созданную заявку
+      const [requests] = await pool.execute(
+        `SELECT r.* FROM requests r WHERE r.id = ?`,
+        [requestId]
+      );
+
+      if (requests.length === 0) {
+        return error(res, 'Заявка не найдена после создания', 500);
+      }
+
+      const request = requests[0];
+      
+      // Обработка JSON полей
+      if (request.photos_before) {
+        try {
+          request.photos_before = typeof request.photos_before === 'string' 
+            ? JSON.parse(request.photos_before) 
+            : request.photos_before;
+        } catch (e) {
+          request.photos_before = [];
+        }
+      } else {
+        request.photos_before = [];
+      }
+      
+      if (request.photos_after) {
+        try {
+          request.photos_after = typeof request.photos_after === 'string' 
+            ? JSON.parse(request.photos_after) 
+            : request.photos_after;
+        } catch (e) {
+          request.photos_after = [];
+        }
+      } else {
+        request.photos_after = [];
+      }
+
+      if (request.waste_types) {
+        try {
+          request.waste_types = typeof request.waste_types === 'string' 
+            ? JSON.parse(request.waste_types) 
+            : request.waste_types;
+        } catch (e) {
+          request.waste_types = [];
+        }
+      } else {
+        request.waste_types = [];
+      }
+
+      if (request.private_chats) {
+        try {
+          request.private_chats = typeof request.private_chats === 'string' 
+            ? JSON.parse(request.private_chats) 
+            : request.private_chats;
+        } catch (e) {
+          request.private_chats = [];
+        }
+      } else {
+        request.private_chats = [];
+      }
+
+      request.participants = [];
+      request.contributors = [];
+      request.contributions = {};
+      request.donations = [];
+
+      // Нормализация дат
+      const normalizedRequest = normalizeDatesInObject(request);
+
+      // Отправка push-уведомлений (асинхронно)
+      if (latitude && longitude) {
+        sendRequestCreatedNotification({
+          id: requestId,
+          category,
+          name,
+          created_by: userId,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          photos: [...uploadedPhotosBefore, ...uploadedPhotosAfter],
+        }).catch(err => {
+          // Игнорируем ошибки уведомлений
+        });
+      }
+
+      return success(res, {
+        request: normalizedRequest,
+        payment: paymentIntent
+      }, 'Заявка создана успешно', 201);
+
+    } catch (transactionErr) {
+      // Откатываем транзакцию при любой ошибке
+      if (connection) {
+        await connection.rollback();
+        connection.release();
+      }
+      throw transactionErr;
+    }
+
+  } catch (err) {
+    if (connection) {
+      try {
+        await connection.rollback();
+        connection.release();
+      } catch (rollbackErr) {
+        // Игнорируем ошибки отката
+      }
+    }
+    return error(res, 'Ошибка при создании заявки с платежом', 500, err);
   }
 });
 

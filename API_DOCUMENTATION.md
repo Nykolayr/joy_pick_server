@@ -3,7 +3,7 @@
 ## Базовый URL
 
 ```
-http://autogie1.bget.ru/api
+https://danilagames.ru/api
 ```
 
 **Или для локальной разработки:**
@@ -144,7 +144,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "city": "Москва",
   "country": "Россия",
   "gender": "male",
-  "photo_url": "http://autogie1.bget.ru/uploads/avatars/uuid.jpg",
+  "photo_url": "https://danilagames.ru/uploads/avatars/uuid.jpg",
   "latitude": 55.7558,
   "longitude": 37.6173,
   "fcm_token": "cqMv5gx6SKWXpMxFdRX8_3:APA91b...",
@@ -191,7 +191,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
 | `start_date` | datetime | **Да (для speedCleanup)** | Дата начала работы. **Обязательно для `speedCleanup`**, опционально для `event` |
 | `end_date` | datetime | **Да (для speedCleanup)** | Дата окончания работы. **Обязательно для `speedCleanup`**, опционально для `event` |
-| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `completed` - завершена<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 24 часа после одобрения заявка автоматически переводится в `completed`<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники |
+| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br>- `event`: `inProgress` (автоматически при создании) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `pending_payment` - ожидает оплаты (создается через `POST /api/requests/create-with-payment` с `require_payment = true`, автоматически обновляется на стандартный статус после успешной оплаты через webhook Stripe)<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `completed` - завершена<br>- `archived` - архивирована (автоматически или вручную)<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 24 часа после одобрения заявка автоматически переводится в `completed`<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники<br>- Для заявок со статусом `pending_payment`: после успешной оплаты статус автоматически обновляется на стандартный (`new` для wasteLocation/speedCleanup, `inProgress` для event) через webhook Stripe. Если оплата не прошла в течение 24 часов, заявка автоматически удаляется |
 | `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
@@ -228,8 +228,8 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "longitude": 37.6173,
   "city": "Москва",
   "photos_before": [
-    "http://autogie1.bget.ru/uploads/photos/uuid1.jpg",
-    "http://autogie1.bget.ru/uploads/photos/uuid2.jpg"
+    "https://danilagames.ru/uploads/photos/uuid1.jpg",
+    "https://danilagames.ru/uploads/photos/uuid2.jpg"
   ],
   "photos_after": [],
   "garbage_size": 2,
@@ -287,7 +287,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 {
   "id": "660e8400-e29b-41d4-a716-446655440000",
   "name": "Эко-Магазин",
-  "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+  "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
   "latitude": 55.7558,
   "longitude": 37.6173,
   "address": "г. Москва, ул. Экологическая, д. 1",
@@ -706,7 +706,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService {
-  final String baseUrl = 'http://autogie1.bget.ru/api';
+  final String baseUrl = 'https://danilagames.ru/api';
   final FlutterSecureStorage _storage = FlutterSecureStorage();
 
   /// Авторизация через Firebase (Google Sign In, Apple Sign In и др.)
@@ -1075,7 +1075,7 @@ Future<Map<String, dynamic>> getAllUsers({
     queryParams['search'] = search;
   }
   
-  final uri = Uri.parse('http://autogie1.bget.ru/api/users/all')
+  final uri = Uri.parse('https://danilagames.ru/api/users/all')
       .replace(queryParameters: queryParams);
   
   final response = await http.get(
@@ -1162,7 +1162,7 @@ Future<Map<String, dynamic>> getUsersList({
     queryParams['search'] = search;
   }
   
-  final uri = Uri.parse('http://autogie1.bget.ru/api/users')
+  final uri = Uri.parse('https://danilagames.ru/api/users')
       .replace(queryParameters: queryParams);
   
   final response = await http.get(
@@ -1268,7 +1268,7 @@ Future<void> updateUserAvatar({
   required String userId,
   required File avatarFile,
 }) async {
-  final uri = Uri.parse('http://autogie1.bget.ru/api/users/$userId');
+  final uri = Uri.parse('https://danilagames.ru/api/users/$userId');
   final request = http.MultipartRequest('PUT', uri);
   
   request.headers['Authorization'] = 'Bearer $token';
@@ -1334,7 +1334,7 @@ Future<void> updateUserAvatar({
 - `page` (int, default: 1) - номер страницы
 - `limit` (int, default: 20) - количество на странице
 - `category` (string) - фильтр: `wasteLocation`, `speedCleanup`, `event`
-- `status` (string) - фильтр: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`
+- `status` (string) - фильтр: `new`, `pending_payment`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`
 - `city` (string) - фильтр по городу
 - `latitude` (float) - широта для поиска по радиусу
 - `longitude` (float) - долгота для поиска по радиусу
@@ -1576,7 +1576,7 @@ Future<void> createRequestWithPhotos({
   List<File>? photos_before,
   List<File>? photos_after,
 }) async {
-  final uri = Uri.parse('http://autogie1.bget.ru/api/requests');
+  final uri = Uri.parse('https://danilagames.ru/api/requests');
   final request = http.MultipartRequest('POST', uri);
   
   // Заголовок авторизации
@@ -1640,9 +1640,9 @@ Future<void> createRequestWithPhotos({
     "request": {
       "id": "uuid",
       "name": "Название заявки",
-      "photos": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg", "http://autogie1.bget.ru/uploads/photos/uuid2.jpg"],
-      "photos_before": ["http://autogie1.bget.ru/uploads/photos/uuid3.jpg"],
-      "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid4.jpg"],
+      "photos": ["https://danilagames.ru/uploads/photos/uuid1.jpg", "https://danilagames.ru/uploads/photos/uuid2.jpg"],
+      "photos_before": ["https://danilagames.ru/uploads/photos/uuid3.jpg"],
+      "photos_after": ["https://danilagames.ru/uploads/photos/uuid4.jpg"],
       // ... остальные поля
     },
     "group_chat": {
@@ -1673,7 +1673,196 @@ Future<void> createRequestWithPhotos({
 - Файлы автоматически сохраняются на сервере в папке `uploads/photos/`
 - Сервер генерирует уникальные имена файлов
 - URL файлов автоматически подставляются в соответствующие поля заявки
-- Файлы доступны по URL: `http://autogie1.bget.ru/uploads/photos/{filename}`
+- Файлы доступны по URL: `https://danilagames.ru/uploads/photos/{filename}`
+
+---
+
+### Атомарное создание заявки с платежом
+
+**POST** `/requests/create-with-payment`
+
+**Требует аутентификации**
+
+**Описание:**
+Создает заявку и PaymentIntent атомарно в одной транзакции. Если `require_payment = true` и `amount_cents > 0`, создает заявку со статусом `"pending_payment"` и PaymentIntent. Если оплата не требуется (`require_payment = false` или `amount_cents = 0`), создает заявку со стандартным статусом (`"new"` для wasteLocation/speedCleanup, `"inProgress"` для event).
+
+**Важно:** Фотографии принимаются только в виде файлов через `multipart/form-data`. URL фотографий не принимаются.
+
+**Content-Type:** `multipart/form-data`
+
+**Поля формы:**
+- Все стандартные поля заявки (как в `POST /api/requests`)
+- `require_payment` (boolean, опционально, по умолчанию: `false`) - если `true`, создает платеж
+- `amount_cents` (integer, опционально) - сумма в центах (если не указано, берется из `cost`)
+- `request_category` (string, опционально) - категория для Stripe metadata (`"waste_location"`, `"event"`, `"speed_cleanup"`)
+- `photos_before` (file[], опционально) - массив файлов фотографий "до"
+- `photos_after` (file[], опционально) - массив файлов фотографий "после"
+
+**Важно:**
+- Если `require_payment = true` и `amount_cents > 0` (или `cost > 0`), заявка создается со статусом `"pending_payment"`
+- Если `require_payment = false` или `amount_cents = 0`, заявка создается со стандартным статусом
+- `amount_cents` приоритетнее чем `cost` для создания платежа
+- Если `amount_cents` не указано, используется `cost` (конвертируется в центы: `cost * 100`)
+- Минимальная сумма для Stripe: 50 центов
+- Все операции выполняются в одной транзакции БД - если любая операция не удалась, вся транзакция откатывается
+
+**Пример запроса (с оплатой):**
+```json
+{
+  "category": "wasteLocation",
+  "name": "Название заявки",
+  "description": "Описание",
+  "latitude": 55.7558,
+  "longitude": 37.6173,
+  "city": "Москва",
+  "cost": 10.00,
+  "require_payment": true,
+  "amount_cents": 1000,
+  "request_category": "waste_location"
+}
+```
+
+**Пример запроса (без оплаты):**
+```json
+{
+  "category": "wasteLocation",
+  "name": "Название заявки",
+  "description": "Описание",
+  "latitude": 55.7558,
+  "longitude": 37.6173,
+  "city": "Москва",
+  "require_payment": false
+}
+```
+
+**Ответ (201) - с оплатой:**
+```json
+{
+  "success": true,
+  "message": "Заявка создана успешно",
+  "data": {
+    "request": {
+      "id": "uuid-заявки",
+      "category": "wasteLocation",
+      "name": "Название заявки",
+      "status": "pending_payment",
+      "cost": 10.00,
+      "payment_intent_id": "pi_xxxxx",
+      // ... все остальные поля заявки
+    },
+    "payment": {
+      "payment_intent_id": "pi_xxxxx",
+      "client_secret": "pi_xxxxx_secret_xxxxx"
+    }
+  }
+}
+```
+
+**Ответ (201) - без оплаты:**
+```json
+{
+  "success": true,
+  "message": "Заявка создана успешно",
+  "data": {
+    "request": {
+      "id": "uuid-заявки",
+      "status": "new",
+      // ... все остальные поля заявки
+    },
+    "payment": null
+  }
+}
+```
+
+**Ошибка (400) - валидация:**
+```json
+{
+  "success": false,
+  "message": "Ошибка валидации",
+  "errors": [
+    {
+      "field": "amount_cents",
+      "message": "Минимум 50 центов (требование Stripe)"
+    }
+  ]
+}
+```
+
+**Ошибка (500) - ошибка создания:**
+```json
+{
+  "success": false,
+  "message": "Ошибка при создании заявки с платежом",
+  "error": "Детали ошибки"
+}
+```
+
+**Обновление статуса после оплаты:**
+- После успешной оплаты на клиенте, статус заявки автоматически обновляется через webhook Stripe
+- Статус меняется с `"pending_payment"` на стандартный:
+  - `"new"` для `wasteLocation` и `speedCleanup`
+  - `"inProgress"` для `event`
+- Если webhook не сработал, статус будет обновлен автоматически через 24 часа при очистке неоплаченных заявок
+
+**Очистка неоплаченных заявок:**
+- Заявки со статусом `"pending_payment"`, которые не были оплачены в течение 24 часов, автоматически удаляются
+- PaymentIntent отменяется в Stripe
+- Создателю отправляется push-уведомление
+
+**Пример для Flutter (с оплатой):**
+```dart
+import 'package:http/http.dart' as http;
+import 'dart:io';
+
+Future<void> createRequestWithPayment({
+  required String token,
+  required String name,
+  required String category,
+  required int amountCents,
+  List<File>? photos_before,
+}) async {
+  final uri = Uri.parse('https://danilagames.ru/api/requests/create-with-payment');
+  final request = http.MultipartRequest('POST', uri);
+  
+  request.headers['Authorization'] = 'Bearer $token';
+  
+  // Текстовые поля
+  request.fields['name'] = name;
+  request.fields['category'] = category;
+  request.fields['description'] = 'Описание заявки';
+  request.fields['city'] = 'Москва';
+  request.fields['latitude'] = '55.7558';
+  request.fields['longitude'] = '37.6173';
+  request.fields['require_payment'] = 'true';
+  request.fields['amount_cents'] = amountCents.toString();
+  request.fields['request_category'] = 'waste_location';
+  
+  // Файлы
+  if (photos_before != null) {
+    for (var photo in photos_before) {
+      final fileStream = http.ByteStream(photo.openRead());
+      final length = await photo.length();
+      final multipartFile = http.MultipartFile(
+        'photos_before',
+        fileStream,
+        length,
+        filename: photo.path.split('/').last,
+      );
+      request.files.add(multipartFile);
+    }
+  }
+  
+  final streamedResponse = await request.send();
+  final response = await http.Response.fromStream(streamedResponse);
+  
+  if (response.statusCode == 201) {
+    final data = jsonDecode(response.body);
+    final paymentIntentId = data['data']['payment']['payment_intent_id'];
+    final clientSecret = data['data']['payment']['client_secret'];
+    // Используйте client_secret для подтверждения оплаты через Stripe SDK
+  }
+}
+```
 
 ---
 
@@ -1725,11 +1914,13 @@ Future<void> createRequestWithPhotos({
 
 **Статусы:**
 - `new` - создана, ожидает присоединения
+- `pending_payment` - ожидает оплаты (создается через `POST /api/requests/create-with-payment` с `require_payment = true`)
 - `inProgress` - в процессе выполнения
 - `pending` - ожидает рассмотрения модератором
 - `approved` - одобрена модератором
 - `rejected` - отклонена модератором
 - `completed` - завершена
+- `archived` - архивирована (автоматически или вручную)
 
 **Логика по типам заявок:**
 
@@ -2038,7 +2229,7 @@ Future<void> createRequestWithPhotos({
       "participant_completions": {
         "user_id_1": {
           "status": "pending",
-          "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+          "photos_after": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
           "completion_comment": "Убрал весь мусор",
           "completion_latitude": 56.4962847,
           "completion_longitude": 84.9802779,
@@ -2100,7 +2291,7 @@ Future<void> createRequestWithPhotos({
       "participant_completions": {
         "user_id_1": {
           "status": "approved",
-          "photos_after": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+          "photos_after": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
           "completion_comment": "Убрал весь мусор",
           "completion_latitude": 56.4962847,
           "completion_longitude": 84.9802779,
@@ -2897,7 +3088,7 @@ API для управления партнерами. Партнеры - это 
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "ЭкоПартнер",
-        "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+        "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
         "latitude": 56.4962847,
         "longitude": 84.9802779,
         "address": "г. Томск, ул. Ленина, д. 1",
@@ -2931,7 +3122,7 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
-      "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
       "latitude": 56.4962847,
       "longitude": 84.9802779,
       "address": "г. Томск, ул. Ленина, д. 1",
@@ -3002,7 +3193,7 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
-      "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
       "latitude": 56.4962847,
       "longitude": 84.9802779,
       "address": "г. Томск, ул. Ленина, д. 1",
@@ -3140,7 +3331,7 @@ API для управления станциями переработки. Ст�
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "Станция переработки \"ЭкоТомск\"",
-        "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+        "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
         "latitude": 56.4962847,
         "longitude": 84.9802779,
         "address": "г. Томск, ул. Экологическая, д. 10",
@@ -3186,7 +3377,7 @@ API для управления станциями переработки. Ст�
     "station": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "Станция переработки \"ЭкоТомск\"",
-      "photo_urls": ["http://autogie1.bget.ru/uploads/photos/uuid1.jpg"],
+      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
       "latitude": 56.4962847,
       "longitude": 84.9802779,
       "address": "г. Томск, ул. Экологическая, д. 10",
@@ -4274,7 +4465,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiService {
-  final String baseUrl = 'http://autogie1.bget.ru/api';
+  final String baseUrl = 'https://danilagames.ru/api';
   final FlutterSecureStorage _storage = FlutterSecureStorage();
 
   // Получение токена
@@ -5066,7 +5257,7 @@ APP_NAME=Joy Pick
 
 **Важно:** Используйте тот же домен, что и для HTTP API, БЕЗ указания порта!
 
-- **Production URL:** `http://autogie1.bget.ru` или `https://autogie1.bget.ru`
+- **Production URL:** `https://danilagames.ru` или `https://autogie1.bget.ru`
 - **Development URL:** `http://localhost:3000` (только для локальной разработки)
 
 **Как работает:**
@@ -5103,7 +5294,7 @@ data: {"type":"ping","timestamp":"2024-01-01T00:00:00.000Z"}
 
 **Пример для JavaScript/TypeScript:**
 ```javascript
-const eventSource = new EventSource('http://autogie1.bget.ru/api/chats/chat-uuid/events', {
+const eventSource = new EventSource('https://danilagames.ru/api/chats/chat-uuid/events', {
   headers: {
     'Authorization': 'Bearer your_jwt_token'
   }
@@ -5135,7 +5326,7 @@ import 'package:eventsource/eventsource.dart';
 
 // Подключение к SSE потоку
 final eventSource = EventSource.connect(
-  'http://autogie1.bget.ru/api/chats/$chatId/events',
+  'https://danilagames.ru/api/chats/$chatId/events',
   headers: {
     'Authorization': 'Bearer $jwtToken',
   },
@@ -5167,7 +5358,7 @@ eventSource.onError = (error) {
 ```dart
 // POST /api/chats/:chatId/messages
 final response = await http.post(
-  Uri.parse('http://autogie1.bget.ru/api/chats/$chatId/messages'),
+  Uri.parse('https://danilagames.ru/api/chats/$chatId/messages'),
   headers: {
     'Authorization': 'Bearer $jwtToken',
     'Content-Type': 'application/json',
@@ -5313,6 +5504,422 @@ final response = await http.post(
 
 ---
 
+## 💳 Stripe Integration
+
+### Обзор
+
+Все операции со Stripe выполняются на бэкенде через API. Мобильное приложение только инициирует операции и отображает результаты. Это обеспечивает безопасность (секретные ключи не хранятся в приложении) и централизованную логику.
+
+### Комиссии
+
+- **Комиссия платформы:** 7% (вычитается от исходной суммы)
+- **Комиссия Stripe:** 10.9% + $0.33 (вычитается автоматически при capture)
+- **Волонтёр получает:** Исходная сумма - Комиссия платформы (7%) - Комиссия Stripe (10.9% + $0.33)
+
+**Пример:** Платеж $100
+- Комиссия платформы: $7.00
+- Комиссия Stripe: $11.23
+- Волонтёр получает: $81.77
+
+---
+
+### Создание Stripe Express Account
+
+**POST** `/stripe/create-account`
+
+**Требует аутентификации**
+
+**Описание:**
+Создает Express Account для волонтёра с предзаполненными данными согласно рекомендациям Stripe Support.
+
+**Request Body:**
+```json
+{
+  "user_id": "uuid-пользователя",
+  "email": "user@example.com",
+  "first_name": "John",
+  "last_name": "Doe",
+  "phone": "+1234567890",
+  "city": "New York",
+  "country": "US"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Account created successfully",
+  "data": {
+    "account_id": "acct_xxxxx",
+    "account_link_url": "https://connect.stripe.com/setup/s/xxxxx",
+    "message": "Account created successfully"
+  }
+}
+```
+
+**Ошибка (400):**
+```json
+{
+  "success": false,
+  "message": "Ошибка валидации",
+  "errors": [...]
+}
+```
+
+**Ошибка (500):**
+```json
+{
+  "success": false,
+  "message": "Ошибка при создании Stripe аккаунта",
+  "error": "..."
+}
+```
+
+**Важно:**
+- Если аккаунт уже существует, возвращается существующий `account_id` и новый `account_link_url` для доонбординга
+- Если `country` не поддерживается, автоматически используется `US`
+
+---
+
+### Проверка статуса Stripe аккаунта
+
+**GET** `/stripe/account-status?user_id=<uuid>`
+
+**Требует аутентификации**
+
+**Описание:**
+Проверяет статус Stripe аккаунта пользователя и возвращает актуальную информацию из Stripe API.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Account status retrieved",
+  "data": {
+    "account_id": "acct_xxxxx",
+    "charges_enabled": true,
+    "payouts_enabled": true,
+    "details_submitted": true,
+    "onboarding_complete": true,
+    "account_link_url": "https://connect.stripe.com/setup/s/xxxxx"
+  }
+}
+```
+
+**Если аккаунт не найден:**
+```json
+{
+  "success": true,
+  "message": "Account status retrieved",
+  "data": {
+    "account_id": null,
+    "charges_enabled": false,
+    "payouts_enabled": false,
+    "details_submitted": false,
+    "onboarding_complete": false
+  }
+}
+```
+
+**Важно:**
+- `account_link_url` возвращается только если `onboarding_complete = false`
+- Статус автоматически обновляется из Stripe API при каждом запросе
+
+---
+
+### Webhooks от Stripe
+
+**POST** `/stripe/webhooks`
+
+**НЕ требует аутентификации** (используется только Stripe)
+
+**Описание:**
+Endpoint для получения webhooks от Stripe. Обрабатывает следующие события:
+- `account.updated` - обновление аккаунта
+- `payment_intent.succeeded` - успешный платеж
+- `payment_intent.payment_failed` - неудачный платеж
+- `transfer.created` - создан transfer
+- `transfer.paid` - transfer выплачен
+- `transfer.failed` - transfer не удался
+
+**КРИТИЧЕСКИ ВАЖНО - Настройка SSL/HTTPS:**
+
+Stripe **требует HTTPS** для webhooks в продакшене. На Beget SSL настраивается следующим образом:
+
+1. **Войдите в панель управления Beget**
+2. **Перейдите в раздел "Домены" → "SSL сертификаты"**
+3. **Выберите домен** `danilagames.ru`
+4. **Установите SSL сертификат:**
+   - Можно использовать **Let's Encrypt** (бесплатный, автоматическое обновление)
+   - Или загрузить свой сертификат
+5. **Включите "Принудительное перенаправление HTTP → HTTPS"** (опционально, но рекомендуется)
+
+**После настройки SSL:**
+- Webhook URL в Stripe Dashboard должен быть: `https://danilagames.ru/api/stripe/webhooks`
+- Сервер автоматически проверяет HTTPS в продакшене
+
+**Настройка в Stripe Dashboard:**
+
+1. Перейдите в **Stripe Dashboard** → **Developers** → **Webhooks**
+2. Нажмите **"Add endpoint"**
+3. Укажите URL: `https://danilagames.ru/api/stripe/webhooks`
+4. Выберите события для отправки:
+   - `account.updated`
+   - `payment_intent.succeeded`
+   - `payment_intent.payment_failed`
+   - `transfer.created`
+   - `transfer.paid`
+   - `transfer.failed`
+5. Скопируйте **Signing secret** (начинается с `whsec_`)
+6. Добавьте в `.env` файл:
+   ```
+   STRIPE_WEBHOOK_SECRET=whsec_xxxxx
+   ```
+
+**Важно:**
+- Webhook secret должен быть настроен в переменных окружения (`STRIPE_WEBHOOK_SECRET`)
+- Подпись webhook проверяется автоматически
+- Все события обрабатываются и обновляют соответствующие записи в базе данных
+- В продакшене endpoint автоматически проверяет наличие HTTPS
+
+---
+
+## 💰 Платежи (Payments)
+
+### Создание доната
+
+**POST** `/payments/create-donation`
+
+**Требует аутентификации**
+
+**Описание:**
+Создает PaymentIntent для доната к заявке. Средства холдируются до завершения заявки.
+
+**Request Body:**
+```json
+{
+  "request_id": "uuid-заявки",
+  "user_id": "uuid-пользователя",
+  "amount_cents": 1000,
+  "request_category": "event"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Payment intent created",
+  "data": {
+    "payment_intent_id": "pi_xxxxx",
+    "client_secret": "pi_xxxxx_secret_xxxxx",
+    "message": "Payment intent created"
+  }
+}
+```
+
+**Ошибка (400):**
+```json
+{
+  "success": false,
+  "message": "Ошибка валидации",
+  "errors": [...]
+}
+```
+
+**Важно:**
+- Минимум 50 центов (требование Stripe)
+- `client_secret` используется для PaymentSheet в мобильном приложении
+- PaymentIntent создается с `capture_method: manual` (средства холдируются)
+- Донат автоматически сохраняется в таблицу `donations`
+
+---
+
+### Создание платежа за заявку (cost)
+
+**POST** `/payments/create-request-payment`
+
+**Требует аутентификации**
+
+**Описание:**
+Создает PaymentIntent для оплаты стоимости заявки (если cost > 0).
+
+**Request Body:**
+```json
+{
+  "request_id": "uuid-заявки",
+  "user_id": "uuid-пользователя",
+  "amount_cents": 5000,
+  "request_category": "event"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Payment intent created",
+  "data": {
+    "payment_intent_id": "pi_xxxxx",
+    "client_secret": "pi_xxxxx_secret_xxxxx",
+    "message": "Payment intent created"
+  }
+}
+```
+
+**Важно:**
+- Аналогично созданию доната, но с `metadata[type]: request_payment`
+- Используется для оплаты стоимости заявки создателем
+
+---
+
+### Завершение заявки и выплата волонтёру
+
+**POST** `/payments/complete-request`
+
+**Требует аутентификации**
+
+**Описание:**
+Выполняет capture всех PaymentIntent и создает transfer волонтёру. Рассчитывает комиссии и переводит средства исполнителю.
+
+**Request Body:**
+```json
+{
+  "request_id": "uuid-заявки",
+  "performer_user_id": "uuid-исполнителя"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Request completed and transfer created",
+  "data": {
+    "captured_payment_intents": ["pi_xxxxx", "pi_yyyyy"],
+    "transfer_id": "tr_xxxxx",
+    "transfer_amount_cents": 8177,
+    "platform_fee_cents": 700,
+    "stripe_fee_cents": 1123,
+    "message": "Request completed and transfer created"
+  }
+}
+```
+
+**Ошибка (404):**
+```json
+{
+  "success": false,
+  "message": "Stripe аккаунт исполнителя не найден"
+}
+```
+
+**Логика:**
+1. Получает все PaymentIntent для заявки (основной платеж + донаты)
+2. Выполняет capture всех PaymentIntent
+3. Рассчитывает сумму для transfer:
+   - `total_amount = cost + sum(donations)`
+   - `platform_fee = total_amount * 0.07`
+   - `stripe_fee = (total_amount * 0.109) + 33`
+   - `transfer_amount = total_amount - platform_fee - stripe_fee`
+4. Создает Transfer в Stripe на аккаунт исполнителя
+5. Обновляет статус заявки на `archived`
+
+**Важно:**
+- Если capture не удался для некоторых PaymentIntent, они добавляются в `capture_errors`
+- Заявка всегда обновляется, даже при ошибках Stripe
+- Transfer создается только если у исполнителя есть Stripe аккаунт
+
+---
+
+### Получение истории платежей
+
+**GET** `/payments/history?user_id=<uuid>&page=1&limit=20`
+
+**Требует аутентификации**
+
+**Описание:**
+Возвращает историю платежей пользователя (донаты и платежи за заявки).
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Payment history retrieved",
+  "data": {
+    "payments": [
+      {
+        "id": "pi_xxxxx",
+        "type": "donation",
+        "amount_cents": 1000,
+        "status": "succeeded",
+        "request_id": "uuid-заявки",
+        "request_name": "Clean up park",
+        "created_at": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "total": 50,
+    "page": 1,
+    "limit": 20
+  }
+}
+```
+
+**Параметры:**
+- `user_id` (обязательный) - UUID пользователя
+- `page` (опционально, по умолчанию 1) - номер страницы
+- `limit` (опционально, по умолчанию 20, максимум 100) - количество записей на странице
+
+---
+
+### Получение истории выплат
+
+**GET** `/payments/payouts?user_id=<uuid>&page=1&limit=20`
+
+**Требует аутентификации**
+
+**Описание:**
+Возвращает историю выплат волонтёру (transfers).
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Payout history retrieved",
+  "data": {
+    "payouts": [
+      {
+        "id": "tr_xxxxx",
+        "amount_cents": 8177,
+        "status": "paid",
+        "request_id": "uuid-заявки",
+        "request_name": "Clean up park",
+        "platform_fee_cents": 700,
+        "stripe_fee_cents": 1123,
+        "created_at": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "total": 10,
+    "page": 1,
+    "limit": 20
+  }
+}
+```
+
+**Параметры:**
+- `user_id` (обязательный) - UUID пользователя
+- `page` (опционально, по умолчанию 1) - номер страницы
+- `limit` (опционально, по умолчанию 20, максимум 100) - количество записей на странице
+
+**Статусы transfer:**
+- `pending` - ожидает обработки
+- `paid` - выплачен
+- `failed` - не удался
+- `canceled` - отменен
+
+---
+
 ## Примечания
 
 1. Все даты в формате ISO 8601: `2024-01-01T00:00:00.000Z`
@@ -5321,7 +5928,7 @@ final response = await http.post(
 4. Радиус поиска в метрах
 5. Токен JWT действителен 7 дней (по умолчанию)
 6. При истечении токена получите новый через `/auth/refresh`
-7. Базовый URL: `http://autogie1.bget.ru`
+7. Базовый URL: `https://danilagames.ru`
 8. **Верификация email:** После регистрации автоматически отправляется код верификации (6 цифр), действителен 10 минут
 9. **Real-time чаты:** Используйте Server-Sent Events (SSE) для получения новых сообщений в реальном времени через `GET /api/chats/:chatId/events`
 

@@ -1,3 +1,6 @@
+// КРИТИЧЕСКИ ВАЖНО: Указываем путь к Node.js для Passenger (должно быть ПЕРВОЙ строкой!)
+process.env.PASSENGER_NODEJS = '/home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node';
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -57,6 +60,10 @@ app.set('io', io);
 
 // Подключаем API ПЕРВЫМ (до статических файлов!)
 app.use('/api', apiApp);
+
+// Stripe callback (до статических файлов, чтобы не перехватывалось)
+const stripeCallbackRoutes = require('./api/routes/stripeCallback');
+app.use('/stripeCallback', stripeCallbackRoutes);
 
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

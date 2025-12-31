@@ -167,7 +167,7 @@ router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
     const uploadedPhotos = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const fileUrl = `http://autogie1.bget.ru/uploads/photos/${path.basename(file.path)}`;
+        const fileUrl = `https://danilagames.ru/uploads/photos/${path.basename(file.path)}`;
         uploadedPhotos.push(fileUrl);
       }
     }
@@ -259,7 +259,7 @@ router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async
     const uploadedPhotos = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const fileUrl = `http://autogie1.bget.ru/uploads/photos/${path.basename(file.path)}`;
+        const fileUrl = `https://danilagames.ru/uploads/photos/${path.basename(file.path)}`;
         uploadedPhotos.push(fileUrl);
       }
     }

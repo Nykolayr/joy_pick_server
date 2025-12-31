@@ -14,10 +14,12 @@ const fs = require('fs');
 const path = require('path');
 
 const pool = require('../api/config/database');
+const stripe = require('../api/config/stripe');
 const { 
   sendSpeedCleanupNotification,
   sendReminderNotification,
   sendRequestExpiredNotification,
+  sendRequestRejectedNotification,
   sendEventTimeNotification
 } = require('../api/services/pushNotification');
 const { generateId } = require('../api/utils/uuid');
@@ -749,6 +751,143 @@ async function checkEventTimes() {
 }
 
 /**
+ * Очистка неоплаченных заявок через 24 часа
+ * Удаляет заявки со статусом pending_payment, которые не были оплачены
+ */
+async function cleanupUnpaidRequests() {
+  try {
+    // Находим все заявки со статусом pending_payment, созданные более 24 часов назад
+    const [requests] = await pool.execute(
+      `SELECT id, created_by, payment_intent_id, category
+       FROM requests 
+       WHERE status = 'pending_payment'
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    );
+
+    if (requests.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    let processed = 0;
+    let errors = 0;
+
+    for (const request of requests) {
+      try {
+        // Проверяем статус PaymentIntent в Stripe
+        if (request.payment_intent_id) {
+          try {
+            const paymentIntent = await stripe.paymentIntents.retrieve(request.payment_intent_id);
+            
+            // Если платеж не прошел, удаляем заявку и отменяем PaymentIntent
+            if (paymentIntent.status !== 'succeeded') {
+              // Отменяем PaymentIntent в Stripe
+              try {
+                await stripe.paymentIntents.cancel(request.payment_intent_id);
+              } catch (cancelErr) {
+                // Игнорируем ошибки отмены (возможно, уже отменен)
+              }
+
+              // Отправляем пуш создателю
+              await sendRequestRejectedNotification({
+                userIds: [request.created_by],
+                requestId: request.id,
+                messageType: 'creator',
+                rejectionMessage: 'Your request was deleted because payment was not completed within 24 hours',
+                requestCategory: request.category || 'wasteLocation',
+              });
+
+              // Удаляем заявку из БД
+              await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+
+              // Записываем действие
+              await logCronAction(
+                'cleanupUnpaidRequests',
+                request.id,
+                request.category || 'wasteLocation',
+                `Удаление неоплаченной заявки ${request.id} (24 часа без оплаты)`,
+                'completed',
+                { payment_intent_id: request.payment_intent_id, payment_status: paymentIntent.status }
+              );
+
+              processed++;
+            } else {
+              // Если платеж прошел, обновляем статус заявки (на случай, если webhook не сработал)
+              let defaultStatus = 'new';
+              if (request.category === 'event') {
+                defaultStatus = 'inProgress';
+              }
+
+              await pool.execute(
+                'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+                [defaultStatus, request.id]
+              );
+
+              await logCronAction(
+                'cleanupUnpaidRequests',
+                request.id,
+                request.category || 'wasteLocation',
+                `Обновление статуса заявки ${request.id} на ${defaultStatus} (платеж прошел, но статус не был обновлен)`,
+                'completed',
+                { payment_intent_id: request.payment_intent_id, payment_status: paymentIntent.status }
+              );
+
+              processed++;
+            }
+          } catch (stripeErr) {
+            // Если не удалось получить PaymentIntent, удаляем заявку
+            await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+
+            await logCronAction(
+              'cleanupUnpaidRequests',
+              request.id,
+              request.category || 'wasteLocation',
+              `Удаление заявки ${request.id} (ошибка при проверке PaymentIntent)`,
+              'completed',
+              { error: stripeErr.message }
+            );
+
+            processed++;
+          }
+        } else {
+          // Если payment_intent_id отсутствует, просто удаляем заявку
+          await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+
+          await logCronAction(
+            'cleanupUnpaidRequests',
+            request.id,
+            request.category || 'wasteLocation',
+            `Удаление заявки ${request.id} (payment_intent_id отсутствует)`,
+            'completed'
+          );
+
+          processed++;
+        }
+      } catch (error) {
+        errors++;
+        await logCronAction(
+          'cleanupUnpaidRequests',
+          request.id,
+          request.category || 'wasteLocation',
+          `Ошибка при очистке неоплаченной заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: error.message || 'Неизвестная ошибка',
+            errorName: error.name || 'Error',
+            errorStack: error.stack,
+            requestId: request.id
+          }
+        );
+      }
+    }
+
+    return { processed, errors, total: requests.length };
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Здесь можно добавлять новые периодические задачи
  */
 async function runAllCronTasks() {
@@ -760,6 +899,7 @@ async function runAllCronTasks() {
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
     results.checkEventTimes = await checkEventTimes();
     results.notifyInactiveWasteRequests = await notifyInactiveWasteRequests();
+    results.cleanupUnpaidRequests = await cleanupUnpaidRequests();
 
     const currentHour = new Date().getHours();
     if (currentHour === 0) {
@@ -864,6 +1004,7 @@ module.exports = {
   checkExpiredWasteJoins,
   notifyInactiveWasteRequests,
   deleteInactiveRequests,
-  checkEventTimes
+  checkEventTimes,
+  cleanupUnpaidRequests
 };
 

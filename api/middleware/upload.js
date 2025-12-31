@@ -96,7 +96,7 @@ const uploadMultiple = upload.array('files', 20);
  * @returns {String} URL файла
  */
 function getFileUrl(filename, subfolder = 'general') {
-  const baseUrl = process.env.BASE_URL || 'http://autogie1.bget.ru';
+  const baseUrl = process.env.BASE_URL || 'https://danilagames.ru';
   return `${baseUrl}/uploads/${subfolder}/${filename}`;
 }
 
