@@ -207,6 +207,18 @@ async function deleteGroupChatForRequest(requestId) {
   );
 }
 
+/**
+ * Удалить ВСЕ чаты заявки (group и private)
+ * @param {string} requestId - ID заявки
+ */
+async function deleteAllChatsForRequest(requestId) {
+  // Удаляем все чаты (group и private), связанные с заявкой
+  await pool.execute(
+    `DELETE FROM chats WHERE request_id = ?`,
+    [requestId]
+  );
+}
+
 module.exports = {
   addUserToChat,
   removeUserFromChat,
@@ -214,5 +226,6 @@ module.exports = {
   addUserToGroupChatByRequest,
   removeUserFromGroupChatByRequest,
   deleteGroupChatForRequest,
+  deleteAllChatsForRequest,
   getGroupChatIdByRequest
 };

@@ -1334,9 +1334,9 @@ router.delete('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
-    // Удаляем групповой чат заявки (CASCADE должен удалить автоматически, но для надежности удаляем явно)
-    const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
-    await deleteGroupChatForRequest(id);
+    // Удаляем ВСЕ чаты заявки (group и private) перед удалением заявки
+    const { deleteAllChatsForRequest } = require('../utils/chatHelpers');
+    await deleteAllChatsForRequest(id);
 
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
@@ -2721,7 +2721,7 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
           created_at, updated_at, rejection_reason, rejection_message, actual_participants,
           photos_before, photos_after, registered_participants, waste_types, expires_at,
           extended_count, participant_completions, group_chat_id, private_chats
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           requestId,
           userId,

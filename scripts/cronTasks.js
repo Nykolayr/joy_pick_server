@@ -23,6 +23,7 @@ const {
   sendEventTimeNotification
 } = require('../api/services/pushNotification');
 const { generateId } = require('../api/utils/uuid');
+const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
 
 // Путь к файлу с информацией о последнем запуске
 const LAST_RUN_FILE = path.join(__dirname, '..', 'logs', 'cron_last_run.json');
@@ -796,6 +797,9 @@ async function cleanupUnpaidRequests() {
                 requestCategory: request.category || 'wasteLocation',
               });
 
+              // Удаляем ВСЕ чаты заявки перед удалением заявки
+              await deleteAllChatsForRequest(request.id);
+
               // Удаляем заявку из БД
               await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
 
@@ -835,6 +839,9 @@ async function cleanupUnpaidRequests() {
             }
           } catch (stripeErr) {
             // Если не удалось получить PaymentIntent, удаляем заявку
+            // Удаляем ВСЕ чаты заявки перед удалением заявки
+            await deleteAllChatsForRequest(request.id);
+            
             await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
 
             await logCronAction(
@@ -850,6 +857,9 @@ async function cleanupUnpaidRequests() {
           }
         } else {
           // Если payment_intent_id отсутствует, просто удаляем заявку
+          // Удаляем ВСЕ чаты заявки перед удалением заявки
+          await deleteAllChatsForRequest(request.id);
+          
           await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
 
           await logCronAction(
