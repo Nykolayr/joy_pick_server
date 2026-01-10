@@ -8,9 +8,10 @@ node_modules/
 package-lock.json
 
 # Environment variables
-# .env - оставляем для удобства, но не коммитим чувствительные данные
+.env
 .env.local
 .env.production
+.env.*.local
 
 # Logs
 logs/
