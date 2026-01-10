@@ -1367,25 +1367,66 @@ router.delete('/:id', authenticate, async (req, res) => {
       }
     });
 
-    // Отменяем все PaymentIntent в Stripe (освобождаем замороженные средства)
+    // Отменяем или возвращаем все PaymentIntent в Stripe
+    // Для requires_capture - отменяем (размораживаем средства)
+    // Для succeeded - делаем refund (возвращаем деньги на карту)
     const cancelErrors = [];
+    const refundErrors = [];
+    const refundedPaymentIntents = [];
+    
     for (const paymentIntentId of paymentIntentIds) {
       try {
-        // Проверяем статус PaymentIntent перед отменой
+        // Проверяем статус PaymentIntent
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         
-        // Отменяем только если статус позволяет (requires_capture, requires_payment_method, etc.)
-        // Не отменяем, если уже canceled или succeeded
-        if (paymentIntent.status !== 'canceled' && 
-            paymentIntent.status !== 'succeeded' &&
-            (paymentIntent.status === 'requires_capture' || 
-             paymentIntent.status === 'requires_payment_method' ||
-             paymentIntent.status === 'requires_confirmation' ||
-             paymentIntent.status === 'requires_action')) {
+        if (paymentIntent.status === 'succeeded') {
+          // Платеж уже захвачен - делаем refund (возвращаем деньги на карту)
+          try {
+            // Получаем charge для refund
+            const charges = await stripe.charges.list({
+              payment_intent: paymentIntentId,
+              limit: 1
+            });
+            
+            if (charges.data.length > 0) {
+              const charge = charges.data[0];
+              // Делаем полный refund
+              await stripe.refunds.create({
+                charge: charge.id,
+                reason: 'requested_by_customer'
+              });
+              
+              refundedPaymentIntents.push(paymentIntentId);
+              
+              // Обновляем статус в БД
+              await pool.execute(
+                'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+                ['refunded', paymentIntentId]
+              );
+            }
+          } catch (refundErr) {
+            refundErrors.push({
+              payment_intent_id: paymentIntentId,
+              error: refundErr.message
+            });
+          }
+        } else if (paymentIntent.status !== 'canceled' && 
+                   paymentIntent.status !== 'succeeded' &&
+                   (paymentIntent.status === 'requires_capture' || 
+                    paymentIntent.status === 'requires_payment_method' ||
+                    paymentIntent.status === 'requires_confirmation' ||
+                    paymentIntent.status === 'requires_action')) {
+          // Платеж еще не захвачен - отменяем (размораживаем средства)
           await stripe.paymentIntents.cancel(paymentIntentId);
+          
+          // Обновляем статус в БД
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            ['canceled', paymentIntentId]
+          );
         }
       } catch (cancelErr) {
-        // Игнорируем ошибки отмены (возможно, уже отменен или capture)
+        // Игнорируем ошибки отмены/refund (возможно, уже отменен или refunded)
         cancelErrors.push({
           payment_intent_id: paymentIntentId,
           error: cancelErr.message
@@ -1399,12 +1440,25 @@ router.delete('/:id', authenticate, async (req, res) => {
 
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
-    // Возвращаем информацию об отмене PaymentIntent
+    // Возвращаем информацию об отмене/refund PaymentIntent
     if (paymentIntentIds.length > 0) {
-      success(res, {
-        canceled_payment_intents: paymentIntentIds.length - cancelErrors.length,
-        cancel_errors: cancelErrors.length > 0 ? cancelErrors : undefined
-      }, 'Заявка удалена, замороженные средства возвращены');
+      const response = {
+        refunded_payment_intents: refundedPaymentIntents.length,
+        canceled_payment_intents: paymentIntentIds.length - refundedPaymentIntents.length - cancelErrors.length - refundErrors.length
+      };
+      
+      if (cancelErrors.length > 0) {
+        response.cancel_errors = cancelErrors;
+      }
+      if (refundErrors.length > 0) {
+        response.refund_errors = refundErrors;
+      }
+      
+      const message = refundedPaymentIntents.length > 0 
+        ? 'Заявка удалена, деньги возвращены на карты'
+        : 'Заявка удалена, замороженные средства возвращены';
+      
+      success(res, response, message);
     } else {
       success(res, null, 'Заявка удалена');
     }

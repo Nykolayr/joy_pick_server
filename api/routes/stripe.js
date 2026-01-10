@@ -304,6 +304,10 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
         await handlePaymentIntentSucceeded(event.data.object);
         break;
 
+      case 'payment_intent.requires_capture':
+        await handlePaymentIntentRequiresCapture(event.data.object);
+        break;
+
       case 'payment_intent.payment_failed':
         await handlePaymentIntentFailed(event.data.object);
         break;
@@ -356,6 +360,81 @@ async function handleAccountUpdated(account) {
         account.id
       ]
     );
+  }
+}
+
+/**
+ * Обработка события payment_intent.requires_capture
+ * Автоматически захватываем платеж после подтверждения пользователем
+ * Это предотвращает возврат денег через 7 дней
+ */
+async function handlePaymentIntentRequiresCapture(paymentIntent) {
+  try {
+    // Проверяем, что это наш PaymentIntent
+    const [paymentIntents] = await pool.execute(
+      'SELECT * FROM payment_intents WHERE payment_intent_id = ?',
+      [paymentIntent.id]
+    );
+
+    if (paymentIntents.length === 0) {
+      return; // Не наш PaymentIntent
+    }
+
+    const paymentIntentData = paymentIntents[0];
+
+    // Обновляем статус в БД
+    await pool.execute(
+      'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+      ['requires_capture', paymentIntent.id]
+    );
+
+    // Автоматически захватываем платеж
+    try {
+      const capturedPaymentIntent = await stripe.paymentIntents.capture(paymentIntent.id);
+      
+      // Обновляем статус на succeeded
+      await pool.execute(
+        'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+        ['succeeded', paymentIntent.id]
+      );
+
+      // Если это платеж за заявку (request_payment), обновляем статус заявки
+      // Для донатов (donation) просто обновляем статус в БД, заявка не меняется
+      if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
+        const requestId = paymentIntentData.request_id;
+        
+        const [requests] = await pool.execute(
+          'SELECT category, status FROM requests WHERE id = ?',
+          [requestId]
+        );
+
+        if (requests.length > 0 && requests[0].status === 'pending_payment') {
+          const category = requests[0].category;
+          
+          // Определяем стандартный статус по категории
+          let defaultStatus = 'new';
+          if (category === 'event') {
+            defaultStatus = 'inProgress';
+          } else if (category === 'wasteLocation' || category === 'speedCleanup') {
+            defaultStatus = 'new';
+          }
+
+          // Обновляем статус заявки на стандартный
+          await pool.execute(
+            'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+            [defaultStatus, requestId]
+          );
+        }
+      }
+      // Для донатов (type === 'donation') capture уже сделан, статус обновлен, ничего дополнительного не требуется
+    } catch (captureErr) {
+      // Логируем ошибку capture, но не прерываем выполнение
+      console.error('Ошибка автоматического capture PaymentIntent:', captureErr);
+      // Статус остается requires_capture, можно попробовать capture позже
+    }
+  } catch (err) {
+    // Логируем ошибку, но не прерываем выполнение
+    console.error('Ошибка обработки payment_intent.requires_capture:', err);
   }
 }
 

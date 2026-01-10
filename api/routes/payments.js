@@ -288,14 +288,28 @@ router.post('/complete-request', authenticate, [
 
     for (const paymentIntentId of allPaymentIntents) {
       try {
-        const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId);
-        capturedPaymentIntents.push(paymentIntentId);
+        // Проверяем текущий статус PaymentIntent в Stripe
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         
-        // Обновляем статус в БД
-        await pool.execute(
-          'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
-          ['succeeded', paymentIntentId]
-        );
+        // Захватываем только если статус requires_capture
+        // Если уже succeeded, значит уже захвачен (например, через webhook)
+        if (paymentIntent.status === 'requires_capture') {
+          await stripe.paymentIntents.capture(paymentIntentId);
+          capturedPaymentIntents.push(paymentIntentId);
+          
+          // Обновляем статус в БД
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            ['succeeded', paymentIntentId]
+          );
+        } else if (paymentIntent.status === 'succeeded') {
+          // Уже захвачен, просто обновляем статус в БД если нужно
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            ['succeeded', paymentIntentId]
+          );
+          capturedPaymentIntents.push(paymentIntentId);
+        }
       } catch (captureErr) {
         captureErrors.push({
           payment_intent_id: paymentIntentId,
