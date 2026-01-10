@@ -195,7 +195,7 @@ router.post('/login', [
 
     // Поиск пользователя (включая auth_type для определения способа регистрации)
     const [users] = await pool.execute(
-      'SELECT id, email, password_hash, display_name, uid, admin, auth_type FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, display_name, uid, admin, super_admin, auth_type FROM users WHERE email = ?',
       [email]
     );
 
@@ -273,7 +273,8 @@ router.post('/login', [
       userId: user.id,
       email: user.email,
       uid: user.uid,
-      isAdmin: user.admin || false
+      isAdmin: user.admin || false,
+      isSuperAdmin: user.super_admin || false
     });
 
     // Обновление времени последнего входа (если нужно)
@@ -312,7 +313,7 @@ router.get('/me', authenticate, async (req, res) => {
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
        FROM users WHERE id = ?`,
       [req.user.userId]
     );
@@ -336,7 +337,7 @@ router.post('/refresh', authenticate, async (req, res) => {
   try {
     // Проверка существования пользователя
     const [users] = await pool.execute(
-      'SELECT id, email, uid, admin FROM users WHERE id = ?',
+      'SELECT id, email, uid, admin, super_admin FROM users WHERE id = ?',
       [req.user.userId]
     );
 
@@ -351,7 +352,8 @@ router.post('/refresh', authenticate, async (req, res) => {
       userId: user.id,
       email: user.email,
       uid: user.uid,
-      isAdmin: user.admin || false
+      isAdmin: user.admin || false,
+      isSuperAdmin: user.super_admin || false
     });
 
     success(res, { token }, 'Токен обновлен');
@@ -465,13 +467,14 @@ router.post('/firebase', [
 
     // Поиск пользователя по uid (Firebase UID)
     const [existingUsers] = await pool.execute(
-      'SELECT id, email, uid, admin FROM users WHERE uid = ?',
+      'SELECT id, email, uid, admin, super_admin FROM users WHERE uid = ?',
       [firebaseUid]
     );
 
     let userId;
     let userUid;
     let isAdmin = false;
+    let isSuperAdmin = false;
 
     if (existingUsers.length > 0) {
       // Пользователь существует - обновляем данные
@@ -479,6 +482,7 @@ router.post('/firebase', [
       userId = existingUser.id;
       userUid = existingUser.uid;
       isAdmin = existingUser.admin || false;
+      isSuperAdmin = existingUser.super_admin || false;
 
       // Обновляем данные пользователя (email, display_name, photo_url могут измениться)
       // Для first_name и second_name: если переданы с фронта, обновляем (даже если null)
@@ -598,10 +602,11 @@ router.post('/firebase', [
 
         // Получаем данные обновленного пользователя
         const [updatedUsers] = await pool.execute(
-          'SELECT admin FROM users WHERE id = ?',
+          'SELECT admin, super_admin FROM users WHERE id = ?',
           [userId]
         );
         isAdmin = updatedUsers[0]?.admin || false;
+        isSuperAdmin = updatedUsers[0]?.super_admin || false;
       } else {
         // Создаем нового пользователя
         // Для Apple Sign In email может быть null или скрытым email от Apple
@@ -621,7 +626,8 @@ router.post('/firebase', [
       userId,
       email,
       uid: userUid,
-      isAdmin
+      isAdmin,
+      isSuperAdmin
     });
 
     // Получение полных данных пользователя
@@ -795,7 +801,8 @@ router.post('/verify-email', [
       userId,
       email,
       uid,
-      isAdmin: false
+      isAdmin: false,
+      isSuperAdmin: false
     });
 
     // Получение созданного пользователя

@@ -57,6 +57,7 @@ app.use('/waste-types', wasteTypesRoutes);
 app.use('/cron', cronRoutes);
 app.use('/chats', chatRoutes);
 app.use('/stripe', stripeRoutes);
+app.use('/stripe-admin', require('./routes/stripeAdmin'));
 app.use('/payments', paymentRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
@@ -126,6 +127,7 @@ app.get('/', (req, res) => {
       wasteTypes: '/api/waste-types',
       chats: '/api/chats',
       stripe: '/api/stripe',
+      stripeAdmin: '/api/stripe-admin',
       payments: '/api/payments',
       info: '/api/info',
       health: '/api/health'
@@ -154,6 +156,7 @@ app.get('/info', (req, res) => {
       chats: '/api/chats',
       cron: '/api/cron',
       stripe: '/api/stripe',
+      stripeAdmin: '/api/stripe-admin',
       payments: '/api/payments',
       info: '/api/info',
       health: '/api/health',

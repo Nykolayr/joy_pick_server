@@ -1,6 +1,6 @@
 # Структура таблицы users
 
-**Всего колонок:** 27
+**Всего колонок:** 28
 
 ## Колонки:
 
@@ -25,7 +25,8 @@
 19. `stripe_id` - varchar(255) - NULL
 20. `score` - int - NULL, DEFAULT 0
 21. `admin` - tinyint(1) - NULL, DEFAULT 0
-22. `fcm_token` - text - NULL
+22. `super_admin` - tinyint(1) - NULL, DEFAULT 0
+23. `fcm_token` - text - NULL
 23. `auth_type` - varchar(50) - NULL, DEFAULT 'email'
 24. `latitude` - decimal(10,8) - NULL
 25. `longitude` - decimal(11,8) - NULL
@@ -39,10 +40,10 @@ INSERT INTO users (
   id, email, email_verified, password_hash, display_name, photo_url, uid,
   phone_number, city, first_name, second_name, country, gender,
   count_performed, count_orders, jcoins, coins_from_created, coins_from_participation,
-  stripe_id, score, admin, fcm_token, auth_type, latitude, longitude,
+  stripe_id, score, admin, super_admin, fcm_token, auth_type, latitude, longitude,
   created_time, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 ```
 
-**Всего:** 27 колонок = 25 плейсхолдеров `?` + 2 автоматических значений для `created_time` и `updated_at`
+**Всего:** 28 колонок = 26 плейсхолдеров `?` + 2 автоматических значений для `created_time` и `updated_at`
 

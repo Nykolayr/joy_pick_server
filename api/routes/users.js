@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
 const { success, error } = require('../utils/response');
-const { authenticate, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin, requireSuperAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadUserAvatar, getFileUrlFromPath } = require('../middleware/upload');
 
@@ -25,7 +25,7 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
       SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
        FROM users
     `;
     const params = [];
@@ -79,7 +79,7 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
       SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
        FROM users
     `;
     const params = [];
@@ -116,7 +116,7 @@ router.get('/:id', authenticate, async (req, res) => {
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
        FROM users WHERE id = ?`,
       [id]
     );
@@ -132,6 +132,7 @@ router.get('/:id', authenticate, async (req, res) => {
       // Удаляем чувствительные поля
       delete user.fcm_token;
       delete user.admin;
+      delete user.super_admin;
       delete user.stripe_id;
       // Можно также скрыть email и phone_number, если нужно
       // delete user.email;
@@ -164,7 +165,9 @@ router.put('/:id', authenticate, uploadUserAvatar, [
   body('photo_url').optional().isURL(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
-  body('fcm_token').optional().isString()
+  body('fcm_token').optional().isString(),
+  body('admin').optional().isBoolean(),
+  body('super_admin').optional().isBoolean()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -206,7 +209,9 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       photo_url,
       latitude,
       longitude,
-      fcm_token
+      fcm_token,
+      admin,
+      super_admin
     } = bodyData;
 
     // Используем загруженный файл, если есть, иначе используем photo_url из JSON
@@ -214,7 +219,7 @@ router.put('/:id', authenticate, uploadUserAvatar, [
 
     // Проверка существования пользователя
     const [existingUsers] = await pool.execute(
-      'SELECT id FROM users WHERE id = ?',
+      'SELECT id, admin, super_admin FROM users WHERE id = ?',
       [id]
     );
 
@@ -271,6 +276,39 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       params.push(fcm_token);
     }
 
+    // Обработка admin и super_admin (только для суперадминов)
+    if (req.user.isSuperAdmin) {
+      // Нельзя снять права суперадмина у самого себя
+      if (req.user.userId === id && super_admin === false) {
+        return error(res, 'Нельзя снять права суперадмина у самого себя', 400);
+      }
+
+      if (admin !== undefined) {
+        updates.push('admin = ?');
+        params.push(admin ? 1 : 0);
+        
+        // Если убираем admin, автоматически убираем super_admin
+        if (admin === false) {
+          updates.push('super_admin = ?');
+          params.push(0);
+        }
+      }
+
+      if (super_admin !== undefined) {
+        updates.push('super_admin = ?');
+        params.push(super_admin ? 1 : 0);
+        
+        // Если назначаем super_admin, автоматически делаем его admin
+        if (super_admin === true && admin === undefined) {
+          updates.push('admin = ?');
+          params.push(1);
+        }
+      }
+    } else if (admin !== undefined || super_admin !== undefined) {
+      // Если не суперадмин пытается изменить admin/super_admin
+      return error(res, 'Только суперадмин может изменять права администратора', 403);
+    }
+
     if (updates.length === 0) {
       return error(res, 'Нет данных для обновления', 400);
     }
@@ -288,7 +326,7 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
        FROM users WHERE id = ?`,
       [id]
     );
@@ -379,6 +417,91 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Ошибка удаления пользователя:', err);
     error(res, 'Ошибка при удалении пользователя', 500, err);
+  }
+});
+
+/**
+ * PUT /api/users/:id/admin
+ * Назначение/снятие прав администратора (только для суперадмина)
+ */
+router.put('/:id/admin', authenticate, requireSuperAdmin, [
+  body('admin').isBoolean().withMessage('admin должен быть boolean'),
+  body('super_admin').optional().isBoolean().withMessage('super_admin должен быть boolean')
+], async (req, res) => {
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+    }
+
+    const { id } = req.params;
+    const { admin, super_admin } = req.body;
+
+    // Нельзя снять права суперадмина у самого себя
+    if (req.user.userId === id && super_admin === false) {
+      return error(res, 'Нельзя снять права суперадмина у самого себя', 400);
+    }
+
+    // Проверка существования пользователя
+    const [existingUsers] = await pool.execute(
+      'SELECT id, email, admin, super_admin FROM users WHERE id = ?',
+      [id]
+    );
+
+    if (existingUsers.length === 0) {
+      return error(res, 'Пользователь не найден', 404);
+    }
+
+    const existingUser = existingUsers[0];
+
+    // Формирование запроса обновления
+    const updates = [];
+    const params = [];
+
+    if (admin !== undefined) {
+      updates.push('admin = ?');
+      params.push(admin ? 1 : 0);
+      
+      // Если убираем admin, автоматически убираем super_admin
+      if (admin === false) {
+        updates.push('super_admin = ?');
+        params.push(0);
+      }
+    }
+
+    // Только суперадмин может назначать суперадмина
+    if (super_admin !== undefined) {
+      updates.push('super_admin = ?');
+      params.push(super_admin ? 1 : 0);
+      
+      // Если назначаем суперадмина, автоматически делаем его админом
+      if (super_admin === true && admin === undefined) {
+        updates.push('admin = ?');
+        params.push(1);
+      }
+    }
+
+    if (updates.length === 0) {
+      return error(res, 'Нет данных для обновления', 400);
+    }
+
+    updates.push('updated_at = NOW()');
+    params.push(id);
+
+    await pool.execute(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+
+    // Получение обновленных данных
+    const [updatedUsers] = await pool.execute(
+      'SELECT id, email, display_name, admin, super_admin FROM users WHERE id = ?',
+      [id]
+    );
+
+    success(res, { user: updatedUsers[0] }, 'Права администратора обновлены');
+  } catch (err) {
+    return error(res, 'Ошибка при обновлении прав администратора', 500, err);
   }
 });
 

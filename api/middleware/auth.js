@@ -40,8 +40,23 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+/**
+ * Middleware для проверки прав суперадмина
+ * Суперадмин может назначать админов и получать Stripe данные
+ */
+function requireSuperAdmin(req, res, next) {
+  if (!req.user || !req.user.isSuperAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Доступ запрещен. Требуются права суперадминистратора'
+    });
+  }
+  next();
+}
+
 module.exports = {
   authenticate,
-  requireAdmin
+  requireAdmin,
+  requireSuperAdmin
 };
 
