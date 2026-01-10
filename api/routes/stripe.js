@@ -81,7 +81,7 @@ router.post('/create-account', authenticate, [
           }
         },
         business_profile: {
-          url: `https://danilagames.ru/profile/${user_id}`,
+          url: `https://joyvee.live/profile/${user_id}`,
           product_description: 'Environmental cleanup volunteer on JoyPick platform',
           mcc: '8398', // Charitable organizations
           support_email: email,
@@ -117,7 +117,7 @@ router.post('/create-account', authenticate, [
               }
             },
             business_profile: {
-              url: `https://danilagames.ru/profile/${user_id}`,
+              url: `https://joyvee.live/profile/${user_id}`,
               product_description: 'Environmental cleanup volunteer on JoyPick platform',
               mcc: '8398',
               support_email: email,
@@ -308,6 +308,10 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
         await handlePaymentIntentFailed(event.data.object);
         break;
 
+      case 'payment_intent.canceled':
+        await handlePaymentIntentCanceled(event.data.object);
+        break;
+
       case 'transfer.created':
         await handleTransferCreated(event.data.object);
         break;
@@ -421,6 +425,7 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
 /**
  * Обработка события payment_intent.payment_failed
+ * Удаляем заявку, если оплата не прошла
  */
 async function handlePaymentIntentFailed(paymentIntent) {
   const [paymentIntents] = await pool.execute(
@@ -429,10 +434,105 @@ async function handlePaymentIntentFailed(paymentIntent) {
   );
 
   if (paymentIntents.length > 0) {
+    const paymentIntentData = paymentIntents[0];
+    
+    // Обновляем статус PaymentIntent
     await pool.execute(
       'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
       ['canceled', paymentIntent.id]
     );
+
+    // Если это платеж за заявку (type = 'request_payment'), удаляем заявку
+    if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
+      await deleteRequestIfPendingPayment(paymentIntentData.request_id, 'Payment failed');
+    }
+    
+    // Если это донат (type = 'donation'), удаляем донат и откатываем total_contributed
+    if (paymentIntentData.type === 'donation' && paymentIntentData.request_id) {
+      await deleteDonationIfFailed(paymentIntentData.payment_intent_id, paymentIntentData.request_id);
+    }
+  }
+}
+
+/**
+ * Обработка события payment_intent.canceled
+ * Удаляем заявку, если оплата была отменена
+ */
+async function handlePaymentIntentCanceled(paymentIntent) {
+  const [paymentIntents] = await pool.execute(
+    'SELECT * FROM payment_intents WHERE payment_intent_id = ?',
+    [paymentIntent.id]
+  );
+
+  if (paymentIntents.length > 0) {
+    const paymentIntentData = paymentIntents[0];
+    
+    // Обновляем статус PaymentIntent
+    await pool.execute(
+      'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+      ['canceled', paymentIntent.id]
+    );
+
+    // Если это платеж за заявку (type = 'request_payment'), удаляем заявку
+    if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
+      await deleteRequestIfPendingPayment(paymentIntentData.request_id, 'Payment canceled');
+    }
+    
+    // Если это донат (type = 'donation'), удаляем донат и откатываем total_contributed
+    if (paymentIntentData.type === 'donation' && paymentIntentData.request_id) {
+      await deleteDonationIfFailed(paymentIntentData.payment_intent_id, paymentIntentData.request_id);
+    }
+  }
+}
+
+/**
+ * Удаляет заявку, если она в статусе pending_payment
+ * Используется при отмене/ошибке оплаты
+ */
+async function deleteRequestIfPendingPayment(requestId, reason) {
+  try {
+    // Проверяем статус заявки и получаем категорию
+    const [requests] = await pool.execute(
+      'SELECT id, status, created_by, category FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    if (requests.length === 0) {
+      return; // Заявка уже удалена
+    }
+
+    const request = requests[0];
+
+    // Удаляем только если заявка в статусе pending_payment
+    if (request.status !== 'pending_payment') {
+      return; // Заявка уже оплачена или имеет другой статус
+    }
+
+    // Удаляем ВСЕ чаты заявки
+    const { deleteAllChatsForRequest } = require('../utils/chatHelpers');
+    await deleteAllChatsForRequest(requestId);
+
+    // Удаляем заявку
+    await pool.execute('DELETE FROM requests WHERE id = ?', [requestId]);
+
+    // Отправляем push-уведомление создателю (если есть)
+    if (request.created_by) {
+      const { sendRequestRejectedNotification } = require('../services/pushNotification');
+      try {
+        await sendRequestRejectedNotification({
+          userIds: [request.created_by],
+          requestId: requestId,
+          messageType: 'creator',
+          rejectionMessage: `Заявка была удалена: ${reason}`,
+          requestCategory: request.category || 'wasteLocation', // Получаем категорию из БД
+        });
+      } catch (notifErr) {
+        // Игнорируем ошибки уведомлений
+      }
+    }
+  } catch (err) {
+    // Логируем ошибку, но не прерываем выполнение
+    console.error('Ошибка при удалении заявки после отмены оплаты:', err);
   }
 }
 
@@ -522,6 +622,48 @@ async function handleTransferFailed(transfer) {
     } catch (notifErr) {
       // Игнорируем ошибки уведомлений
     }
+  }
+}
+
+/**
+ * Удаляет донат при ошибке/отмене оплаты
+ * Откатывает total_contributed в заявке
+ */
+async function deleteDonationIfFailed(paymentIntentId, requestId) {
+  try {
+    // Находим донат по payment_intent_id
+    const [donations] = await pool.execute(
+      'SELECT id, amount FROM donations WHERE payment_intent_id = ?',
+      [paymentIntentId]
+    );
+
+    if (donations.length === 0) {
+      return; // Донат уже удален или не найден
+    }
+
+    const donation = donations[0];
+
+    // Откатываем total_contributed в заявке
+    const [requests] = await pool.execute(
+      'SELECT total_contributed FROM requests WHERE id = ?',
+      [requestId]
+    );
+
+    if (requests.length > 0) {
+      const currentTotal = parseFloat(requests[0].total_contributed || 0);
+      const newTotal = Math.max(0, currentTotal - parseFloat(donation.amount)); // Не может быть отрицательным
+      
+      await pool.execute(
+        'UPDATE requests SET total_contributed = ?, updated_at = NOW() WHERE id = ?',
+        [newTotal, requestId]
+      );
+    }
+
+    // Удаляем донат
+    await pool.execute('DELETE FROM donations WHERE id = ?', [donation.id]);
+  } catch (err) {
+    // Логируем ошибку, но не прерываем выполнение
+    console.error('Ошибка при удалении доната после отмены оплаты:', err);
   }
 }
 

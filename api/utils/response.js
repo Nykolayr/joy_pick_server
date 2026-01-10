@@ -48,6 +48,7 @@ function error(res, message = 'Произошла ошибка', statusCode = 40
     }
     
     // Формируем errorDetails со всеми деталями
+    // Добавляем ВСЕ свойства Error объекта
     response.errorDetails = {
       message: errors.message || 'Unknown error',
       name: errors.name || 'Error',
@@ -58,6 +59,13 @@ function error(res, message = 'Произошла ошибка', statusCode = 40
       sqlState: errors.sqlState,
       stack: errors.stack
     };
+    
+    // Добавляем все дополнительные свойства из Error объекта
+    for (const key in errors) {
+      if (!['message', 'name', 'stack'].includes(key) && !response.errorDetails.hasOwnProperty(key)) {
+        response.errorDetails[key] = errors[key];
+      }
+    }
   } else if (errors) {
     // Если errors - это массив (валидация), добавляем как есть
     if (Array.isArray(errors)) {

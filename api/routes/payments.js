@@ -15,7 +15,7 @@ const router = express.Router();
 router.post('/create-donation', authenticate, [
   body('request_id').notEmpty().withMessage('request_id обязателен'),
   body('user_id').notEmpty().withMessage('user_id обязателен'),
-  body('amount_cents').isInt({ min: 50 }).withMessage('Минимум 50 центов'),
+  body('amount').isFloat({ min: 0.5 }).withMessage('Минимум 0.5 доллара (50 центов)'),
   body('request_category').optional().isString()
 ], async (req, res) => {
   try {
@@ -24,7 +24,7 @@ router.post('/create-donation', authenticate, [
       return error(res, 'Ошибка валидации', 400, errors.array());
     }
 
-    const { request_id, user_id, amount_cents, request_category } = req.body;
+    const { request_id, user_id, amount, request_category } = req.body;
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
@@ -51,11 +51,24 @@ router.post('/create-donation', authenticate, [
       return error(res, 'Пользователь не найден', 404);
     }
 
+    // Проверяем, что Stripe API ключ настроен
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return error(res, 'Stripe не настроен на сервере', 500);
+    }
+
+    // ВАЖНО: amount приходит в долларах (как возвращается на фронт)
+    // Конвертируем в центы для Stripe
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    
+    if (amountCents < 50) {
+      return error(res, 'Минимум 50 центов (требование Stripe)', 400);
+    }
+
     // Создаем PaymentIntent в Stripe
     let paymentIntent;
     try {
       paymentIntent = await stripe.paymentIntents.create({
-        amount: amount_cents,
+        amount: amountCents,
         currency: 'usd',
         payment_method_types: ['card'],
         capture_method: 'manual', // Холдируем средства
@@ -80,7 +93,7 @@ router.post('/create-donation', authenticate, [
         paymentIntent.id,
         user_id,
         request_id,
-        amount_cents,
+        amountCents,
         'usd',
         paymentIntent.status,
         'donation',
@@ -92,12 +105,12 @@ router.post('/create-donation', authenticate, [
       ]
     );
 
-    // Сохраняем донат в таблицу donations
+    // Сохраняем донат в таблицу donations (amount в долларах)
     const donationId = generateId();
     await pool.execute(
-      `INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-      [donationId, request_id, user_id, amount_cents / 100, paymentIntent.id]
+      `INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [donationId, request_id, user_id, parseFloat(amount), paymentIntent.id]
     );
 
     return success(res, {
@@ -118,7 +131,7 @@ router.post('/create-donation', authenticate, [
 router.post('/create-request-payment', authenticate, [
   body('request_id').notEmpty().withMessage('request_id обязателен'),
   body('user_id').notEmpty().withMessage('user_id обязателен'),
-  body('amount_cents').isInt({ min: 50 }).withMessage('Минимум 50 центов'),
+  body('amount').isFloat({ min: 0.5 }).withMessage('Минимум 0.5 доллара (50 центов)'),
   body('request_category').optional().isString()
 ], async (req, res) => {
   try {
@@ -127,7 +140,7 @@ router.post('/create-request-payment', authenticate, [
       return error(res, 'Ошибка валидации', 400, errors.array());
     }
 
-    const { request_id, user_id, amount_cents, request_category } = req.body;
+    const { request_id, user_id, amount, request_category } = req.body;
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
@@ -154,11 +167,24 @@ router.post('/create-request-payment', authenticate, [
       return error(res, 'Пользователь не найден', 404);
     }
 
+    // Проверяем, что Stripe API ключ настроен
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return error(res, 'Stripe не настроен на сервере', 500);
+    }
+
+    // ВАЖНО: amount приходит в долларах (как возвращается на фронт)
+    // Конвертируем в центы для Stripe
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    
+    if (amountCents < 50) {
+      return error(res, 'Минимум 50 центов (требование Stripe)', 400);
+    }
+
     // Создаем PaymentIntent в Stripe
     let paymentIntent;
     try {
       paymentIntent = await stripe.paymentIntents.create({
-        amount: amount_cents,
+        amount: amountCents,
         currency: 'usd',
         payment_method_types: ['card'],
         capture_method: 'manual', // Холдируем средства
@@ -183,7 +209,7 @@ router.post('/create-request-payment', authenticate, [
         paymentIntent.id,
         user_id,
         request_id,
-        amount_cents,
+        amountCents,
         'usd',
         paymentIntent.status,
         'request_payment',
@@ -280,8 +306,9 @@ router.post('/complete-request', authenticate, [
     }
 
     // Рассчитываем сумму для transfer
-    const costAmount = request.cost ? Math.round(request.cost * 100) : 0; // в центах
-    const donationsAmount = donations.reduce((sum, d) => sum + Math.round(d.amount * 100), 0);
+    // MySQL возвращает decimal как строки, поэтому используем parseFloat
+    const costAmount = request.cost ? Math.round(parseFloat(request.cost) * 100) : 0; // в центах
+    const donationsAmount = donations.reduce((sum, d) => sum + Math.round(parseFloat(d.amount) * 100), 0);
     const totalAmount = costAmount + donationsAmount;
 
     // Комиссия платформы: 7%

@@ -8,9 +8,9 @@ const { generateId } = require('./uuid');
  */
 async function addUserToChat(chatId, userId) {
   try {
-    // Сначала проверяем, существует ли запись
+    // Проверяем, существует ли запись (быстрый запрос с LIMIT 1)
     const [existing] = await pool.execute(
-      `SELECT id FROM chat_participants WHERE chat_id = ? AND user_id = ?`,
+      `SELECT id FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1`,
       [chatId, userId]
     );
     
@@ -21,7 +21,7 @@ async function addUserToChat(chatId, userId) {
         [chatId, userId]
       );
     } else {
-      // Записи нет, создаем новую с id
+      // Записи нет, создаем новую
       const participantId = generateId();
       await pool.execute(
         `INSERT INTO chat_participants (id, chat_id, user_id, joined_at)
@@ -29,16 +29,7 @@ async function addUserToChat(chatId, userId) {
         [participantId, chatId, userId]
       );
     }
-    
-    // Проверяем, что запись действительно создана/обновлена
-    const [check] = await pool.execute(
-      `SELECT COUNT(*) as count FROM chat_participants WHERE chat_id = ? AND user_id = ?`,
-      [chatId, userId]
-    );
-    
-    if (check[0].count === 0) {
-      throw new Error(`Запись не была создана в chat_participants для chat_id=${chatId}, user_id=${userId}`);
-    }
+    // Убрали лишнюю проверку после INSERT - это экономит один запрос к БД
   } catch (err) {
     // Передаем детальную информацию об ошибке
     const errorDetails = {
@@ -64,11 +55,19 @@ async function addUserToChat(chatId, userId) {
  * @returns {Promise<string|null>} - ID чата или null
  */
 async function getGroupChatIdByRequest(requestId) {
-  const [chats] = await pool.execute(
-    `SELECT id FROM chats WHERE type = 'group' AND request_id = ?`,
-    [requestId]
-  );
-  return chats.length > 0 ? chats[0].id : null;
+  try {
+    const [chats] = await pool.execute(
+      `SELECT id FROM chats WHERE type = 'group' AND request_id = ? LIMIT 1`,
+      [requestId]
+    );
+    return chats.length > 0 ? chats[0].id : null;
+  } catch (err) {
+    // Если ошибка БД, пробрасываем дальше
+    const error = new Error(`Ошибка при получении группового чата для заявки ${requestId}: ${err.message}`);
+    error.originalError = err;
+    error.requestId = requestId;
+    throw error;
+  }
 }
 
 /**

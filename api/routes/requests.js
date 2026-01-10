@@ -1334,13 +1334,80 @@ router.delete('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
+    // Получаем все PaymentIntent для заявки (основной платеж и донаты)
+    const [requestData] = await pool.execute(
+      'SELECT payment_intent_id FROM requests WHERE id = ?',
+      [id]
+    );
+    
+    const [donations] = await pool.execute(
+      'SELECT payment_intent_id FROM donations WHERE request_id = ?',
+      [id]
+    );
+
+    // Также ищем PaymentIntent в таблице payment_intents (на случай, если не сохранен в requests)
+    const [paymentIntents] = await pool.execute(
+      'SELECT payment_intent_id FROM payment_intents WHERE request_id = ? AND type = ?',
+      [id, 'request_payment']
+    );
+
+    // Собираем все PaymentIntent ID для отмены
+    const paymentIntentIds = [];
+    if (requestData[0]?.payment_intent_id) {
+      paymentIntentIds.push(requestData[0].payment_intent_id);
+    }
+    donations.forEach(d => {
+      if (d.payment_intent_id && !paymentIntentIds.includes(d.payment_intent_id)) {
+        paymentIntentIds.push(d.payment_intent_id);
+      }
+    });
+    paymentIntents.forEach(pi => {
+      if (pi.payment_intent_id && !paymentIntentIds.includes(pi.payment_intent_id)) {
+        paymentIntentIds.push(pi.payment_intent_id);
+      }
+    });
+
+    // Отменяем все PaymentIntent в Stripe (освобождаем замороженные средства)
+    const cancelErrors = [];
+    for (const paymentIntentId of paymentIntentIds) {
+      try {
+        // Проверяем статус PaymentIntent перед отменой
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        // Отменяем только если статус позволяет (requires_capture, requires_payment_method, etc.)
+        // Не отменяем, если уже canceled или succeeded
+        if (paymentIntent.status !== 'canceled' && 
+            paymentIntent.status !== 'succeeded' &&
+            (paymentIntent.status === 'requires_capture' || 
+             paymentIntent.status === 'requires_payment_method' ||
+             paymentIntent.status === 'requires_confirmation' ||
+             paymentIntent.status === 'requires_action')) {
+          await stripe.paymentIntents.cancel(paymentIntentId);
+        }
+      } catch (cancelErr) {
+        // Игнорируем ошибки отмены (возможно, уже отменен или capture)
+        cancelErrors.push({
+          payment_intent_id: paymentIntentId,
+          error: cancelErr.message
+        });
+      }
+    }
+
     // Удаляем ВСЕ чаты заявки (group и private) перед удалением заявки
     const { deleteAllChatsForRequest } = require('../utils/chatHelpers');
     await deleteAllChatsForRequest(id);
 
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
-    success(res, null, 'Заявка удалена');
+    // Возвращаем информацию об отмене PaymentIntent
+    if (paymentIntentIds.length > 0) {
+      success(res, {
+        canceled_payment_intents: paymentIntentIds.length - cancelErrors.length,
+        cancel_errors: cancelErrors.length > 0 ? cancelErrors : undefined
+      }, 'Заявка удалена, замороженные средства возвращены');
+    } else {
+      success(res, null, 'Заявка удалена');
+    }
   } catch (err) {
     error(res, 'Ошибка при удалении заявки', 500, err);
   }
@@ -1855,8 +1922,9 @@ async function handleWasteApproval(requestId, creatorId) {
     'SELECT cost FROM requests WHERE id = ?',
     [requestId]
   );
-  const totalDonations = donations.reduce((sum, d) => sum + (d.amount || 0), 0);
-  const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
+  // MySQL возвращает decimal как строки, поэтому используем parseFloat
+  const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+  const totalAmount = parseFloat(requestData[0]?.cost || 0) + totalDonations;
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
 
@@ -1945,8 +2013,9 @@ async function handleEventApproval(requestId, creatorId) {
 
   // 5. Переводим деньги заказчику (cost + donations - комиссия)
   // TODO: Реализовать перевод денег через платежную систему
-  const totalDonations = donations.reduce((sum, d) => sum + (d.amount || 0), 0);
-  const totalAmount = (requestData[0]?.cost || 0) + totalDonations;
+  // MySQL возвращает decimal как строки, поэтому используем parseFloat
+  const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+  const totalAmount = parseFloat(requestData[0]?.cost || 0) + totalDonations;
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
 
@@ -2577,7 +2646,6 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
   body('longitude').optional().isFloat(),
   body('city').optional().isString(),
   body('require_payment').optional().isBoolean(),
-  body('amount_cents').optional().isInt({ min: 50 }).withMessage('Минимум 50 центов'),
   body('request_category').optional().isString()
 ], async (req, res) => {
   let connection = null;
@@ -2638,7 +2706,6 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
       plant_tree = false,
       trash_pickup_only = false,
       require_payment = false,
-      amount_cents,
       request_category
     } = bodyData;
 
@@ -2660,15 +2727,16 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
     const userId = req.user.userId;
 
     // Определяем сумму для платежа
+    // ВАЖНО: cost всегда в долларах (decimal), как и возвращается на фронт
     let paymentAmountCents = null;
+    
     if (require_payment) {
-      if (amount_cents) {
-        paymentAmountCents = parseInt(amount_cents);
-      } else if (cost) {
-        paymentAmountCents = Math.round(parseFloat(cost) * 100);
-      } else {
-        return error(res, 'Если require_payment = true, необходимо указать amount_cents или cost', 400);
+      if (!cost || cost <= 0) {
+        return error(res, 'Если require_payment = true, необходимо указать cost > 0', 400);
       }
+      
+      // Конвертируем cost (в долларах) в центы для PaymentIntent
+      paymentAmountCents = Math.round(parseFloat(cost) * 100);
 
       if (paymentAmountCents < 50) {
         return error(res, 'Минимум 50 центов (требование Stripe)', 400);
@@ -2774,19 +2842,32 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
       let stripePaymentIntentId = null;
 
       if (require_payment && paymentAmountCents > 0) {
+        // Проверяем, что Stripe API ключ настроен
+        if (!process.env.STRIPE_SECRET_KEY) {
+          await connection.rollback();
+          connection.release();
+          return error(res, 'Stripe не настроен на сервере', 500);
+        }
+
         try {
-          const stripePaymentIntent = await stripe.paymentIntents.create({
-            amount: paymentAmountCents,
-            currency: 'usd',
-            payment_method_types: ['card'],
-            capture_method: 'manual',
-            metadata: {
-              request_id: requestId,
-              user_id: userId,
-              request_category: request_category || category,
-              type: 'request_payment'
-            }
-          });
+          // Создаем PaymentIntent с таймаутом
+          const stripePaymentIntent = await Promise.race([
+            stripe.paymentIntents.create({
+              amount: paymentAmountCents,
+              currency: 'usd',
+              payment_method_types: ['card'],
+              capture_method: 'manual',
+              metadata: {
+                request_id: requestId,
+                user_id: userId,
+                request_category: request_category || category,
+                type: 'request_payment'
+              }
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Stripe API timeout: создание PaymentIntent заняло больше 15 секунд')), 15000)
+            )
+          ]);
 
           stripePaymentIntentId = stripePaymentIntent.id;
           clientSecret = stripePaymentIntent.client_secret;
@@ -2828,14 +2909,29 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
           // Если ошибка при создании PaymentIntent, откатываем транзакцию
           await connection.rollback();
           connection.release();
-          return error(res, 'Ошибка при создании PaymentIntent', 500, stripeErr);
+          
+          // Возвращаем детальную ошибку в ответе API
+          const errorObj = new Error(stripeErr.message || 'Неизвестная ошибка при создании PaymentIntent');
+          errorObj.type = stripeErr.type || 'StripeError';
+          errorObj.code = stripeErr.code || 'STRIPE_ERROR';
+          errorObj.statusCode = stripeErr.statusCode || 500;
+          errorObj.requestId = requestId;
+          errorObj.amountCents = paymentAmountCents;
+          errorObj.stripeError = stripeErr.raw ? stripeErr.raw : null;
+          
+          return error(res, 'Ошибка при создании PaymentIntent в Stripe', 500, errorObj);
         }
       }
 
-      // Создаем групповой чат
+      // Создаем групповой чат с таймаутом (не блокируем создание заявки)
       let groupChatId = null;
       try {
-        groupChatId = await createGroupChatForRequest(requestId, userId, category);
+        groupChatId = await Promise.race([
+          createGroupChatForRequest(requestId, userId, category),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Таймаут создания группового чата: операция заняла больше 5 секунд')), 5000)
+          )
+        ]);
         
         // Обновляем заявку с group_chat_id
         await connection.execute(
@@ -2843,29 +2939,57 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
           [groupChatId, requestId]
         );
       } catch (chatErr) {
-        // Если не удалось создать чат, откатываем транзакцию
-        await connection.rollback();
-        connection.release();
-        return error(res, 'Ошибка при создании группового чата', 500, chatErr);
-      }
-
-      // Инициализация participant_completions для создателя event заявки
-      if (category === 'event') {
-        try {
-          const { initializeParticipantCompletion } = require('../utils/participantCompletions');
-          await initializeParticipantCompletion(requestId, userId, true);
-        } catch (completionErr) {
-          // Если ошибка, откатываем транзакцию
-          await connection.rollback();
-          connection.release();
-          return error(res, 'Ошибка инициализации participant_completion для создателя', 500, completionErr);
-        }
+        // КРИТИЧЕСКИ ВАЖНО: НЕ откатываем транзакцию, если не удалось создать чат
+        // Заявка уже создана, чат можно создать позже или асинхронно
+        // Просто логируем ошибку и продолжаем
+        const chatError = {
+          message: chatErr.message || 'Неизвестная ошибка при создании группового чата',
+          requestId: requestId,
+          userId: userId,
+          category: category,
+          note: 'Заявка создана, но чат не создан. Чат можно создать позже через отдельный endpoint.'
+        };
+        
+        // Сохраняем информацию об ошибке для последующего создания чата
+        // Можно создать чат асинхронно после коммита транзакции
       }
 
       // Фиксируем транзакцию
       await connection.commit();
       connection.release();
       connection = null;
+      
+      // Инициализация participant_completions для создателя event заявки
+      // ВАЖНО: Делаем ПОСЛЕ коммита транзакции, чтобы не блокировать создание заявки
+      if (category === 'event') {
+        // Выполняем асинхронно, не блокируем ответ
+        const { initializeParticipantCompletion } = require('../utils/participantCompletions');
+        initializeParticipantCompletion(requestId, userId, true)
+          .catch((completionErr) => {
+            // Логируем ошибку, но не прерываем выполнение
+            console.error('Ошибка инициализации participant_completion для создателя event:', completionErr);
+          });
+      }
+      
+      // Если чат не был создан, пытаемся создать его асинхронно (не блокируем ответ)
+      if (!groupChatId) {
+        // Создаем чат асинхронно, не ждем результата
+        createGroupChatForRequest(requestId, userId, category)
+          .then(async (asyncChatId) => {
+            // Обновляем заявку с group_chat_id
+            try {
+              await pool.execute(
+                'UPDATE requests SET group_chat_id = ? WHERE id = ?',
+                [asyncChatId, requestId]
+              );
+            } catch (updateErr) {
+              // Игнорируем ошибки обновления - чат создан, но не привязан к заявке
+            }
+          })
+          .catch((asyncChatErr) => {
+            // Игнорируем ошибки асинхронного создания - заявка уже создана
+          });
+      }
 
       // Получаем созданную заявку
       const [requests] = await pool.execute(
@@ -2971,10 +3095,27 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
         await connection.rollback();
         connection.release();
       } catch (rollbackErr) {
-        // Игнорируем ошибки отката
+        // Игнорируем ошибки отката, но добавляем в детали основной ошибки
+        err.rollbackError = rollbackErr.message;
       }
     }
-    return error(res, 'Ошибка при создании заявки с платежом', 500, err);
+    
+    // ВСЕГДА возвращаем детальную ошибку в ответе API
+    // Если err уже Error объект, используем его, иначе создаем новый
+    const errorObj = err instanceof Error ? err : new Error(err.message || 'Неизвестная ошибка при создании заявки с платежом');
+    
+    // Добавляем все доступные детали
+    if (err.sqlMessage) errorObj.sqlMessage = err.sqlMessage;
+    if (err.sql) errorObj.sql = err.sql;
+    if (err.errno) errorObj.errno = err.errno;
+    if (err.sqlState) errorObj.sqlState = err.sqlState;
+    if (err.rollbackError) errorObj.rollbackError = err.rollbackError;
+    if (err.code) errorObj.code = err.code;
+    if (process.env.NODE_ENV !== 'production' && err.stack) {
+      errorObj.stack = err.stack;
+    }
+    
+    return error(res, 'Ошибка при создании заявки с платежом', 500, errorObj);
   }
 });
 

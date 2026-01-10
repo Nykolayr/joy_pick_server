@@ -152,7 +152,9 @@ router.post('/', authenticate, [
     );
 
     // Обновление суммы вкладов в заявке
-    const newTotalContributed = (request.total_contributed || 0) + amount;
+    // MySQL возвращает decimal как строки, поэтому используем parseFloat
+    const currentTotal = parseFloat(request.total_contributed || 0);
+    const newTotalContributed = currentTotal + parseFloat(amount);
     await pool.execute(
       'UPDATE requests SET total_contributed = ?, updated_at = NOW() WHERE id = ?',
       [newTotalContributed, requestId]
@@ -200,6 +202,74 @@ router.post('/', authenticate, [
   } catch (err) {
     console.error('Ошибка создания доната:', err);
     error(res, 'Ошибка при создании доната', 500);
+  }
+});
+
+/**
+ * DELETE /api/donations/by-payment-intent/:payment_intent_id
+ * Удаление доната по payment_intent_id (при ошибке/отмене оплаты)
+ */
+router.delete('/by-payment-intent/:payment_intent_id', authenticate, async (req, res) => {
+  try {
+    const { payment_intent_id } = req.params;
+    const userId = req.user.userId;
+
+    // Находим донат по payment_intent_id
+    const [donations] = await pool.execute(
+      'SELECT id, request_id, amount, user_id FROM donations WHERE payment_intent_id = ?',
+      [payment_intent_id]
+    );
+
+    if (donations.length === 0) {
+      return error(res, 'Донат не найден', 404);
+    }
+
+    const donation = donations[0];
+
+    // Проверка прав: только создатель доната или админ может удалить
+    if (donation.user_id !== userId && !req.user.isAdmin) {
+      return error(res, 'Доступ запрещен', 403);
+    }
+
+    // Откатываем total_contributed в заявке
+    const [requests] = await pool.execute(
+      'SELECT total_contributed FROM requests WHERE id = ?',
+      [donation.request_id]
+    );
+
+    if (requests.length > 0) {
+      const currentTotal = parseFloat(requests[0].total_contributed || 0);
+      const newTotal = Math.max(0, currentTotal - parseFloat(donation.amount)); // Не может быть отрицательным
+      
+      await pool.execute(
+        'UPDATE requests SET total_contributed = ?, updated_at = NOW() WHERE id = ?',
+        [newTotal, donation.request_id]
+      );
+    }
+
+    // Удаляем донат
+    await pool.execute('DELETE FROM donations WHERE id = ?', [donation.id]);
+
+    // Отменяем PaymentIntent в Stripe (если еще не отменен)
+    try {
+      const stripe = require('../config/stripe');
+      const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id);
+      
+      if (paymentIntent.status !== 'canceled' && 
+          paymentIntent.status !== 'succeeded' &&
+          (paymentIntent.status === 'requires_capture' || 
+           paymentIntent.status === 'requires_payment_method' ||
+           paymentIntent.status === 'requires_confirmation' ||
+           paymentIntent.status === 'requires_action')) {
+        await stripe.paymentIntents.cancel(payment_intent_id);
+      }
+    } catch (stripeErr) {
+      // Игнорируем ошибки Stripe (возможно, уже отменен)
+    }
+
+    success(res, null, 'Донат удален, сумма откачена');
+  } catch (err) {
+    return error(res, 'Ошибка при удалении доната', 500, err);
   }
 });
 

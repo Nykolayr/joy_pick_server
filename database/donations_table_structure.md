@@ -7,7 +7,7 @@
 1. `id` - varchar(36) - PRIMARY KEY, NOT NULL
 2. `request_id` - varchar(36) - NOT NULL
 3. `user_id` - varchar(36) - NOT NULL
-4. `amount` - int - NOT NULL
+4. `amount` - decimal(10,2) - NOT NULL
 5. `payment_intent_id` - varchar(255) - NOT NULL
 6. `created_at` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP
 
