@@ -79,8 +79,33 @@ router.post('/create-donation', authenticate, [
           type: 'donation'
         }
       });
+
+      // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
+      if (!paymentIntent) {
+        throw new Error('Stripe вернул пустой ответ (null или undefined)');
+      }
+
+      if (!paymentIntent.id) {
+        throw new Error('Stripe не вернул payment_intent_id в ответе');
+      }
+
+      if (!paymentIntent.client_secret) {
+        throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + paymentIntent.id);
+      }
+
     } catch (stripeErr) {
-      return error(res, 'Ошибка при создании PaymentIntent', 500, stripeErr);
+      return error(res, 'Ошибка при создании PaymentIntent для доната', 500, {
+        errorMessage: stripeErr.message || 'Неизвестная ошибка',
+        errorType: stripeErr.type || 'StripeError',
+        errorCode: stripeErr.code || 'STRIPE_ERROR',
+        requestId: request_id,
+        userId: user_id,
+        amountCents: amountCents,
+        amountDollars: parseFloat(amount),
+        stripeRaw: stripeErr.raw || null,
+        stripeDeclineCode: stripeErr.decline_code || null,
+        stripeParam: stripeErr.param || null
+      });
     }
 
     // Сохраняем PaymentIntent в базу данных
@@ -195,8 +220,33 @@ router.post('/create-request-payment', authenticate, [
           type: 'request_payment'
         }
       });
+
+      // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
+      if (!paymentIntent) {
+        throw new Error('Stripe вернул пустой ответ (null или undefined)');
+      }
+
+      if (!paymentIntent.id) {
+        throw new Error('Stripe не вернул payment_intent_id в ответе');
+      }
+
+      if (!paymentIntent.client_secret) {
+        throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + paymentIntent.id);
+      }
+
     } catch (stripeErr) {
-      return error(res, 'Ошибка при создании PaymentIntent', 500, stripeErr);
+      return error(res, 'Ошибка при создании PaymentIntent для оплаты заявки', 500, {
+        errorMessage: stripeErr.message || 'Неизвестная ошибка',
+        errorType: stripeErr.type || 'StripeError',
+        errorCode: stripeErr.code || 'STRIPE_ERROR',
+        requestId: request_id,
+        userId: user_id,
+        amountCents: amountCents,
+        amountDollars: parseFloat(amount),
+        stripeRaw: stripeErr.raw || null,
+        stripeDeclineCode: stripeErr.decline_code || null,
+        stripeParam: stripeErr.param || null
+      });
     }
 
     // Сохраняем PaymentIntent в базу данных

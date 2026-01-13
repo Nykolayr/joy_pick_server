@@ -930,6 +930,42 @@ async function sendEventTimeNotification({ userIds, requestId, messageType = '24
 }
 
 /**
+ * Отправка напоминания о завершении event и отправке на модерацию
+ * @param {Object} options - Параметры уведомления
+ * @param {Array<string>} options.userIds - Массив ID пользователей (обычно создатель)
+ * @param {string} options.requestId - ID заявки
+ * @param {string} options.eventName - Название события
+ * @param {number} options.hoursRemaining - Сколько часов осталось (обычно 24)
+ * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
+ */
+async function sendEventCompletionReminderNotification({ userIds, requestId, eventName, hoursRemaining = 24 }) {
+  const title = 'Напоминание о завершении события';
+  const body = `Ваше событие "${eventName}" состоялось более 24 часов назад. У вас есть ${hoursRemaining} часа, чтобы отправить его на модерацию, иначе заявка будет удалена, а средства возвращены.`;
+
+  // Формируем deeplink для перехода на заявку
+  const categoryPath = 'event';
+  const deeplink = `https://garbagedev-9c240.web.app/request/${categoryPath}/${requestId}`;
+
+  return await sendNotificationToUsers({
+    title,
+    body,
+    userIds,
+    sound: 'default',
+    data: {
+      type: 'eventCompletionReminder',
+      requestId: requestId,
+      hoursRemaining: hoursRemaining.toString(),
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: requestId,
+        category: 'event',
+      }),
+      deeplink: deeplink,
+    },
+  });
+}
+
+/**
  * Отправка push-уведомления модераторам о новой заявке на модерации
  * @param {Object} options - Параметры уведомления
  * @param {string} options.requestId - ID заявки
@@ -1049,6 +1085,7 @@ module.exports = {
   sendReminderNotification,
   sendRequestExpiredNotification,
   sendEventTimeNotification,
+  sendEventCompletionReminderNotification,
   sendModerationNotification,
   sendTransferPaidNotification,
   sendTransferFailedNotification,

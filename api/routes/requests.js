@@ -1493,16 +1493,59 @@ router.post('/:id/join', authenticate, async (req, res) => {
       return error(res, 'К этому типу заявки нельзя присоединиться', 400);
     }
 
-    // Проверка статуса заявки (можно присоединиться только к заявкам со статусом 'new')
+    // Проверка статуса заявки
+    // Можно присоединиться к заявкам со статусом 'new'
+    // Для платных заявок: если статус 'pending_payment', проверяем оплату в Stripe
+    // (webhook может еще не обработаться, но оплата уже прошла)
     const [currentRequest] = await pool.execute(
-      'SELECT status FROM requests WHERE id = ?',
+      'SELECT status, payment_intent_id FROM requests WHERE id = ?',
       [id]
     );
     if (currentRequest.length === 0) {
       return error(res, 'Заявка не найдена', 404);
     }
-    if (currentRequest[0].status !== 'new') {
+    
+    const requestStatus = currentRequest[0].status;
+    const paymentIntentId = currentRequest[0].payment_intent_id;
+    
+    // Если статус не 'new' и не 'pending_payment' - нельзя присоединиться
+    if (requestStatus !== 'new' && requestStatus !== 'pending_payment') {
       return error(res, 'К этой заявке нельзя присоединиться', 400);
+    }
+    
+    // Если статус 'pending_payment' - проверяем оплату в Stripe
+    if (requestStatus === 'pending_payment') {
+      if (!paymentIntentId) {
+        return error(res, 'Заявка ожидает оплаты', 400);
+      }
+      
+      // Проверяем статус PaymentIntent в Stripe напрямую
+      // (webhook мог еще не обработаться, но оплата уже прошла)
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        // Если оплата не прошла - нельзя присоединиться
+        if (paymentIntent.status !== 'succeeded' && paymentIntent.status !== 'requires_capture') {
+          return error(res, 'Заявка ожидает оплаты. Пожалуйста, завершите оплату.', 400, {
+            paymentStatus: paymentIntent.status,
+            paymentIntentId: paymentIntentId,
+            note: 'Оплата еще не завершена в Stripe'
+          });
+        }
+        
+        // Оплата прошла! Обновляем статус заявки на 'new'
+        // (webhook обработается позже, но мы не хотим заставлять пользователя ждать)
+        await pool.execute(
+          'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+          ['new', id]
+        );
+      } catch (stripeErr) {
+        return error(res, 'Ошибка проверки оплаты', 500, {
+          errorMessage: stripeErr.message,
+          paymentIntentId: paymentIntentId,
+          note: 'Не удалось проверить статус оплаты в Stripe'
+        });
+      }
     }
 
     // Проверка, не присоединился ли уже кто-то
@@ -1742,37 +1785,54 @@ router.post('/:id/participate', authenticate, async (req, res) => {
           }
         }
       } else {
-        // Создаем новый приватный чат
-        privateChatId = generateId();
-        try {
-          await pool.execute(
-            `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
-             VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
-            [privateChatId, id, userId, userId]
-          );
-        } catch (insertErr) {
-          // Если ошибка дубликата - ищем существующий чат
-          if (insertErr.code === 'ER_DUP_ENTRY') {
-            const [duplicateChats] = await pool.execute(
-              `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
-              [id, userId]
+        // СНАЧАЛА проверяем, существует ли уже приватный чат для этого пользователя и заявки
+        const [existingChats] = await pool.execute(
+          `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
+          [id, userId]
+        );
+
+        if (existingChats.length > 0) {
+          // Чат уже существует - используем его
+          privateChatId = existingChats[0].id;
+        } else {
+          // Создаем новый приватный чат
+          privateChatId = generateId();
+          try {
+            await pool.execute(
+              `INSERT INTO chats (id, type, request_id, user_id, created_by, created_at, last_message_at)
+               VALUES (?, 'private', ?, ?, ?, NOW(), NOW())`,
+              [privateChatId, id, userId, userId]
             );
-            if (duplicateChats.length > 0) {
-              privateChatId = duplicateChats[0].id;
-            } else {
-              // Пробуем найти по другому критерию (может быть индекс на type+request_id)
-              const [altChats] = await pool.execute(
-                `SELECT id FROM chats WHERE type = 'private' AND request_id = ? LIMIT 1`,
-                [id]
+          } catch (insertErr) {
+            // Если ошибка дубликата - ищем существующий чат (race condition)
+            if (insertErr.code === 'ER_DUP_ENTRY') {
+              const [duplicateChats] = await pool.execute(
+                `SELECT id FROM chats WHERE type = 'private' AND request_id = ? AND user_id = ?`,
+                [id, userId]
               );
-              if (altChats.length > 0) {
-                privateChatId = altChats[0].id;
+              if (duplicateChats.length > 0) {
+                privateChatId = duplicateChats[0].id;
               } else {
-                throw insertErr;
+                // Пробуем найти по другому критерию (может быть индекс на type+request_id)
+                const [altChats] = await pool.execute(
+                  `SELECT id FROM chats WHERE type = 'private' AND request_id = ? LIMIT 1`,
+                  [id]
+                );
+                if (altChats.length > 0) {
+                  privateChatId = altChats[0].id;
+                } else {
+                  return error(res, 'Не удалось создать приватный чат', 500, {
+                    errorMessage: 'Чат уже существует, но не удалось его найти',
+                    errorCode: insertErr.code,
+                    requestId: id,
+                    userId: userId,
+                    sqlMessage: insertErr.sqlMessage
+                  });
+                }
               }
+            } else {
+              throw insertErr;
             }
-          } else {
-            throw insertErr;
           }
         }
 
@@ -2900,7 +2960,12 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
         if (!process.env.STRIPE_SECRET_KEY) {
           await connection.rollback();
           connection.release();
-          return error(res, 'Stripe не настроен на сервере', 500);
+          return error(res, 'Stripe не настроен на сервере', 500, {
+            requestId: requestId,
+            userId: userId,
+            amountCents: paymentAmountCents,
+            note: 'STRIPE_SECRET_KEY не найден в переменных окружения'
+          });
         }
 
         try {
@@ -2922,6 +2987,19 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
               setTimeout(() => reject(new Error('Stripe API timeout: создание PaymentIntent заняло больше 15 секунд')), 15000)
             )
           ]);
+
+          // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
+          if (!stripePaymentIntent) {
+            throw new Error('Stripe вернул пустой ответ (null или undefined)');
+          }
+
+          if (!stripePaymentIntent.id) {
+            throw new Error('Stripe не вернул payment_intent_id в ответе');
+          }
+
+          if (!stripePaymentIntent.client_secret) {
+            throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + stripePaymentIntent.id);
+          }
 
           stripePaymentIntentId = stripePaymentIntent.id;
           clientSecret = stripePaymentIntent.client_secret;
@@ -2964,16 +3042,23 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
           await connection.rollback();
           connection.release();
           
-          // Возвращаем детальную ошибку в ответе API
-          const errorObj = new Error(stripeErr.message || 'Неизвестная ошибка при создании PaymentIntent');
-          errorObj.type = stripeErr.type || 'StripeError';
-          errorObj.code = stripeErr.code || 'STRIPE_ERROR';
-          errorObj.statusCode = stripeErr.statusCode || 500;
-          errorObj.requestId = requestId;
-          errorObj.amountCents = paymentAmountCents;
-          errorObj.stripeError = stripeErr.raw ? stripeErr.raw : null;
-          
-          return error(res, 'Ошибка при создании PaymentIntent в Stripe', 500, errorObj);
+          // Возвращаем детальную ошибку в ответе API с МАКСИМУМ информации
+          return error(res, 'Ошибка при создании PaymentIntent в Stripe', 500, {
+            errorMessage: stripeErr.message || 'Неизвестная ошибка',
+            errorType: stripeErr.type || 'StripeError',
+            errorCode: stripeErr.code || 'STRIPE_ERROR',
+            statusCode: stripeErr.statusCode || 500,
+            requestId: requestId,
+            userId: userId,
+            amountCents: paymentAmountCents,
+            amountDollars: parseFloat(cost),
+            category: category,
+            requestCategory: request_category,
+            stripeRaw: stripeErr.raw || null,
+            stripeDeclineCode: stripeErr.decline_code || null,
+            stripeParam: stripeErr.param || null,
+            stack: process.env.NODE_ENV === 'development' ? stripeErr.stack : undefined
+          });
         }
       }
 
@@ -3113,6 +3198,40 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
 
       // Нормализация дат
       const normalizedRequest = normalizeDatesInObject(request);
+
+      // КРИТИЧЕСКИ ВАЖНО: Финальная проверка - если требовался платеж, проверяем что paymentIntent корректен
+      if (require_payment && paymentAmountCents > 0) {
+        if (!paymentIntent) {
+          return error(res, 'Критическая ошибка: заявка создана, но объект paymentIntent равен null', 500, {
+            requestId: requestId,
+            userId: userId,
+            amountCents: paymentAmountCents,
+            note: 'Заявка сохранена в БД с payment_intent_id, но объект paymentIntent не был создан в коде. Это баг сервера.'
+          });
+        }
+
+        if (!paymentIntent.client_secret) {
+          return error(res, 'Критическая ошибка: заявка создана, но client_secret отсутствует', 500, {
+            requestId: requestId,
+            userId: userId,
+            paymentIntentId: paymentIntent.payment_intent_id || 'undefined',
+            amountCents: paymentAmountCents,
+            paymentIntentObject: paymentIntent,
+            note: 'Stripe вернул PaymentIntent, но без client_secret. Возможно проблема с аккаунтом Stripe или API ключом.'
+          });
+        }
+
+        if (!paymentIntent.payment_intent_id) {
+          return error(res, 'Критическая ошибка: заявка создана, но payment_intent_id отсутствует', 500, {
+            requestId: requestId,
+            userId: userId,
+            clientSecret: paymentIntent.client_secret ? 'присутствует' : 'отсутствует',
+            amountCents: paymentAmountCents,
+            paymentIntentObject: paymentIntent,
+            note: 'Объект paymentIntent создан, но payment_intent_id отсутствует'
+          });
+        }
+      }
 
       // Отправка push-уведомлений (асинхронно)
       if (latitude && longitude) {

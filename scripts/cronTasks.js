@@ -752,17 +752,200 @@ async function checkEventTimes() {
 }
 
 /**
+ * Проверка event заявок после даты события
+ * - Через 24 часа после start_date: предупреждение (если не на модерации и не в архиве)
+ * - Через 48 часов после start_date: удаление (если не на модерации и не в архиве)
+ * 
+ * ВАЖНО: Не проверяем заявки, которые:
+ * - pendingApproval (на модерации)
+ * - approved, rejected, completed (в архиве)
+ */
+async function checkEventAfterStartDate() {
+  try {
+    const { sendEventCompletionReminderNotification } = require('../api/services/pushNotification');
+    
+    // Находим event заявки, которые прошли более 24 часов после start_date
+    // и НЕ на модерации и НЕ в архиве
+    // Архивные статусы: approved, rejected, completed
+    const [requests] = await pool.execute(
+      `SELECT id, created_by, start_date, status, payment_intent_id, name
+       FROM requests 
+       WHERE category = 'event'
+         AND status NOT IN ('pendingApproval', 'approved', 'rejected', 'completed')
+         AND start_date IS NOT NULL
+         AND start_date <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    );
+
+    if (requests.length === 0) {
+      return { processed: 0, warnings: 0, errors: 0 };
+    }
+
+    let processed = 0; // Удалено заявок
+    let warnings = 0;  // Отправлено предупреждений
+    let errors = 0;
+
+    for (const request of requests) {
+      try {
+        const startDate = new Date(request.start_date);
+        const hoursSinceStart = (Date.now() - startDate.getTime()) / (1000 * 60 * 60);
+
+        // Проверяем, было ли уже отправлено предупреждение
+        const [warningActions] = await pool.execute(
+          `SELECT id FROM cron_actions 
+           WHERE action_type = 'checkEventAfterStartDate' 
+             AND request_id = ? 
+             AND status = 'completed'
+             AND action_description LIKE '%предупреждение%'
+           LIMIT 1`,
+          [request.id]
+        );
+
+        const warningAlreadySent = warningActions.length > 0;
+
+        if (hoursSinceStart >= 48) {
+          // Прошло 48 часов - удаляем заявку
+          
+          // Отменяем/возвращаем все платежи
+          if (request.payment_intent_id) {
+            try {
+              const paymentIntent = await stripe.paymentIntents.retrieve(request.payment_intent_id);
+              
+              if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture') {
+                // Возвращаем деньги
+                await stripe.refunds.create({
+                  payment_intent: request.payment_intent_id,
+                });
+              } else if (paymentIntent.status !== 'canceled') {
+                // Отменяем PaymentIntent
+                await stripe.paymentIntents.cancel(request.payment_intent_id);
+              }
+            } catch (stripeErr) {
+              // Логируем, но продолжаем удаление
+            }
+          }
+
+          // Возвращаем деньги по всем донатам
+          const [donations] = await pool.execute(
+            'SELECT payment_intent_id FROM donations WHERE request_id = ?',
+            [request.id]
+          );
+
+          for (const donation of donations) {
+            if (donation.payment_intent_id) {
+              try {
+                const donationPI = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
+                
+                if (donationPI.status === 'succeeded' || donationPI.status === 'requires_capture') {
+                  await stripe.refunds.create({
+                    payment_intent: donation.payment_intent_id,
+                  });
+                } else if (donationPI.status !== 'canceled') {
+                  await stripe.paymentIntents.cancel(donation.payment_intent_id);
+                }
+              } catch (donationStripeErr) {
+                // Игнорируем ошибки отдельных донатов
+              }
+            }
+          }
+
+          // Удаляем все чаты заявки
+          const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
+          await deleteAllChatsForRequest(request.id);
+
+          // Удаляем заявку
+          await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
+
+          // Отправляем уведомление создателю
+          const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
+          await sendRequestRejectedNotification({
+            userIds: [request.created_by],
+            requestId: request.id,
+            messageType: 'creator',
+            rejectionMessage: 'Ваше событие было удалено, так как не было отправлено на модерацию в течение 48 часов после даты проведения. Средства возвращены.',
+            requestCategory: 'event',
+          });
+
+          // Логируем действие
+          await logCronAction(
+            'checkEventAfterStartDate',
+            request.id,
+            'event',
+            `Удаление event заявки "${request.name}" через 48 часов после start_date (не отправлена на модерацию)`,
+            'completed',
+            { start_date: request.start_date, hours_since_start: Math.round(hoursSinceStart) }
+          );
+
+          processed++;
+
+        } else if (hoursSinceStart >= 24 && !warningAlreadySent) {
+          // Прошло 24 часа - отправляем предупреждение (только если еще не отправляли)
+          
+          await sendEventCompletionReminderNotification({
+            userIds: [request.created_by],
+            requestId: request.id,
+            eventName: request.name || 'Событие',
+            hoursRemaining: 24,
+          });
+
+          // Логируем действие
+          await logCronAction(
+            'checkEventAfterStartDate',
+            request.id,
+            'event',
+            `Отправка предупреждения для event заявки "${request.name}" (через 24 часа после start_date, не на модерации)`,
+            'completed',
+            { start_date: request.start_date, hours_since_start: Math.round(hoursSinceStart) }
+          );
+
+          warnings++;
+        }
+
+      } catch (err) {
+        errors++;
+        await logCronAction(
+          'checkEventAfterStartDate',
+          request.id,
+          'event',
+          `Ошибка при обработке event заявки ${request.id}: ${err.message || 'Неизвестная ошибка'}`,
+          'error',
+          {
+            error: err.message || 'Неизвестная ошибка',
+            errorName: err.name || 'Error',
+            errorStack: err.stack,
+            requestId: request.id
+          }
+        );
+      }
+    }
+
+    return { processed, warnings, errors, total: requests.length };
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Очистка неоплаченных заявок через 24 часа
  * Удаляет заявки со статусом pending_payment, которые не были оплачены
+ * 
+ * ВАЖНО: Для event заявок - удаляет только ПОСЛЕ даты события (start_date)
+ * Для wasteLocation/speedCleanup - удаляет через 24 часа после создания
  */
 async function cleanupUnpaidRequests() {
   try {
-    // Находим все заявки со статусом pending_payment, созданные более 24 часов назад
+    // Находим заявки со статусом pending_payment для удаления:
+    // - wasteLocation/speedCleanup: созданные более 24 часов назад
+    // - event: где start_date уже прошла (событие уже состоялось или должно было состояться)
     const [requests] = await pool.execute(
-      `SELECT id, created_by, payment_intent_id, category
+      `SELECT id, created_by, payment_intent_id, category, start_date
        FROM requests 
        WHERE status = 'pending_payment'
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+         AND (
+           (category IN ('wasteLocation', 'speedCleanup') AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR))
+           OR 
+           (category = 'event' AND start_date IS NOT NULL AND start_date <= NOW())
+         )`
     );
 
     if (requests.length === 0) {
@@ -788,12 +971,16 @@ async function cleanupUnpaidRequests() {
                 // Игнорируем ошибки отмены (возможно, уже отменен)
               }
 
-              // Отправляем пуш создателю
+              // Отправляем пуш создателю с разным сообщением для event и других типов
+              const rejectionMessage = request.category === 'event'
+                ? 'Your event was deleted because payment was not completed before the event date'
+                : 'Your request was deleted because payment was not completed within 24 hours';
+              
               await sendRequestRejectedNotification({
                 userIds: [request.created_by],
                 requestId: request.id,
                 messageType: 'creator',
-                rejectionMessage: 'Your request was deleted because payment was not completed within 24 hours',
+                rejectionMessage: rejectionMessage,
                 requestCategory: request.category || 'wasteLocation',
               });
 
@@ -803,14 +990,22 @@ async function cleanupUnpaidRequests() {
               // Удаляем заявку из БД
               await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
 
-              // Записываем действие
+              // Записываем действие с разным описанием для event и других типов
+              const logDescription = request.category === 'event'
+                ? `Удаление неоплаченной event заявки ${request.id} (событие состоялось, оплата не завершена)`
+                : `Удаление неоплаченной заявки ${request.id} (24 часа без оплаты)`;
+              
               await logCronAction(
                 'cleanupUnpaidRequests',
                 request.id,
                 request.category || 'wasteLocation',
-                `Удаление неоплаченной заявки ${request.id} (24 часа без оплаты)`,
+                logDescription,
                 'completed',
-                { payment_intent_id: request.payment_intent_id, payment_status: paymentIntent.status }
+                { 
+                  payment_intent_id: request.payment_intent_id, 
+                  payment_status: paymentIntent.status,
+                  start_date: request.start_date || null
+                }
               );
 
               processed++;
@@ -908,6 +1103,7 @@ async function runAllCronTasks() {
     results.checkWasteReminders = await checkWasteReminders();
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
     results.checkEventTimes = await checkEventTimes();
+    results.checkEventAfterStartDate = await checkEventAfterStartDate();
     results.notifyInactiveWasteRequests = await notifyInactiveWasteRequests();
     results.cleanupUnpaidRequests = await cleanupUnpaidRequests();
 
@@ -1015,6 +1211,7 @@ module.exports = {
   notifyInactiveWasteRequests,
   deleteInactiveRequests,
   checkEventTimes,
+  checkEventAfterStartDate,
   cleanupUnpaidRequests
 };
 
