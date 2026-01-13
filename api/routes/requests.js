@@ -17,6 +17,7 @@ const {
 } = require('../services/pushNotification');
 const { createGroupChatForRequest } = require('../utils/chatHelpers');
 const stripe = require('../config/stripe');
+const { deleteInactiveRequests, checkEventAfterStartDate } = require('../../scripts/cronTasks');
 
 const router = express.Router();
 
@@ -25,6 +26,15 @@ const router = express.Router();
  * Получение списка заявок с фильтрацией
  */
 router.get('/', async (req, res) => {
+  // Перед возвратом списка - проверяем и удаляем просроченные заявки
+  // Используем ту же логику, что и в крон-задачах
+  try {
+    await deleteInactiveRequests(); // Удаляет waste/speedCleanup через 2 суток
+    await checkEventAfterStartDate(); // Удаляет event через 48 часов после start_date
+  } catch (cleanupErr) {
+    // Не прерываем запрос, если очистка не удалась
+  }
+
   try {
     const {
       page = 1,

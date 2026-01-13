@@ -445,19 +445,20 @@ async function notifyInactiveWasteRequests() {
 }
 
 /**
- * Архивирование неактивных waste заявок
- * Архивирует заявки типа wasteLocation:
+ * Архивирование неактивных waste и speedCleanup заявок
+ * Архивирует заявки типа wasteLocation и speedCleanup:
  * 1. Со статусом 'new', если прошло 2 суток с момента создания и никто не взялся за исполнение
  * 2. Со статусом 'inProgress', если прошло 2 суток с момента присоединения и заявка не выполнена
+ * 3. Со статусом 'inProgress' для speedCleanup БЕЗ join_date - удаляем через 2 суток с момента создания
  */
 async function deleteInactiveRequests() {
   try {
-    // 1. Находим все waste заявки со статусом new, где прошло 2 суток с момента создания
+    // 1. Находим все waste/speedCleanup заявки со статусом new, где прошло 2 суток с момента создания
     // и никто не взялся за исполнение (joined_user_id IS NULL)
     const [newRequests] = await pool.execute(
       `SELECT id, created_by, cost, category
        FROM requests 
-       WHERE category = 'wasteLocation'
+       WHERE category IN ('wasteLocation', 'speedCleanup')
          AND status = 'new' 
          AND joined_user_id IS NULL
          AND created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
@@ -475,8 +476,18 @@ async function deleteInactiveRequests() {
          AND join_date <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
     );
 
-    // Объединяем оба списка
-    const requests = [...newRequests, ...inProgressRequests];
+    // 3. Находим все speedCleanup заявки со статусом inProgress БЕЗ join_date
+    // (созданные более 2 суток назад и не завершенные)
+    const [speedCleanupInProgress] = await pool.execute(
+      `SELECT id, created_by, cost, category, joined_user_id
+       FROM requests 
+       WHERE category = 'speedCleanup'
+         AND status = 'inProgress' 
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
+    );
+
+    // Объединяем все списки
+    const requests = [...newRequests, ...inProgressRequests, ...speedCleanupInProgress];
 
     if (requests.length === 0) {
       return { processed: 0, errors: 0 };
