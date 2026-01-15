@@ -2412,7 +2412,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
 
     // Получаем заявку
     const [requests] = await pool.execute(
-      'SELECT id, category, status, created_by, joined_user_id, registered_participants, start_date FROM requests WHERE id = ?',
+      'SELECT id, category, status, created_by, joined_user_id, registered_participants, start_date, name FROM requests WHERE id = ?',
       [requestId]
     );
 

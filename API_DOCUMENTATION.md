@@ -1103,7 +1103,12 @@ if (serverAuthResult != null) {
         "auth_type": "email",
         "latitude": 55.7558,
         "longitude": 37.6173,
-        "created_time": "2025-01-01T00:00:00.000Z"
+        "created_time": "2025-01-01T00:00:00.000Z",
+        "about": "О себе",
+        "social_links": [
+          "https://twitter.com/username",
+          "https://instagram.com/username"
+        ]
       }
     ],
     "total": 150
@@ -1180,7 +1185,12 @@ Future<Map<String, dynamic>> getAllUsers({
         "auth_type": "email",
         "latitude": 55.7558,
         "longitude": 37.6173,
-        "created_time": "2025-01-01T00:00:00.000Z"
+        "created_time": "2025-01-01T00:00:00.000Z",
+        "about": "О себе",
+        "social_links": [
+          "https://twitter.com/username",
+          "https://instagram.com/username"
+        ]
       }
     ],
     "pagination": {
@@ -1288,7 +1298,13 @@ Future<Map<String, dynamic>> getUsersList({
   "photo_url": "https://example.com/photo.jpg",
   "latitude": 59.9343,
   "longitude": 30.3351,
-  "fcm_token": "fcm_token_here"
+  "fcm_token": "fcm_token_here",
+  "about": "Информация о себе",
+  "social_links": [
+    "https://twitter.com/username",
+    "https://instagram.com/username",
+    "https://facebook.com/username"
+  ]
 }
 ```
 
@@ -1308,6 +1324,8 @@ Future<Map<String, dynamic>> getUsersList({
 - `latitude` (float, опционально)
 - `longitude` (float, опционально)
 - `fcm_token` (string, опционально)
+- `about` (string, опционально) - информация о себе
+- `social_links` (array[string], опционально) - массив ссылок на социальные сети
 
 **Ограничения для файла:**
 - Максимальный размер: 10MB

@@ -25,7 +25,8 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
       SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       about, social_links
        FROM users
     `;
     const params = [];
@@ -79,7 +80,8 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
       SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       about, social_links
        FROM users
     `;
     const params = [];
@@ -116,7 +118,8 @@ router.get('/:id', authenticate, async (req, res) => {
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       about, social_links
        FROM users WHERE id = ?`,
       [id]
     );
@@ -126,6 +129,19 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     const user = users[0];
+
+    // Парсим social_links из JSON если это строка
+    if (user.social_links) {
+      try {
+        user.social_links = typeof user.social_links === 'string' 
+          ? JSON.parse(user.social_links) 
+          : user.social_links;
+      } catch (e) {
+        user.social_links = [];
+      }
+    } else {
+      user.social_links = [];
+    }
 
     // Если пользователь запрашивает не свой профиль и не админ, скрываем чувствительные данные
     if (!isOwnProfile && !isAdmin) {
@@ -167,7 +183,9 @@ router.put('/:id', authenticate, uploadUserAvatar, [
   body('longitude').optional().isFloat(),
   body('fcm_token').optional().isString(),
   body('admin').optional().isBoolean(),
-  body('super_admin').optional().isBoolean()
+  body('super_admin').optional().isBoolean(),
+  body('about').optional().isString(),
+  body('social_links').optional().isArray()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -211,7 +229,9 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       longitude,
       fcm_token,
       admin,
-      super_admin
+      super_admin,
+      about,
+      social_links
     } = bodyData;
 
     // Используем загруженный файл, если есть, иначе используем photo_url из JSON
@@ -275,6 +295,24 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       updates.push('fcm_token = ?');
       params.push(fcm_token);
     }
+    if (about !== undefined) {
+      updates.push('about = ?');
+      params.push(about || null);
+    }
+    if (social_links !== undefined) {
+      // Валидация массива social_links
+      if (Array.isArray(social_links)) {
+        // Проверяем, что все элементы - строки (URL)
+        const allStrings = social_links.every(link => typeof link === 'string');
+        if (!allStrings) {
+          return error(res, 'social_links должен быть массивом строк (URL)', 400);
+        }
+        updates.push('social_links = ?');
+        params.push(JSON.stringify(social_links));
+      } else {
+        return error(res, 'social_links должен быть массивом', 400);
+      }
+    }
 
     // Обработка admin и super_admin (только для суперадминов)
     if (req.user.isSuperAdmin) {
@@ -326,12 +364,28 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       about, social_links
        FROM users WHERE id = ?`,
       [id]
     );
 
-    success(res, { user: users[0] }, 'Данные пользователя обновлены');
+    const updatedUser = users[0];
+
+    // Парсим social_links из JSON если это строка
+    if (updatedUser.social_links) {
+      try {
+        updatedUser.social_links = typeof updatedUser.social_links === 'string' 
+          ? JSON.parse(updatedUser.social_links) 
+          : updatedUser.social_links;
+      } catch (e) {
+        updatedUser.social_links = [];
+      }
+    } else {
+      updatedUser.social_links = [];
+    }
+
+    success(res, { user: updatedUser }, 'Данные пользователя обновлены');
   } catch (err) {
     console.error('Ошибка обновления пользователя:', err);
     error(res, 'Ошибка при обновлении данных пользователя', 500, err);

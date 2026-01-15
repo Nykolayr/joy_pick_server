@@ -1,6 +1,6 @@
 # Структура таблицы users
 
-**Всего колонок:** 28
+**Всего колонок:** 30
 
 ## Колонки:
 
@@ -27,11 +27,13 @@
 21. `admin` - tinyint(1) - NULL, DEFAULT 0
 22. `super_admin` - tinyint(1) - NULL, DEFAULT 0
 23. `fcm_token` - text - NULL
-23. `auth_type` - varchar(50) - NULL, DEFAULT 'email'
-24. `latitude` - decimal(10,8) - NULL
-25. `longitude` - decimal(11,8) - NULL
-26. `created_time` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP
-27. `updated_at` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+24. `auth_type` - varchar(50) - NULL, DEFAULT 'email'
+25. `latitude` - decimal(10,8) - NULL
+26. `longitude` - decimal(11,8) - NULL
+27. `about` - text - NULL
+28. `social_links` - JSON - NULL
+29. `created_time` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP
+30. `updated_at` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 
 ## Порядок колонок в INSERT запросе:
 
@@ -41,9 +43,9 @@ INSERT INTO users (
   phone_number, city, first_name, second_name, country, gender,
   count_performed, count_orders, jcoins, coins_from_created, coins_from_participation,
   stripe_id, score, admin, super_admin, fcm_token, auth_type, latitude, longitude,
-  created_time, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+  about, social_links, created_time, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 ```
 
-**Всего:** 28 колонок = 26 плейсхолдеров `?` + 2 автоматических значений для `created_time` и `updated_at`
+**Всего:** 30 колонок = 28 плейсхолдеров `?` + 2 автоматических значений для `created_time` и `updated_at`
 
