@@ -6184,6 +6184,151 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 ---
 
+## Stripe Admin API
+
+**Требует суперадминских прав**
+
+### Получение активных заявок с платежами
+
+**GET** `/stripe-admin/requests/active`
+
+**Описание:**
+Получает список активных заявок (new, inProgress, pending), которые являются платными или имеют донаты.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "requests": [
+      {
+        "id": "uuid-заявки",
+        "name": "Название заявки",
+        "category": "wasteLocation",
+        "status": "inProgress",
+        "cost": 50.00,
+        "created_at": "2024-01-15T10:30:00.000Z",
+        "updated_at": "2024-01-15T12:30:00.000Z",
+        "creator_payment": {
+          "user_id": "uuid-создателя",
+          "email": "creator@example.com",
+          "name": "Имя создателя",
+          "amount": 50.00,
+          "payment_intent_id": "pi_xxxxx",
+          "stripe_status": "succeeded",
+          "capture_method": "automatic",
+          "amount_captured": 50.00,
+          "amount_received": 50.00,
+          "is_captured": true
+        },
+        "donations": [
+          {
+            "user_id": "uuid-донатера",
+            "email": "donor@example.com",
+            "name": "Имя донатера",
+            "amount": 25.00,
+            "payment_intent_id": "pi_yyyyy",
+            "stripe_status": "succeeded",
+            "capture_method": "automatic",
+            "amount_captured": 25.00,
+            "amount_received": 25.00,
+            "is_captured": true
+          }
+        ],
+        "donations_count": 1,
+        "total_donations": 25.00
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+### Получение закрытых/архивных заявок с платежами
+
+**GET** `/stripe-admin/requests/closed`
+
+**Описание:**
+Получает список закрытых заявок (approved, rejected, completed), которые являются платными или имеют донаты.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "requests": [
+      {
+        "id": "uuid-заявки",
+        "name": "Название заявки",
+        "category": "wasteLocation",
+        "status": "completed",
+        "cost": 50.00,
+        "created_at": "2024-01-15T10:30:00.000Z",
+        "updated_at": "2024-01-15T16:30:00.000Z",
+        "creator_payment": {
+          "user_id": "uuid-создателя",
+          "email": "creator@example.com",
+          "name": "Имя создателя",
+          "amount": 50.00,
+          "payment_intent_id": "pi_xxxxx",
+          "stripe_status": "succeeded",
+          "capture_method": "automatic",
+          "amount_captured": 50.00,
+          "amount_received": 50.00,
+          "is_captured": true
+        },
+        "donations": [
+          {
+            "user_id": "uuid-донатера",
+            "email": "donor@example.com",
+            "name": "Имя донатера",
+            "amount": 25.00,
+            "payment_intent_id": "pi_yyyyy",
+            "stripe_status": "succeeded",
+            "capture_method": "automatic",
+            "amount_captured": 25.00,
+            "amount_received": 25.00,
+            "is_captured": true
+          }
+        ],
+        "donations_count": 1,
+        "total_donations": 25.00,
+        "transfers": [
+          {
+            "to_user_id": "uuid-исполнителя",
+            "amount": 68.50,
+            "transfer_id": "tr_zzzzz",
+            "status": "paid",
+            "created": 1705316400,
+            "error": null
+          }
+        ],
+        "request_balance": 6.50,
+        "total_captured": 75.00,
+        "total_transferred": 68.50
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+**Поля ответа:**
+- `creator_payment` - информация о платеже создателя (если платная заявка)
+- `donations` - массив донатов с информацией о статусе захвата
+- `transfers` - массив переводов (только для закрытых заявок)
+- `request_balance` - остаток средств по заявке (захвачено - переведено)
+- `total_captured` - общая сумма захваченных средств
+- `total_transferred` - общая сумма переведенных средств
+
+**Статусы Stripe:**
+- `requires_capture` - средства авторизованы, но не захвачены
+- `succeeded` - средства захвачены
+- `canceled` - отменен
+- `refunded` - возвращен
+
+---
+
 ## Примечания
 
 1. Все даты в формате ISO 8601: `2024-01-01T00:00:00.000Z`

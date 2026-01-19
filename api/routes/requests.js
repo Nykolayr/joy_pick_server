@@ -1535,7 +1535,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         
         // Если оплата не прошла - нельзя присоединиться
-        if (paymentIntent.status !== 'succeeded' && paymentIntent.status !== 'requires_capture') {
+        if (paymentIntent.status !== 'succeeded') {
           return error(res, 'Заявка ожидает оплаты. Пожалуйста, завершите оплату.', 400, {
             paymentStatus: paymentIntent.status,
             paymentIntentId: paymentIntentId,
@@ -2498,8 +2498,8 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     }
 
     // Проверка статуса заявки
-    if (request.status !== 'inProgress') {
-      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+    if (request.status !== 'inProgress' && request.status !== 'pending_payment') {
+      return error(res, 'Заявка должна быть в статусе inProgress или pending_payment', 400);
     }
 
     // Проверка, что пользователь является участником
@@ -2779,8 +2779,8 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     }
 
     // Проверка статуса
-    if (request.status !== 'inProgress') {
-      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+    if (request.status !== 'inProgress' && request.status !== 'pending_payment') {
+      return error(res, 'Заявка должна быть в статусе inProgress или pending_payment', 400);
     }
 
     // Обновляем статус заявки на pending

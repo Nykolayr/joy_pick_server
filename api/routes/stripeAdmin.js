@@ -1160,4 +1160,299 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+// ============================================================================
+// СЕКЦИЯ 8: REQUESTS WITH PAYMENTS (Заявки с платежами)
+// ============================================================================
+
+/**
+ * GET /api/stripe-admin/requests/active
+ * Получение активных заявок с донатами/платными
+ * 
+ * Активные заявки: new, inProgress, pending
+ */
+router.get('/requests/active', async (req, res) => {
+  try {
+    // Получаем активные заявки, которые платные или имеют донаты
+    const [requests] = await pool.execute(`
+      SELECT r.*, 
+             u.email as creator_email, u.display_name as creator_name,
+             COUNT(d.id) as donations_count,
+             COALESCE(SUM(d.amount), 0) as total_donations
+      FROM requests r
+      LEFT JOIN users u ON r.created_by = u.id
+      LEFT JOIN donations d ON r.id = d.request_id
+      WHERE r.status IN ('new', 'inProgress', 'pending', 'pending_payment')
+        AND (r.cost > 0 OR EXISTS(SELECT 1 FROM donations WHERE request_id = r.id))
+      GROUP BY r.id
+      ORDER BY r.created_at DESC
+    `);
+
+    // Получаем ID всех заявок для загрузки донатов одним запросом
+    const requestIds = requests.map(r => r.id);
+    const [allDonations] = await pool.execute(`
+      SELECT d.*, u.email, u.display_name
+      FROM donations d
+      LEFT JOIN users u ON d.user_id = u.id
+      WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
+      ORDER BY d.created_at DESC
+    `, requestIds);
+
+    // Группируем донаты по заявкам
+    const donationsByRequest = {};
+    allDonations.forEach(donation => {
+      if (!donationsByRequest[donation.request_id]) {
+        donationsByRequest[donation.request_id] = [];
+      }
+      donationsByRequest[donation.request_id].push(donation);
+    });
+
+    const detailedRequests = await Promise.all(
+      requests.map(async (request) => {
+        // Получаем информацию о платеже создателя (если платная заявка)
+        let creatorPayment = null;
+        if (request.cost > 0 && request.payment_intent_id) {
+          try {
+            const stripePI = await stripe.paymentIntents.retrieve(request.payment_intent_id);
+            creatorPayment = {
+              user_id: request.created_by,
+              email: request.creator_email,
+              name: request.creator_name,
+              amount: request.cost,
+              payment_intent_id: request.payment_intent_id,
+              stripe_status: stripePI.status,
+              capture_method: stripePI.capture_method,
+              amount_captured: stripePI.amount_captured / 100,
+              amount_received: stripePI.amount_received / 100,
+              is_captured: stripePI.amount_received > 0
+            };
+          } catch (stripeErr) {
+            creatorPayment = {
+              user_id: request.created_by,
+              email: request.creator_email,
+              name: request.creator_name,
+              amount: request.cost,
+              payment_intent_id: request.payment_intent_id,
+              stripe_error: stripeErr.message
+            };
+          }
+        }
+
+        // Получаем донаты для текущей заявки из сгруппированных данных
+        const requestDonations = donationsByRequest[request.id] || [];
+
+        const detailedDonations = await Promise.all(
+          requestDonations.map(async (donation) => {
+            let stripeInfo = null;
+            if (donation.payment_intent_id) {
+              try {
+                const stripePI = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
+                stripeInfo = {
+                  stripe_status: stripePI.status,
+                  capture_method: stripePI.capture_method,
+                  amount_captured: stripePI.amount_captured / 100,
+                  amount_received: stripePI.amount_received / 100,
+                  is_captured: stripePI.amount_received > 0
+                };
+              } catch (stripeErr) {
+                stripeInfo = { stripe_error: stripeErr.message };
+              }
+            }
+
+            return {
+              user_id: donation.user_id,
+              email: donation.email,
+              name: donation.display_name,
+              amount: donation.amount,
+              payment_intent_id: donation.payment_intent_id,
+              ...stripeInfo
+            };
+          })
+        );
+
+        return {
+          id: request.id,
+          name: request.name,
+          category: request.category,
+          status: request.status,
+          cost: request.cost,
+          created_at: request.created_at,
+          updated_at: request.updated_at,
+          creator_payment: creatorPayment,
+          donations: detailedDonations,
+          donations_count: request.donations_count,
+          total_donations: request.total_donations
+        };
+      })
+    );
+
+    success(res, {
+      requests: detailedRequests,
+      total: detailedRequests.length
+    });
+  } catch (err) {
+    return error(res, 'Ошибка при получении активных заявок', 500, err);
+  }
+});
+
+/**
+ * GET /api/stripe-admin/requests/closed
+ * Получение закрытых/архивных заявок с донатами/платными
+ * 
+ * Закрытые заявки: approved, rejected, completed
+ */
+router.get('/requests/closed', async (req, res) => {
+  try {
+    // Получаем закрытые заявки, которые платные или имеют донаты
+    const [requests] = await pool.execute(`
+      SELECT r.*, 
+             u.email as creator_email, u.display_name as creator_name,
+             COUNT(d.id) as donations_count,
+             COALESCE(SUM(d.amount), 0) as total_donations
+      FROM requests r
+      LEFT JOIN users u ON r.created_by = u.id
+      LEFT JOIN donations d ON r.id = d.request_id
+      WHERE r.status IN ('approved', 'rejected', 'completed')
+        AND (r.cost > 0 OR EXISTS(SELECT 1 FROM donations WHERE request_id = r.id))
+      GROUP BY r.id
+      ORDER BY r.updated_at DESC
+    `);
+
+    // Получаем ID всех заявок для загрузки донатов одним запросом
+    const requestIds = requests.map(r => r.id);
+    const [allDonations] = await pool.execute(`
+      SELECT d.*, u.email, u.display_name
+      FROM donations d
+      LEFT JOIN users u ON d.user_id = u.id
+      WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
+      ORDER BY d.created_at DESC
+    `, requestIds);
+
+    // Группируем донаты по заявкам
+    const donationsByRequest = {};
+    allDonations.forEach(donation => {
+      if (!donationsByRequest[donation.request_id]) {
+        donationsByRequest[donation.request_id] = [];
+      }
+      donationsByRequest[donation.request_id].push(donation);
+    });
+
+    const detailedRequests = await Promise.all(
+      requests.map(async (request) => {
+        // Получаем информацию о платеже создателя (если платная заявка)
+        let creatorPayment = null;
+        if (request.cost > 0 && request.payment_intent_id) {
+          try {
+            const stripePI = await stripe.paymentIntents.retrieve(request.payment_intent_id);
+            creatorPayment = {
+              user_id: request.created_by,
+              email: request.creator_email,
+              name: request.creator_name,
+              amount: request.cost,
+              payment_intent_id: request.payment_intent_id,
+              stripe_status: stripePI.status,
+              capture_method: stripePI.capture_method,
+              amount_captured: stripePI.amount_captured / 100,
+              amount_received: stripePI.amount_received / 100,
+              is_captured: stripePI.amount_received > 0
+            };
+          } catch (stripeErr) {
+            creatorPayment = {
+              user_id: request.created_by,
+              email: request.creator_email,
+              name: request.creator_name,
+              amount: request.cost,
+              payment_intent_id: request.payment_intent_id,
+              stripe_error: stripeErr.message
+            };
+          }
+        }
+
+        // Получаем донаты для текущей заявки из сгруппированных данных
+        const requestDonations = donationsByRequest[request.id] || [];
+
+        const detailedDonations = await Promise.all(
+          requestDonations.map(async (donation) => {
+            let stripeInfo = null;
+            if (donation.payment_intent_id) {
+              try {
+                const stripePI = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
+                stripeInfo = {
+                  stripe_status: stripePI.status,
+                  capture_method: stripePI.capture_method,
+                  amount_captured: stripePI.amount_captured / 100,
+                  amount_received: stripePI.amount_received / 100,
+                  is_captured: stripePI.amount_received > 0
+                };
+              } catch (stripeErr) {
+                stripeInfo = { stripe_error: stripeErr.message };
+              }
+            }
+
+            return {
+              user_id: donation.user_id,
+              email: donation.email,
+              name: donation.display_name,
+              amount: donation.amount,
+              payment_intent_id: donation.payment_intent_id,
+              ...stripeInfo
+            };
+          })
+        );
+
+        // Получаем информацию о переводах (только для закрытых заявок)
+        let transfers = [];
+        try {
+          const stripeTransfers = await stripe.transfers.list({
+            transfer_group: `request_${request.id}`,
+            limit: 10
+          });
+          
+          transfers = stripeTransfers.data.map(transfer => ({
+            to_user_id: transfer.metadata?.user_id || 'unknown',
+            amount: transfer.amount / 100,
+            transfer_id: transfer.id,
+            status: transfer.status,
+            created: transfer.created,
+            error: transfer.failure_message || null
+          }));
+        } catch (transferErr) {
+          // Игнорируем ошибки получения переводов
+        }
+
+        // Считаем остаток по заявке
+        let requestBalance = 0;
+        const totalCaptured = (creatorPayment?.amount_received || 0) + 
+                            detailedDonations.reduce((sum, d) => sum + (d.amount_received || 0), 0);
+        const totalTransferred = transfers.reduce((sum, t) => sum + t.amount, 0);
+        requestBalance = totalCaptured - totalTransferred;
+
+        return {
+          id: request.id,
+          name: request.name,
+          category: request.category,
+          status: request.status,
+          cost: request.cost,
+          created_at: request.created_at,
+          updated_at: request.updated_at,
+          creator_payment: creatorPayment,
+          donations: detailedDonations,
+          donations_count: request.donations_count,
+          total_donations: request.total_donations,
+          transfers: transfers,
+          request_balance: requestBalance,
+          total_captured: totalCaptured,
+          total_transferred: totalTransferred
+        };
+      })
+    );
+
+    success(res, {
+      requests: detailedRequests,
+      total: detailedRequests.length
+    });
+  } catch (err) {
+    return error(res, 'Ошибка при получении закрытых заявок', 500, err);
+  }
+});
+
 module.exports = router;
