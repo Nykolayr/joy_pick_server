@@ -71,7 +71,7 @@ router.post('/create-donation', authenticate, [
         amount: amountCents,
         currency: 'usd',
         payment_method_types: ['card'],
-        capture_method: 'manual', // Холдируем средства
+        capture_method: 'automatic', // Автоматический захват средств
         metadata: {
           request_id: request_id,
           user_id: user_id,
@@ -212,7 +212,7 @@ router.post('/create-request-payment', authenticate, [
         amount: amountCents,
         currency: 'usd',
         payment_method_types: ['card'],
-        capture_method: 'manual', // Холдируем средства
+        capture_method: 'automatic', // Автоматический захват средств
         metadata: {
           request_id: request_id,
           user_id: user_id,

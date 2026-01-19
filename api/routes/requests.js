@@ -2198,23 +2198,93 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
 
   // 2. Возвращаем деньги создателю (если была платная заявка)
   const [requestData] = await pool.execute(
-    'SELECT cost FROM requests WHERE id = ?',
+    'SELECT cost, payment_intent_id FROM requests WHERE id = ?',
     [requestId]
   );
-  if (requestData[0]?.cost && requestData[0].cost > 0) {
-    // TODO: Реализовать возврат денег через платежную систему
+  if (requestData[0]?.cost && requestData[0].cost > 0 && requestData[0]?.payment_intent_id) {
+    try {
+      const paymentIntent = await stripe.paymentIntents.retrieve(requestData[0].payment_intent_id);
+      
+      if (paymentIntent.status === 'succeeded') {
+        // Платеж захвачен - делаем refund
+        const charges = await stripe.charges.list({
+          payment_intent: requestData[0].payment_intent_id,
+          limit: 1
+        });
+        
+        if (charges.data.length > 0) {
+          await stripe.refunds.create({
+            charge: charges.data[0].id,
+            reason: 'requested_by_customer'
+          });
+          
+          // Обновляем статус в БД
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            ['refunded', requestData[0].payment_intent_id]
+          );
+        }
+      } else if (paymentIntent.status !== 'canceled') {
+        // Платеж не захвачен - отменяем
+        await stripe.paymentIntents.cancel(requestData[0].payment_intent_id);
+        
+        // Обновляем статус в БД
+        await pool.execute(
+          'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+          ['canceled', requestData[0].payment_intent_id]
+        );
+      }
+    } catch (stripeErr) {
+      // Игнорируем ошибки Stripe (возможно, уже отменен или refunded)
+    }
   }
 
   // 3. Возвращаем деньги донатерам
   const [donations] = await pool.execute(
-    'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
+    'SELECT DISTINCT user_id, amount, payment_intent_id FROM donations WHERE request_id = ?',
     [requestId]
   );
   const donorUserIds = [];
   for (const donation of donations) {
-    if (donation.amount && donation.amount > 0) {
-      // TODO: Реализовать возврат денег через платежную систему
-      donorUserIds.push(donation.user_id);
+    if (donation.amount && donation.amount > 0 && donation.payment_intent_id) {
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
+        
+        if (paymentIntent.status === 'succeeded') {
+          // Платеж захвачен - делаем refund
+          const charges = await stripe.charges.list({
+            payment_intent: donation.payment_intent_id,
+            limit: 1
+          });
+          
+          if (charges.data.length > 0) {
+            await stripe.refunds.create({
+              charge: charges.data[0].id,
+              reason: 'requested_by_customer'
+            });
+            
+            // Обновляем статус в БД
+            await pool.execute(
+              'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+              ['refunded', donation.payment_intent_id]
+            );
+          }
+        } else if (paymentIntent.status !== 'canceled') {
+          // Платеж не захвачен - отменяем
+          await stripe.paymentIntents.cancel(donation.payment_intent_id);
+          
+          // Обновляем статус в БД
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            ['canceled', donation.payment_intent_id]
+          );
+        }
+        
+        donorUserIds.push(donation.user_id);
+      } catch (stripeErr) {
+        // Игнорируем ошибки Stripe (возможно, уже отменен или refunded)
+        donorUserIds.push(donation.user_id);
+      }
     }
   }
 
@@ -2985,7 +3055,7 @@ router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
               amount: paymentAmountCents,
               currency: 'usd',
               payment_method_types: ['card'],
-              capture_method: 'manual',
+              capture_method: 'automatic',
               metadata: {
                 request_id: requestId,
                 user_id: userId,
