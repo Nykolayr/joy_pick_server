@@ -151,135 +151,11 @@ router.post('/create-donation', authenticate, [
 
 /**
  * POST /api/payments/create-request-payment
- * Создание PaymentIntent для оплаты стоимости заявки (если cost > 0)
+ * @deprecated Эндпоинт удален. Теперь все платежи идут через донаты.
+ * Используйте POST /api/payments/create-donation
  */
-router.post('/create-request-payment', authenticate, [
-  body('request_id').notEmpty().withMessage('request_id обязателен'),
-  body('user_id').notEmpty().withMessage('user_id обязателен'),
-  body('amount').isFloat({ min: 0.5 }).withMessage('Минимум 0.5 доллара (50 центов)'),
-  body('request_category').optional().isString()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, errors.array());
-    }
-
-    const { request_id, user_id, amount, request_category } = req.body;
-
-    // Проверяем права доступа
-    if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Недостаточно прав', 403);
-    }
-
-    // Проверяем существование заявки
-    const [requests] = await pool.execute(
-      'SELECT id, name, category FROM requests WHERE id = ?',
-      [request_id]
-    );
-
-    if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
-    }
-
-    // Проверяем существование пользователя
-    const [users] = await pool.execute(
-      'SELECT id FROM users WHERE id = ?',
-      [user_id]
-    );
-
-    if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
-    }
-
-    // Проверяем, что Stripe API ключ настроен
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return error(res, 'Stripe не настроен на сервере', 500);
-    }
-
-    // ВАЖНО: amount приходит в долларах (как возвращается на фронт)
-    // Конвертируем в центы для Stripe
-    const amountCents = Math.round(parseFloat(amount) * 100);
-    
-    if (amountCents < 50) {
-      return error(res, 'Минимум 50 центов (требование Stripe)', 400);
-    }
-
-    // Создаем PaymentIntent в Stripe
-    let paymentIntent;
-    try {
-      paymentIntent = await stripe.paymentIntents.create({
-        amount: amountCents,
-        currency: 'usd',
-        payment_method_types: ['card'],
-        capture_method: 'automatic', // Автоматический захват средств
-        metadata: {
-          request_id: request_id,
-          user_id: user_id,
-          request_category: request_category || requests[0].category || 'unknown',
-          type: 'request_payment'
-        }
-      });
-
-      // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
-      if (!paymentIntent) {
-        throw new Error('Stripe вернул пустой ответ (null или undefined)');
-      }
-
-      if (!paymentIntent.id) {
-        throw new Error('Stripe не вернул payment_intent_id в ответе');
-      }
-
-      if (!paymentIntent.client_secret) {
-        throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + paymentIntent.id);
-      }
-
-    } catch (stripeErr) {
-      return error(res, 'Ошибка при создании PaymentIntent для оплаты заявки', 500, {
-        errorMessage: stripeErr.message || 'Неизвестная ошибка',
-        errorType: stripeErr.type || 'StripeError',
-        errorCode: stripeErr.code || 'STRIPE_ERROR',
-        requestId: request_id,
-        userId: user_id,
-        amountCents: amountCents,
-        amountDollars: parseFloat(amount),
-        stripeRaw: stripeErr.raw || null,
-        stripeDeclineCode: stripeErr.decline_code || null,
-        stripeParam: stripeErr.param || null
-      });
-    }
-
-    // Сохраняем PaymentIntent в базу данных
-    const id = generateId();
-    await pool.execute(
-      `INSERT INTO payment_intents (id, payment_intent_id, user_id, request_id, amount_cents, currency, status, type, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        paymentIntent.id,
-        user_id,
-        request_id,
-        amountCents,
-        'usd',
-        paymentIntent.status,
-        'request_payment',
-        JSON.stringify({
-          request_id: request_id,
-          user_id: user_id,
-          request_category: request_category || requests[0].category || 'unknown'
-        })
-      ]
-    );
-
-    return success(res, {
-      payment_intent_id: paymentIntent.id,
-      client_secret: paymentIntent.client_secret,
-      message: 'Payment intent created'
-    }, 'Payment intent created');
-
-  } catch (err) {
-    return error(res, 'Ошибка при создании платежа за заявку', 500, err);
-  }
+router.post('/create-request-payment', authenticate, async (req, res) => {
+  return error(res, 'Эндпоинт удален. Платные заявки больше не поддерживаются. Используйте POST /api/payments/create-donation для создания доната от создателя заявки.', 410);
 });
 
 /**
@@ -300,7 +176,7 @@ router.post('/complete-request', authenticate, [
 
     // Получаем заявку из базы данных
     const [requests] = await pool.execute(
-      'SELECT id, cost, category, name FROM requests WHERE id = ?',
+      'SELECT id, category, name FROM requests WHERE id = ?',
       [request_id]
     );
 
@@ -310,15 +186,6 @@ router.post('/complete-request', authenticate, [
 
     const request = requests[0];
 
-    // Получаем все PaymentIntent для заявки
-    // 1. Основной PaymentIntent (если cost > 0)
-    const [requestPayments] = await pool.execute(
-      `SELECT * FROM payment_intents 
-       WHERE request_id = ? AND type = 'request_payment' AND status IN ('requires_capture', 'succeeded')`,
-      [request_id]
-    );
-
-    // 2. Все донаты
     const [donations] = await pool.execute(
       `SELECT d.*, pi.payment_intent_id, pi.status as payment_status
        FROM donations d
@@ -327,10 +194,7 @@ router.post('/complete-request', authenticate, [
       [request_id]
     );
 
-    const allPaymentIntents = [
-      ...requestPayments.map(p => p.payment_intent_id),
-      ...donations.map(d => d.payment_intent_id).filter(Boolean)
-    ];
+    const allPaymentIntents = donations.map(d => d.payment_intent_id).filter(Boolean);
 
     // Capture всех PaymentIntent
     const capturedPaymentIntents = [];
@@ -371,9 +235,8 @@ router.post('/complete-request', authenticate, [
 
     // Рассчитываем сумму для transfer
     // MySQL возвращает decimal как строки, поэтому используем parseFloat
-    const costAmount = request.cost ? Math.round(parseFloat(request.cost) * 100) : 0; // в центах
-    const donationsAmount = donations.reduce((sum, d) => sum + Math.round(parseFloat(d.amount) * 100), 0);
-    const totalAmount = costAmount + donationsAmount;
+    // Теперь все платежи идут только через донаты
+    const totalAmount = donations.reduce((sum, d) => sum + Math.round(parseFloat(d.amount) * 100), 0);
 
     // Комиссия платформы: 7%
     const platformFeeCents = Math.round(totalAmount * 0.07);
