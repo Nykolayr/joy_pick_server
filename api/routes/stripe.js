@@ -511,33 +511,6 @@ async function handlePaymentIntentCanceled(paymentIntent) {
 async function deleteRequestIfPendingPayment(requestId, reason) {
   // Функция больше не используется - все платежи через донаты
   return;
-
-    // Удаляем ВСЕ чаты заявки
-    const { deleteAllChatsForRequest } = require('../utils/chatHelpers');
-    await deleteAllChatsForRequest(requestId);
-
-    // Удаляем заявку
-    await pool.execute('DELETE FROM requests WHERE id = ?', [requestId]);
-
-    // Отправляем push-уведомление создателю (если есть)
-    if (request.created_by) {
-      const { sendRequestRejectedNotification } = require('../services/pushNotification');
-      try {
-        await sendRequestRejectedNotification({
-          userIds: [request.created_by],
-          requestId: requestId,
-          messageType: 'creator',
-          rejectionMessage: `Заявка была удалена: ${reason}`,
-          requestCategory: request.category || 'wasteLocation', // Получаем категорию из БД
-        });
-      } catch (notifErr) {
-        // Игнорируем ошибки уведомлений
-      }
-    }
-  } catch (err) {
-    // Логируем ошибку, но не прерываем выполнение
-    console.error('Ошибка при удалении заявки после отмены оплаты:', err);
-  }
 }
 
 /**
