@@ -456,7 +456,7 @@ async function deleteInactiveRequests() {
     // 1. Находим все waste/speedCleanup заявки со статусом new, где прошло 2 суток с момента создания
     // и никто не взялся за исполнение (joined_user_id IS NULL)
     const [newRequests] = await pool.execute(
-      `SELECT id, created_by, cost, category
+      `SELECT id, created_by, category
        FROM requests 
        WHERE category IN ('wasteLocation', 'speedCleanup')
          AND status = 'new' 
@@ -467,7 +467,7 @@ async function deleteInactiveRequests() {
     // 2. Находим все waste заявки со статусом inProgress, где прошло 2 суток с момента присоединения
     // и заявка не выполнена (статус все еще inProgress, а не completed или approved)
     const [inProgressRequests] = await pool.execute(
-      `SELECT id, created_by, cost, category, joined_user_id
+      `SELECT id, created_by, category, joined_user_id
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'inProgress' 
@@ -479,7 +479,7 @@ async function deleteInactiveRequests() {
     // 3. Находим все speedCleanup заявки со статусом inProgress БЕЗ join_date
     // (созданные более 2 суток назад и не завершенные)
     const [speedCleanupInProgress] = await pool.execute(
-      `SELECT id, created_by, cost, category, joined_user_id
+      `SELECT id, created_by, category, joined_user_id
        FROM requests 
        WHERE category = 'speedCleanup'
          AND status = 'inProgress' 
@@ -816,26 +816,8 @@ async function checkEventAfterStartDate() {
         if (hoursSinceStart >= 48) {
           // Прошло 48 часов - удаляем заявку
           
-          // Отменяем/возвращаем все платежи
-          if (request.payment_intent_id) {
-            try {
-              const paymentIntent = await stripe.paymentIntents.retrieve(request.payment_intent_id);
-              
-              if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture') {
-                // Возвращаем деньги
-                await stripe.refunds.create({
-                  payment_intent: request.payment_intent_id,
-                });
-              } else if (paymentIntent.status !== 'canceled') {
-                // Отменяем PaymentIntent
-                await stripe.paymentIntents.cancel(request.payment_intent_id);
-              }
-            } catch (stripeErr) {
-              // Логируем, но продолжаем удаление
-            }
-          }
-
-          // Возвращаем деньги по всем донатам
+          // Возвращаем деньги всем донатерам (включая создателя, если он делал донат)
+          // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
           const [donations] = await pool.execute(
             'SELECT payment_intent_id FROM donations WHERE request_id = ?',
             [request.id]

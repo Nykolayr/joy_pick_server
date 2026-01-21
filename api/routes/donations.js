@@ -171,7 +171,8 @@ router.post('/', authenticate, [
     }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
-    if (request.created_by) {
+    // ВАЖНО: Не отправляем уведомление, если донат от самого создателя
+    if (request.created_by && request.created_by !== userId) {
       sendDonationNotification({
         requestId: requestId,
         requestName: request.name || 'Request',

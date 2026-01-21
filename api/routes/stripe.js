@@ -398,35 +398,8 @@ async function handlePaymentIntentRequiresCapture(paymentIntent) {
         ['succeeded', paymentIntent.id]
       );
 
-      // Если это платеж за заявку (request_payment), обновляем статус заявки
-      // Для донатов (donation) просто обновляем статус в БД, заявка не меняется
-      if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
-        const requestId = paymentIntentData.request_id;
-        
-        const [requests] = await pool.execute(
-          'SELECT category, status FROM requests WHERE id = ?',
-          [requestId]
-        );
-
-        if (requests.length > 0 && requests[0].status === 'pending_payment') {
-          const category = requests[0].category;
-          
-          // Определяем стандартный статус по категории
-          let defaultStatus = 'new';
-          if (category === 'event') {
-            defaultStatus = 'inProgress';
-          } else if (category === 'wasteLocation' || category === 'speedCleanup') {
-            defaultStatus = 'new';
-          }
-
-          // Обновляем статус заявки на стандартный
-          await pool.execute(
-            'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-            [defaultStatus, requestId]
-          );
-        }
-      }
-      // Для донатов (type === 'donation') capture уже сделан, статус обновлен, ничего дополнительного не требуется
+      // ВАЖНО: Теперь все платежи идут через донаты (type === 'donation')
+      // Для донатов capture уже сделан, статус обновлен, ничего дополнительного не требуется
     } catch (captureErr) {
       // Логируем ошибку capture, но не прерываем выполнение
       console.error('Ошибка автоматического capture PaymentIntent:', captureErr);
@@ -472,34 +445,8 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     );
   }
 
-  // Если это платеж за заявку (type = 'request_payment'), обновляем статус заявки
-  if (paymentIntent.metadata?.type === 'request_payment' && paymentIntent.metadata?.request_id) {
-    const requestId = paymentIntent.metadata.request_id;
-    
-    // Получаем заявку для определения категории
-    const [requests] = await pool.execute(
-      'SELECT category, status FROM requests WHERE id = ?',
-      [requestId]
-    );
-
-    if (requests.length > 0 && requests[0].status === 'pending_payment') {
-      const category = requests[0].category;
-      
-      // Определяем стандартный статус по категории
-      let defaultStatus = 'new';
-      if (category === 'event') {
-        defaultStatus = 'inProgress';
-      } else if (category === 'wasteLocation' || category === 'speedCleanup') {
-        defaultStatus = 'new';
-      }
-
-      // Обновляем статус заявки на стандартный
-      await pool.execute(
-        'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-        [defaultStatus, requestId]
-      );
-    }
-  }
+  // ВАЖНО: Теперь все платежи идут через донаты (type === 'donation')
+  // Для донатов статус заявки не меняется при успешной оплате
 }
 
 /**
@@ -521,12 +468,8 @@ async function handlePaymentIntentFailed(paymentIntent) {
       ['canceled', paymentIntent.id]
     );
 
-    // Если это платеж за заявку (type = 'request_payment'), удаляем заявку
-    if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
-      await deleteRequestIfPendingPayment(paymentIntentData.request_id, 'Payment failed');
-    }
-    
-    // Если это донат (type = 'donation'), удаляем донат и откатываем total_contributed
+    // ВАЖНО: Теперь все платежи идут через донаты (type === 'donation')
+    // Если это донат, удаляем донат и откатываем total_contributed
     if (paymentIntentData.type === 'donation' && paymentIntentData.request_id) {
       await deleteDonationIfFailed(paymentIntentData.payment_intent_id, paymentIntentData.request_id);
     }
@@ -552,12 +495,8 @@ async function handlePaymentIntentCanceled(paymentIntent) {
       ['canceled', paymentIntent.id]
     );
 
-    // Если это платеж за заявку (type = 'request_payment'), удаляем заявку
-    if (paymentIntentData.type === 'request_payment' && paymentIntentData.request_id) {
-      await deleteRequestIfPendingPayment(paymentIntentData.request_id, 'Payment canceled');
-    }
-    
-    // Если это донат (type = 'donation'), удаляем донат и откатываем total_contributed
+    // ВАЖНО: Теперь все платежи идут через донаты (type === 'donation')
+    // Если это донат, удаляем донат и откатываем total_contributed
     if (paymentIntentData.type === 'donation' && paymentIntentData.request_id) {
       await deleteDonationIfFailed(paymentIntentData.payment_intent_id, paymentIntentData.request_id);
     }
@@ -565,27 +504,13 @@ async function handlePaymentIntentCanceled(paymentIntent) {
 }
 
 /**
- * Удаляет заявку, если она в статусе pending_payment
- * Используется при отмене/ошибке оплаты
+ * УДАЛЕН: Функция больше не используется
+ * Теперь все платежи идут через донаты, заявки не удаляются автоматически при отмене доната
+ * @deprecated Эта функция удалена. Заявки не удаляются автоматически при отмене доната.
  */
 async function deleteRequestIfPendingPayment(requestId, reason) {
-  try {
-    // Проверяем статус заявки и получаем категорию
-    const [requests] = await pool.execute(
-      'SELECT id, status, created_by, category FROM requests WHERE id = ?',
-      [requestId]
-    );
-
-    if (requests.length === 0) {
-      return; // Заявка уже удалена
-    }
-
-    const request = requests[0];
-
-    // Удаляем только если заявка в статусе pending_payment
-    if (request.status !== 'pending_payment') {
-      return; // Заявка уже оплачена или имеет другой статус
-    }
+  // Функция больше не используется - все платежи через донаты
+  return;
 
     // Удаляем ВСЕ чаты заявки
     const { deleteAllChatsForRequest } = require('../utils/chatHelpers');

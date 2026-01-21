@@ -89,10 +89,11 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 ### Правила работы с суммами:
 
 1. **Все суммы приходят и возвращаются в долларах:**
-   - `cost` - в долларах (decimal/float). Примеры: `2.50`, `10.00`, `1.25`
    - `amount` (для донатов) - в долларах (decimal/float). Примеры: `2.50`, `10.00`, `1.25`
-   - `total_contributed` - в долларах (decimal/float)
+   - `total_contributed` - в долларах (decimal/float) - сумма всех донатов
    - `target_amount` - в долларах (decimal/float)
+   
+   **ВАЖНО:** Поле `cost` удалено. Теперь все платежи идут через донаты, включая платеж создателя.
 
 2. **В БД сохраняется:**
    - Все суммы в долларах в формате `decimal(10,2)`
@@ -107,16 +108,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 
 ### Примеры использования:
 
-**Создание заявки с оплатой:**
-```json
-{
-  "require_payment": true,
-  "cost": 2.50
-}
-```
-→ Бэкенд автоматически конвертирует в центы (250) для Stripe
-
-**Создание доната:**
+**Создание доната (включая донат от создателя):**
 ```json
 {
   "amount": 1.25
@@ -127,11 +119,12 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 **Получение заявки:**
 ```json
 {
-  "cost": 2.50,
   "total_contributed": 5.75
 }
 ```
 → Все суммы возвращаются в долларах
+
+**ВАЖНО:** Поле `cost` удалено. Теперь все платежи идут через донаты. Создатель может сделать донат своей заявке через `POST /api/donations` сразу после создания заявки или позже.
 
 ---
 
@@ -240,11 +233,11 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `waste_types` | array[string] | Нет | Массив названий типов отходов (например: `["plastic", "glass"]`) |
 | `only_foot` | boolean | Нет | Доступ только пешком (по умолчанию: `false`) |
 | `possible_by_car` | boolean | Нет | Доступ на машине (по умолчанию: `false`) |
-| `cost` | integer | Нет | Стоимость заявки |
+| ~~`cost`~~ | ~~integer~~ | ~~Нет~~ | ~~УДАЛЕНО: Теперь все платежи через донаты~~ |
 | `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
 | `start_date` | datetime | **Да (для speedCleanup)** | Дата начала работы. **Обязательно для `speedCleanup`**, опционально для `event` |
 | `end_date` | datetime | **Да (для speedCleanup)** | Дата окончания работы. **Обязательно для `speedCleanup`**, опционально для `event` |
-| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br>- `event`: `inProgress` (автоматически при создании) или `pending_payment` (если создана через `POST /api/requests/create-with-payment` с `require_payment = true`)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `pending_payment` - ожидает оплаты (создается через `POST /api/requests/create-with-payment` с `require_payment = true`, автоматически обновляется на стандартный статус после успешной оплаты через webhook Stripe)<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `completed` - завершена<br>- `archived` - архивирована (автоматически или вручную)<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 24 часа после одобрения заявка автоматически переводится в `completed`<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники<br>- Для заявок со статусом `pending_payment`: после успешной оплаты статус автоматически обновляется на стандартный (`new` для wasteLocation/speedCleanup, `inProgress` для event) через webhook Stripe. Если оплата не прошла в течение 24 часов, заявка автоматически удаляется |
+| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `completed` - завершена<br>- `archived` - архивирована (автоматически или вручную)<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 24 часа после одобрения заявка автоматически переводится в `completed`<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники<br><br>**ВАЖНО:** Статус `pending_payment` удален. Теперь все платежи идут через донаты, заявка создается сразу со стандартным статусом |
 | `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
@@ -1405,7 +1398,7 @@ Future<void> updateUserAvatar({
 - `page` (int, default: 1) - номер страницы
 - `limit` (int, default: 20) - количество на странице
 - `category` (string) - фильтр: `wasteLocation`, `speedCleanup`, `event`
-- `status` (string) - фильтр: `new`, `pending_payment`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`
+- `status` (string) - фильтр: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`
 - `city` (string) - фильтр по городу
 - `latitude` (float) - широта для поиска по радиусу
 - `longitude` (float) - долгота для поиска по радиусу
@@ -1748,155 +1741,28 @@ Future<void> createRequestWithPhotos({
 
 ---
 
-### Атомарное создание заявки с платежом
+### Создание доната от создателя
 
-**POST** `/requests/create-with-payment`
+**ВАЖНО:** Endpoint `POST /api/requests/create-with-payment` удален. Теперь все платежи идут через донаты.
 
-**Требует аутентификации**
+**Новый подход:**
+1. Создайте заявку через `POST /api/requests` (без платежа)
+2. Сразу после создания (или позже) создайте донат от создателя через `POST /api/donations`
 
-**Описание:**
-Создает заявку и PaymentIntent атомарно в одной транзакции. Если `require_payment = true` и `amount_cents > 0`, создает заявку со статусом `"pending_payment"` и PaymentIntent. Если оплата не требуется (`require_payment = false` или `amount_cents = 0`), создает заявку со стандартным статусом (`"new"` для wasteLocation/speedCleanup, `"inProgress"` для event).
+**Пример:**
+```dart
+// 1. Создать заявку
+final request = await createRequest(...);
 
-**Важно:** Фотографии принимаются только в виде файлов через `multipart/form-data`. URL фотографий не принимаются.
-
-**Content-Type:** `multipart/form-data`
-
-**Поля формы:**
-- Все стандартные поля заявки (как в `POST /api/requests`)
-- `require_payment` (boolean, опционально, по умолчанию: `false`) - если `true`, создает платеж
-- `amount_cents` (integer, опционально) - сумма в центах (если не указано, берется из `cost`)
-- `request_category` (string, опционально) - категория для Stripe metadata (`"waste_location"`, `"event"`, `"speed_cleanup"`)
-- `photos_before` (file[], опционально) - массив файлов фотографий "до"
-- `photos_after` (file[], опционально) - массив файлов фотографий "после"
-
-**Важно:**
-- Если `require_payment = true` и `amount_cents > 0` (или `cost > 0`), заявка создается со статусом `"pending_payment"`
-- Если `require_payment = false` или `amount_cents = 0`, заявка создается со стандартным статусом
-- `amount_cents` приоритетнее чем `cost` для создания платежа
-- Если `amount_cents` не указано, используется `cost` (конвертируется в центы: `cost * 100`)
-- Минимальная сумма для Stripe: 50 центов
-- Все операции выполняются в одной транзакции БД - если любая операция не удалась, вся транзакция откатывается
-
-**Пример запроса (с оплатой):**
-```json
-{
-  "category": "wasteLocation",
-  "name": "Название заявки",
-  "description": "Описание",
-  "latitude": 55.7558,
-  "longitude": 37.6173,
-  "city": "Москва",
-  "cost": 10.00,
-  "require_payment": true,
-  "amount": 10.00,
-  "request_category": "waste_location"
-}
+// 2. Создать донат от создателя (можно сразу или позже)
+final donation = await createDonation(
+  requestId: request.id,
+  amount: 10.00, // в долларах
+  paymentIntentId: paymentIntent.id
+);
 ```
 
-**Пример запроса (без оплаты):**
-```json
-{
-  "category": "wasteLocation",
-  "name": "Название заявки",
-  "description": "Описание",
-  "latitude": 55.7558,
-  "longitude": 37.6173,
-  "city": "Москва",
-  "require_payment": false
-}
-```
-
-**Ответ (201) - с оплатой:**
-```json
-{
-  "success": true,
-  "message": "Заявка создана успешно",
-  "data": {
-    "request": {
-      "id": "uuid-заявки",
-      "category": "wasteLocation",
-      "name": "Название заявки",
-      "status": "pending_payment",
-      "cost": 10.00,
-      "payment_intent_id": "pi_xxxxx",
-      // ... все остальные поля заявки
-    },
-    "payment": {
-      "payment_intent_id": "pi_xxxxx",
-      "client_secret": "pi_xxxxx_secret_xxxxx"
-    }
-  }
-}
-```
-
-**Ответ (201) - без оплаты:**
-```json
-{
-  "success": true,
-  "message": "Заявка создана успешно",
-  "data": {
-    "request": {
-      "id": "uuid-заявки",
-      "status": "new",
-      // ... все остальные поля заявки
-    },
-    "payment": null
-  }
-}
-```
-
-**Ошибка (400) - валидация:**
-```json
-{
-  "success": false,
-  "message": "Ошибка валидации",
-  "errors": [
-    {
-      "field": "amount_cents",
-      "message": "Минимум 50 центов (требование Stripe)"
-    }
-  ]
-}
-```
-
-**Ошибка (500) - ошибка создания:**
-```json
-{
-  "success": false,
-  "message": "Ошибка при создании заявки с платежом",
-  "error": "Детали ошибки"
-}
-```
-
-**Обновление статуса после оплаты:**
-- После успешной оплаты на клиенте, статус заявки автоматически обновляется через webhook Stripe
-- Статус меняется с `"pending_payment"` на стандартный:
-  - `"new"` для `wasteLocation` и `speedCleanup`
-  - `"inProgress"` для `event`
-- Если webhook не сработал, статус будет обновлен автоматически через 24 часа при очистке неоплаченных заявок
-
-**Очистка неоплаченных заявок:**
-
-Логика очистки зависит от типа заявки:
-
-1. **Для wasteLocation и speedCleanup:**
-   - Заявки со статусом `"pending_payment"`, которые не были оплачены в течение 24 часов, автоматически удаляются
-   - PaymentIntent отменяется в Stripe
-   - Создателю отправляется push-уведомление: "Your request was deleted because payment was not completed within 24 hours"
-
-2. **Для event:**
-   - Заявки со статусом `"pending_payment"` НЕ удаляются до даты события (`start_date`)
-   - Это позволяет создавать event за неделю или больше и принимать донаты/платежи до даты события
-   - После даты события, если оплата не завершена, заявка автоматически удаляется
-   - PaymentIntent отменяется в Stripe
-   - Создателю отправляется push-уведомление: "Your event was deleted because payment was not completed before the event date"
-
-**Важно:**
-- Event заявки можно создавать заранее (за неделю, месяц и более)
-- Платеж или донаты могут приходить в любое время до `start_date`
-- После `start_date` неоплаченная event заявка будет автоматически удалена
-
-**Логика завершения event заявок (платных и бесплатных):**
+**Логика завершения event заявок:**
 
 После даты проведения события (`start_date`) для всех event заявок (кроме тех, что уже на модерации или в архиве):
 
@@ -2021,7 +1887,7 @@ Future<void> createRequestWithPhotos({
      }
    }
    ```
-   **Причина:** Заявка создана в БД, но Stripe не вернул `client_secret`. **ВАЖНО:** В этом случае заявка УЖЕ создана со статусом `pending_payment`, но оплату провести невозможно. Пользователю нужно удалить заявку через `DELETE /api/requests/:id` и попробовать снова, либо обратиться в поддержку.
+   **Причина:** Заявка создана в БД, но Stripe не вернул `client_secret`. Пользователю нужно удалить заявку через `DELETE /api/requests/:id` и попробовать снова, либо обратиться в поддержку.
 
 **Рекомендации для клиента:**
 - Обрабатывайте все ошибки с кодом 500 при создании платных заявок
@@ -2041,7 +1907,9 @@ Future<void> createRequestWithPayment({
   required int amountCents,
   List<File>? photos_before,
 }) async {
-  final uri = Uri.parse('https://danilagames.ru/api/requests/create-with-payment');
+  // ВАЖНО: Endpoint /requests/create-with-payment удален
+  // Используйте POST /api/requests для создания заявки, затем POST /api/donations для доната
+  final uri = Uri.parse('https://danilagames.ru/api/requests');
   final request = http.MultipartRequest('POST', uri);
   
   request.headers['Authorization'] = 'Bearer $token';
@@ -2053,7 +1921,7 @@ Future<void> createRequestWithPayment({
   request.fields['city'] = 'Москва';
   request.fields['latitude'] = '55.7558';
   request.fields['longitude'] = '37.6173';
-  request.fields['require_payment'] = 'true';
+  // require_payment удален - создайте заявку, затем донат через POST /api/donations
   request.fields['amount_cents'] = amountCents.toString();
   request.fields['request_category'] = 'waste_location';
   
@@ -2134,7 +2002,7 @@ Future<void> createRequestWithPayment({
 
 **Статусы:**
 - `new` - создана, ожидает присоединения
-- `pending_payment` - ожидает оплаты (создается через `POST /api/requests/create-with-payment` с `require_payment = true`)
+- ~~`pending_payment`~~ - **УДАЛЕН:** Теперь все платежи через донаты
 - `inProgress` - в процессе выполнения
 - `pending` - ожидает рассмотрения модератором
 - `approved` - одобрена модератором
@@ -2158,7 +2026,7 @@ Future<void> createRequestWithPayment({
    - **Создатель НЕ может закрывать заявку** - эндпоинт `POST /api/requests/:requestId/close-by-creator` недоступен для `wasteLocation`
    - При одобрении модератором (`PUT /api/requests/:id` со статусом `approved`):
      - **Начисляется по 1 коину:** создателю, **исполнителю (joined_user_id)**, всем донатерам
-     - Деньги (cost + donations - комиссия) переводятся исполнителю
+     - Деньги (только donations - комиссия) переводятся исполнителю
      - Статус автоматически меняется на `archived`
      - Отправляются push-уведомления всем участникам
    - При отклонении (`rejected`):
@@ -2256,7 +2124,7 @@ Future<void> createRequestWithPayment({
 - Если исполнитель не завершил заявку в течение 24 часов, заявка возвращается в статус `new` и становится доступной для присоединения снова
 
 **Для платных заявок:**
-Если заявка имеет статус `pending_payment`, сервер автоматически проверяет статус оплаты в Stripe:
+**ВАЖНО:** Статус `pending_payment` удален. Теперь все платежи идут через донаты, заявка создается сразу со стандартным статусом.
 - Если оплата прошла (`succeeded`), статус заявки меняется на `new` и присоединение разрешается
 - Если оплата не прошла, возвращается ошибка 400 с деталями
 - Это позволяет пользователю присоединиться сразу после оплаты, не дожидаясь обработки webhook
@@ -5988,7 +5856,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 - PaymentIntent создается с `capture_method: manual` (средства холдируются)
 - Донат автоматически сохраняется в таблицу `donations`
 
-**Возможные ошибки (аналогично `/requests/create-with-payment`):**
+**Возможные ошибки:**
 - Ошибка 500: "Ошибка при создании PaymentIntent для доната" - см. детали в разделе "Атомарное создание заявки с платежом"
 - Все ошибки содержат детальную информацию в поле `errorDetails`
 - Если `client_secret` отсутствует - это критическая ошибка, нужно повторить попытку или обратиться в поддержку
@@ -6031,7 +5899,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 - Аналогично созданию доната, но с `metadata[type]: request_payment`
 - Используется для оплаты стоимости заявки создателем
 
-**Возможные ошибки (аналогично `/requests/create-with-payment`):**
+**Возможные ошибки:**
 - Ошибка 500: "Ошибка при создании PaymentIntent для оплаты заявки" - см. детали в разделе "Атомарное создание заявки с платежом"
 - Все ошибки содержат детальную информацию в поле `errorDetails`
 - Если `client_secret` отсутствует - это критическая ошибка, нужно повторить попытку или обратиться в поддержку
@@ -6083,7 +5951,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 1. Получает все PaymentIntent для заявки (основной платеж + донаты)
 2. Выполняет capture всех PaymentIntent
 3. Рассчитывает сумму для transfer:
-   - `total_amount = cost + sum(donations)`
+   - `total_amount = sum(donations)` (включая донат создателя, если он делал)
    - `platform_fee = total_amount * 0.07`
    - `stripe_fee = (total_amount * 0.109) + 33`
    - `transfer_amount = total_amount - platform_fee - stripe_fee`
@@ -6206,22 +6074,21 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
         "name": "Название заявки",
         "category": "wasteLocation",
         "status": "inProgress",
-        "cost": 50.00,
         "created_at": "2024-01-15T10:30:00.000Z",
         "updated_at": "2024-01-15T12:30:00.000Z",
-        "creator_payment": {
-          "user_id": "uuid-создателя",
-          "email": "creator@example.com",
-          "name": "Имя создателя",
-          "amount": 50.00,
-          "payment_intent_id": "pi_xxxxx",
-          "stripe_status": "succeeded",
-          "capture_method": "automatic",
-          "amount_captured": 50.00,
-          "amount_received": 50.00,
-          "is_captured": true
-        },
         "donations": [
+          {
+            "user_id": "uuid-создателя",
+            "email": "creator@example.com",
+            "name": "Имя создателя",
+            "amount": 50.00,
+            "payment_intent_id": "pi_xxxxx",
+            "stripe_status": "succeeded",
+            "capture_method": "automatic",
+            "amount_captured": 50.00,
+            "amount_received": 50.00,
+            "is_captured": true
+          },
           {
             "user_id": "uuid-донатера",
             "email": "donor@example.com",
@@ -6235,8 +6102,8 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
             "is_captured": true
           }
         ],
-        "donations_count": 1,
-        "total_donations": 25.00
+        "donations_count": 2,
+        "total_donations": 75.00
       }
     ],
     "total": 1
@@ -6262,22 +6129,21 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
         "name": "Название заявки",
         "category": "wasteLocation",
         "status": "completed",
-        "cost": 50.00,
         "created_at": "2024-01-15T10:30:00.000Z",
         "updated_at": "2024-01-15T16:30:00.000Z",
-        "creator_payment": {
-          "user_id": "uuid-создателя",
-          "email": "creator@example.com",
-          "name": "Имя создателя",
-          "amount": 50.00,
-          "payment_intent_id": "pi_xxxxx",
-          "stripe_status": "succeeded",
-          "capture_method": "automatic",
-          "amount_captured": 50.00,
-          "amount_received": 50.00,
-          "is_captured": true
-        },
         "donations": [
+          {
+            "user_id": "uuid-создателя",
+            "email": "creator@example.com",
+            "name": "Имя создателя",
+            "amount": 50.00,
+            "payment_intent_id": "pi_xxxxx",
+            "stripe_status": "succeeded",
+            "capture_method": "automatic",
+            "amount_captured": 50.00,
+            "amount_received": 50.00,
+            "is_captured": true
+          },
           {
             "user_id": "uuid-донатера",
             "email": "donor@example.com",
@@ -6291,8 +6157,8 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
             "is_captured": true
           }
         ],
-        "donations_count": 1,
-        "total_donations": 25.00,
+        "donations_count": 2,
+        "total_donations": 75.00,
         "transfers": [
           {
             "to_user_id": "uuid-исполнителя",
@@ -6314,8 +6180,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 ```
 
 **Поля ответа:**
-- `creator_payment` - информация о платеже создателя (если платная заявка)
-- `donations` - массив донатов с информацией о статусе захвата
+- `donations` - массив донатов с информацией о статусе захвата (включая донат создателя, если он делал)
 - `transfers` - массив переводов (только для закрытых заявок)
 - `request_balance` - остаток средств по заявке (захвачено - переведено)
 - `total_captured` - общая сумма захваченных средств

@@ -1181,8 +1181,8 @@ router.get('/requests/active', async (req, res) => {
       FROM requests r
       LEFT JOIN users u ON r.created_by = u.id
       LEFT JOIN donations d ON r.id = d.request_id
-      WHERE r.status IN ('new', 'inProgress', 'pending', 'pending_payment')
-        AND (r.cost > 0 OR EXISTS(SELECT 1 FROM donations WHERE request_id = r.id))
+      WHERE r.status IN ('new', 'inProgress', 'pending')
+        AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
       GROUP BY r.id
       ORDER BY r.created_at DESC
     `);
@@ -1208,34 +1208,8 @@ router.get('/requests/active', async (req, res) => {
 
     const detailedRequests = await Promise.all(
       requests.map(async (request) => {
-        // Получаем информацию о платеже создателя (если платная заявка)
-        let creatorPayment = null;
-        if (request.cost > 0 && request.payment_intent_id) {
-          try {
-            const stripePI = await stripe.paymentIntents.retrieve(request.payment_intent_id);
-            creatorPayment = {
-              user_id: request.created_by,
-              email: request.creator_email,
-              name: request.creator_name,
-              amount: request.cost,
-              payment_intent_id: request.payment_intent_id,
-              stripe_status: stripePI.status,
-              capture_method: stripePI.capture_method,
-              amount_captured: stripePI.amount_captured / 100,
-              amount_received: stripePI.amount_received / 100,
-              is_captured: stripePI.amount_received > 0
-            };
-          } catch (stripeErr) {
-            creatorPayment = {
-              user_id: request.created_by,
-              email: request.creator_email,
-              name: request.creator_name,
-              amount: request.cost,
-              payment_intent_id: request.payment_intent_id,
-              stripe_error: stripeErr.message
-            };
-          }
-        }
+        // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
+        // creator_payment больше не используется - все платежи в массиве donations
 
         // Получаем донаты для текущей заявки из сгруппированных данных
         const requestDonations = donationsByRequest[request.id] || [];
@@ -1274,10 +1248,8 @@ router.get('/requests/active', async (req, res) => {
           name: request.name,
           category: request.category,
           status: request.status,
-          cost: request.cost,
           created_at: request.created_at,
           updated_at: request.updated_at,
-          creator_payment: creatorPayment,
           donations: detailedDonations,
           donations_count: request.donations_count,
           total_donations: request.total_donations
@@ -1312,7 +1284,7 @@ router.get('/requests/closed', async (req, res) => {
       LEFT JOIN users u ON r.created_by = u.id
       LEFT JOIN donations d ON r.id = d.request_id
       WHERE r.status IN ('approved', 'rejected', 'completed')
-        AND (r.cost > 0 OR EXISTS(SELECT 1 FROM donations WHERE request_id = r.id))
+        AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
       GROUP BY r.id
       ORDER BY r.updated_at DESC
     `);
@@ -1338,34 +1310,8 @@ router.get('/requests/closed', async (req, res) => {
 
     const detailedRequests = await Promise.all(
       requests.map(async (request) => {
-        // Получаем информацию о платеже создателя (если платная заявка)
-        let creatorPayment = null;
-        if (request.cost > 0 && request.payment_intent_id) {
-          try {
-            const stripePI = await stripe.paymentIntents.retrieve(request.payment_intent_id);
-            creatorPayment = {
-              user_id: request.created_by,
-              email: request.creator_email,
-              name: request.creator_name,
-              amount: request.cost,
-              payment_intent_id: request.payment_intent_id,
-              stripe_status: stripePI.status,
-              capture_method: stripePI.capture_method,
-              amount_captured: stripePI.amount_captured / 100,
-              amount_received: stripePI.amount_received / 100,
-              is_captured: stripePI.amount_received > 0
-            };
-          } catch (stripeErr) {
-            creatorPayment = {
-              user_id: request.created_by,
-              email: request.creator_email,
-              name: request.creator_name,
-              amount: request.cost,
-              payment_intent_id: request.payment_intent_id,
-              stripe_error: stripeErr.message
-            };
-          }
-        }
+        // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
+        // creator_payment больше не используется - все платежи в массиве donations
 
         // Получаем донаты для текущей заявки из сгруппированных данных
         const requestDonations = donationsByRequest[request.id] || [];
@@ -1421,8 +1367,7 @@ router.get('/requests/closed', async (req, res) => {
 
         // Считаем остаток по заявке
         let requestBalance = 0;
-        const totalCaptured = (creatorPayment?.amount_received || 0) + 
-                            detailedDonations.reduce((sum, d) => sum + (d.amount_received || 0), 0);
+        const totalCaptured = detailedDonations.reduce((sum, d) => sum + (d.amount_received || 0), 0);
         const totalTransferred = transfers.reduce((sum, t) => sum + t.amount, 0);
         requestBalance = totalCaptured - totalTransferred;
 
@@ -1431,10 +1376,8 @@ router.get('/requests/closed', async (req, res) => {
           name: request.name,
           category: request.category,
           status: request.status,
-          cost: request.cost,
           created_at: request.created_at,
           updated_at: request.updated_at,
-          creator_payment: creatorPayment,
           donations: detailedDonations,
           donations_count: request.donations_count,
           total_donations: request.total_donations,

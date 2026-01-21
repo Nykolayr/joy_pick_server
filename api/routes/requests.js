@@ -519,7 +519,6 @@ router.post('/', authenticate, uploadRequestPhotos, [
       garbage_size,
       only_foot = false,
       possible_by_car = false,
-      cost,
       reward_amount,
       start_date,
       end_date,
@@ -584,17 +583,18 @@ router.post('/', authenticate, uploadRequestPhotos, [
     // КРИТИЧЕСКИ ВАЖНО: Сначала создаем заявку БЕЗ group_chat_id (NULL)
     // Потом создадим групповой чат и обновим заявку
     // Это нужно, чтобы избежать ошибки внешнего ключа (request_id должен существовать в таблице requests)
+    // ВАЖНО: cost и payment_intent_id удалены - теперь все платежи через донаты
     await pool.execute(
       `INSERT INTO requests (
         id, user_id, category, name, description, latitude, longitude, city,
-        garbage_size, only_foot, possible_by_car, cost, reward_amount, is_open,
+        garbage_size, only_foot, possible_by_car, reward_amount, is_open,
         start_date, end_date, status, priority, assigned_to, notes, created_by,
         taken_by, total_contributed, target_amount, joined_user_id, join_date,
-        payment_intent_id, completion_comment, plant_tree, trash_pickup_only,
+        completion_comment, plant_tree, trash_pickup_only,
         created_at, updated_at, rejection_reason, rejection_message, actual_participants,
         photos_before, photos_after, registered_participants, waste_types, expires_at,
         extended_count, participant_completions, group_chat_id, private_chats
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -607,7 +607,6 @@ router.post('/', authenticate, uploadRequestPhotos, [
         garbage_size || null,
         only_foot,
         possible_by_car,
-        cost || null,
         reward_amount || null,
         true, // is_open по умолчанию true
         start_date || null,
@@ -622,7 +621,6 @@ router.post('/', authenticate, uploadRequestPhotos, [
         target_amount || null,
         null, // joined_user_id
         null, // join_date
-        null, // payment_intent_id
         null, // completion_comment
         plant_tree,
         trash_pickup_only,
@@ -878,7 +876,6 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       garbage_size,
       only_foot,
       possible_by_car,
-      cost,
       reward_amount,
       start_date,
       end_date,
@@ -934,10 +931,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       updates.push('possible_by_car = ?');
       params.push(parseValue(possible_by_car, 'boolean'));
     }
-    if (cost !== undefined && cost !== null && cost !== '') {
-      updates.push('cost = ?');
-      params.push(parseValue(cost, 'number'));
-    }
+    // cost удален - теперь все платежи через донаты
     if (reward_amount !== undefined && reward_amount !== null && reward_amount !== '') {
       updates.push('reward_amount = ?');
       params.push(parseValue(reward_amount, 'number'));
@@ -1344,36 +1338,18 @@ router.delete('/:id', authenticate, async (req, res) => {
       return error(res, 'Доступ запрещен', 403);
     }
 
-    // Получаем все PaymentIntent для заявки (основной платеж и донаты)
-    const [requestData] = await pool.execute(
-      'SELECT payment_intent_id FROM requests WHERE id = ?',
-      [id]
-    );
-    
+    // Получаем все PaymentIntent для заявки (только донаты)
+    // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
     const [donations] = await pool.execute(
       'SELECT payment_intent_id FROM donations WHERE request_id = ?',
       [id]
     );
 
-    // Также ищем PaymentIntent в таблице payment_intents (на случай, если не сохранен в requests)
-    const [paymentIntents] = await pool.execute(
-      'SELECT payment_intent_id FROM payment_intents WHERE request_id = ? AND type = ?',
-      [id, 'request_payment']
-    );
-
     // Собираем все PaymentIntent ID для отмены
     const paymentIntentIds = [];
-    if (requestData[0]?.payment_intent_id) {
-      paymentIntentIds.push(requestData[0].payment_intent_id);
-    }
     donations.forEach(d => {
       if (d.payment_intent_id && !paymentIntentIds.includes(d.payment_intent_id)) {
         paymentIntentIds.push(d.payment_intent_id);
-      }
-    });
-    paymentIntents.forEach(pi => {
-      if (pi.payment_intent_id && !paymentIntentIds.includes(pi.payment_intent_id)) {
-        paymentIntentIds.push(pi.payment_intent_id);
       }
     });
 
@@ -1504,11 +1480,9 @@ router.post('/:id/join', authenticate, async (req, res) => {
     }
 
     // Проверка статуса заявки
-    // Можно присоединиться к заявкам со статусом 'new'
-    // Для платных заявок: если статус 'pending_payment', проверяем оплату в Stripe
-    // (webhook может еще не обработаться, но оплата уже прошла)
+    // Можно присоединиться только к заявкам со статусом 'new'
     const [currentRequest] = await pool.execute(
-      'SELECT status, payment_intent_id FROM requests WHERE id = ?',
+      'SELECT status FROM requests WHERE id = ?',
       [id]
     );
     if (currentRequest.length === 0) {
@@ -1516,46 +1490,10 @@ router.post('/:id/join', authenticate, async (req, res) => {
     }
     
     const requestStatus = currentRequest[0].status;
-    const paymentIntentId = currentRequest[0].payment_intent_id;
     
-    // Если статус не 'new' и не 'pending_payment' - нельзя присоединиться
-    if (requestStatus !== 'new' && requestStatus !== 'pending_payment') {
+    // Если статус не 'new' - нельзя присоединиться
+    if (requestStatus !== 'new') {
       return error(res, 'К этой заявке нельзя присоединиться', 400);
-    }
-    
-    // Если статус 'pending_payment' - проверяем оплату в Stripe
-    if (requestStatus === 'pending_payment') {
-      if (!paymentIntentId) {
-        return error(res, 'Заявка ожидает оплаты', 400);
-      }
-      
-      // Проверяем статус PaymentIntent в Stripe напрямую
-      // (webhook мог еще не обработаться, но оплата уже прошла)
-      try {
-        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        
-        // Если оплата не прошла - нельзя присоединиться
-        if (paymentIntent.status !== 'succeeded') {
-          return error(res, 'Заявка ожидает оплаты. Пожалуйста, завершите оплату.', 400, {
-            paymentStatus: paymentIntent.status,
-            paymentIntentId: paymentIntentId,
-            note: 'Оплата еще не завершена в Stripe'
-          });
-        }
-        
-        // Оплата прошла! Обновляем статус заявки на 'new'
-        // (webhook обработается позже, но мы не хотим заставлять пользователя ждать)
-        await pool.execute(
-          'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-          ['new', id]
-        );
-      } catch (stripeErr) {
-        return error(res, 'Ошибка проверки оплаты', 500, {
-          errorMessage: stripeErr.message,
-          paymentIntentId: paymentIntentId,
-          note: 'Не удалось проверить статус оплаты в Stripe'
-        });
-      }
     }
 
     // Проверка, не присоединился ли уже кто-то
@@ -2040,15 +1978,12 @@ async function handleWasteApproval(requestId, creatorId) {
     }
   }
 
-  // 4. Переводим деньги исполнителю (cost + donations - комиссия)
+  // 4. Переводим деньги исполнителю (только donations - комиссия)
+  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
   // TODO: Реализовать перевод денег через платежную систему
-  const [requestData] = await pool.execute(
-    'SELECT cost FROM requests WHERE id = ?',
-    [requestId]
-  );
   // MySQL возвращает decimal как строки, поэтому используем parseFloat
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmount = parseFloat(requestData[0]?.cost || 0) + totalDonations;
+  const totalAmount = totalDonations; // Только донаты, cost больше не используется
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
 
@@ -2081,13 +2016,7 @@ async function handleEventApproval(requestId, creatorId) {
   const coinsToAward = 1;
   const awardedUserIds = new Set();
 
-  // 1. Получаем cost из заявки
-  const [requestData] = await pool.execute(
-    'SELECT cost FROM requests WHERE id = ?',
-    [requestId]
-  );
-
-  // 2. Начисляем коины заказчику (создателю заявки)
+  // 1. Начисляем коины заказчику (создателю заявки)
   if (creatorId) {
     await pool.execute(
       'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
@@ -2135,11 +2064,12 @@ async function handleEventApproval(requestId, creatorId) {
     }
   }
 
-  // 5. Переводим деньги заказчику (cost + donations - комиссия)
+  // 5. Переводим деньги заказчику (только donations - комиссия)
+  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
   // TODO: Реализовать перевод денег через платежную систему
   // MySQL возвращает decimal как строки, поэтому используем parseFloat
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmount = parseFloat(requestData[0]?.cost || 0) + totalDonations;
+  const totalAmount = totalDonations; // Только донаты, cost больше не используется
   const commission = totalAmount * 0.1; // 10% комиссия
   const amountToTransfer = totalAmount - commission;
 
@@ -2196,50 +2126,8 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
   // 1. Определяем сообщение об отклонении
   const finalMessage = rejectionMessage || rejectionReason || 'Request was rejected by moderator';
 
-  // 2. Возвращаем деньги создателю (если была платная заявка)
-  const [requestData] = await pool.execute(
-    'SELECT cost, payment_intent_id FROM requests WHERE id = ?',
-    [requestId]
-  );
-  if (requestData[0]?.cost && requestData[0].cost > 0 && requestData[0]?.payment_intent_id) {
-    try {
-      const paymentIntent = await stripe.paymentIntents.retrieve(requestData[0].payment_intent_id);
-      
-      if (paymentIntent.status === 'succeeded') {
-        // Платеж захвачен - делаем refund
-        const charges = await stripe.charges.list({
-          payment_intent: requestData[0].payment_intent_id,
-          limit: 1
-        });
-        
-        if (charges.data.length > 0) {
-          await stripe.refunds.create({
-            charge: charges.data[0].id,
-            reason: 'requested_by_customer'
-          });
-          
-          // Обновляем статус в БД
-          await pool.execute(
-            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
-            ['refunded', requestData[0].payment_intent_id]
-          );
-        }
-      } else if (paymentIntent.status !== 'canceled') {
-        // Платеж не захвачен - отменяем
-        await stripe.paymentIntents.cancel(requestData[0].payment_intent_id);
-        
-        // Обновляем статус в БД
-        await pool.execute(
-          'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
-          ['canceled', requestData[0].payment_intent_id]
-        );
-      }
-    } catch (stripeErr) {
-      // Игнорируем ошибки Stripe (возможно, уже отменен или refunded)
-    }
-  }
-
-  // 3. Возвращаем деньги донатерам
+  // 2. Возвращаем деньги всем донатерам (включая создателя, если он делал донат)
+  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
   const [donations] = await pool.execute(
     'SELECT DISTINCT user_id, amount, payment_intent_id FROM donations WHERE request_id = ?',
     [requestId]
@@ -2498,8 +2386,8 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     }
 
     // Проверка статуса заявки
-    if (request.status !== 'inProgress' && request.status !== 'pending_payment') {
-      return error(res, 'Заявка должна быть в статусе inProgress или pending_payment', 400);
+    if (request.status !== 'inProgress') {
+      return error(res, 'Заявка должна быть в статусе inProgress', 400);
     }
 
     // Проверка, что пользователь является участником
@@ -2779,8 +2667,8 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     }
 
     // Проверка статуса
-    if (request.status !== 'inProgress' && request.status !== 'pending_payment') {
-      return error(res, 'Заявка должна быть в статусе inProgress или pending_payment', 400);
+    if (request.status !== 'inProgress') {
+      return error(res, 'Заявка должна быть в статусе inProgress', 400);
     }
 
     // Обновляем статус заявки на pending
@@ -2829,548 +2717,19 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
 
 /**
  * POST /api/requests/create-with-payment
- * Атомарное создание заявки с платежом
- * Создает заявку и PaymentIntent в одной транзакции
+ * УДАЛЕН: Теперь все платежи идут через донаты
+ * Создатель может сделать донат своей заявке через POST /api/donations после создания заявки
+ * @deprecated Этот endpoint удален. Используйте POST /api/requests для создания заявки,
+ *            затем POST /api/donations для создания доната от создателя.
  */
-router.post('/create-with-payment', authenticate, uploadRequestPhotos, [
-  body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Некорректная категория'),
-  body('name').notEmpty().withMessage('Название обязательно'),
-  body('description').optional().isString(),
-  body('latitude').optional().isFloat(),
-  body('longitude').optional().isFloat(),
-  body('city').optional().isString(),
-  body('require_payment').optional().isBoolean(),
-  body('request_category').optional().isString()
-], async (req, res) => {
-  let connection = null;
-  try {
-    const validationErrors = validationResult(req);
-    if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+router.post('/create-with-payment', authenticate, async (req, res) => {
+  return error(res, 'Этот endpoint удален. Теперь все платежи идут через донаты. Используйте POST /api/requests для создания заявки, затем POST /api/donations для создания доната от создателя.', 410, {
+    deprecated: true,
+    newApproach: {
+      step1: 'POST /api/requests - создать заявку',
+      step2: 'POST /api/donations - создать донат от создателя (можно сразу после создания заявки)'
     }
-
-    // Обработка загруженных файлов
-    const uploadedPhotosBefore = [];
-    const uploadedPhotosAfter = [];
-
-    if (req.files) {
-      if (req.files.photos_before && Array.isArray(req.files.photos_before)) {
-        for (const file of req.files.photos_before) {
-          const fileUrl = getFileUrlFromPath(file.path);
-          if (fileUrl) uploadedPhotosBefore.push(fileUrl);
-        }
-      }
-
-      if (req.files.photos_after && Array.isArray(req.files.photos_after)) {
-        for (const file of req.files.photos_after) {
-          const fileUrl = getFileUrlFromPath(file.path);
-          if (fileUrl) uploadedPhotosAfter.push(fileUrl);
-        }
-      }
-    }
-
-    // Парсим данные
-    let bodyData = req.body;
-    if (typeof req.body === 'string') {
-      try {
-        bodyData = JSON.parse(req.body);
-      } catch (e) {
-        // Если не JSON, используем как есть
-      }
-    }
-
-    const {
-      category,
-      name,
-      description,
-      latitude,
-      longitude,
-      city,
-      garbage_size,
-      only_foot = false,
-      possible_by_car = false,
-      cost,
-      reward_amount,
-      start_date,
-      end_date,
-      status,
-      priority = 'medium',
-      waste_types = [],
-      target_amount,
-      plant_tree = false,
-      trash_pickup_only = false,
-      require_payment = false,
-      request_category
-    } = bodyData;
-
-    // Обработка waste_types
-    let processedWasteTypes = [];
-    if (waste_types) {
-      if (Array.isArray(waste_types)) {
-        processedWasteTypes = waste_types;
-      } else if (typeof waste_types === 'string') {
-        try {
-          processedWasteTypes = JSON.parse(waste_types);
-        } catch (e) {
-          processedWasteTypes = waste_types.split(',').map(t => t.trim()).filter(t => t);
-        }
-      }
-    }
-
-    const requestId = generateId();
-    const userId = req.user.userId;
-
-    // Определяем сумму для платежа
-    // ВАЖНО: cost всегда в долларах (decimal), как и возвращается на фронт
-    let paymentAmountCents = null;
-    
-    if (require_payment) {
-      if (!cost || cost <= 0) {
-        return error(res, 'Если require_payment = true, необходимо указать cost > 0', 400);
-      }
-      
-      // Конвертируем cost (в долларах) в центы для PaymentIntent
-      paymentAmountCents = Math.round(parseFloat(cost) * 100);
-
-      if (paymentAmountCents < 50) {
-        return error(res, 'Минимум 50 центов (требование Stripe)', 400);
-      }
-    }
-
-    // Определяем статус заявки
-    let requestStatus;
-    if (require_payment && paymentAmountCents > 0) {
-      requestStatus = 'pending_payment';
-    } else {
-      // Стандартная логика по категории
-      if (category === 'wasteLocation' || category === 'speedCleanup') {
-        requestStatus = status || 'new';
-      } else if (category === 'event') {
-        requestStatus = 'inProgress';
-      } else {
-        requestStatus = 'new';
-      }
-    }
-
-    // Начинаем транзакцию
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-
-    try {
-      // Для event: создатель автоматически становится участником
-      let registeredParticipants = null;
-      if (category === 'event') {
-        registeredParticipants = JSON.stringify([userId]);
-      }
-
-      const expiresAt = category === 'wasteLocation' 
-        ? new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
-        : null;
-
-      let privateChats = null;
-      if (category === 'event') {
-        privateChats = JSON.stringify([]);
-      }
-
-      // Создаем заявку в БД (пока без group_chat_id и payment_intent_id)
-      await connection.execute(
-        `INSERT INTO requests (
-          id, user_id, category, name, description, latitude, longitude, city,
-          garbage_size, only_foot, possible_by_car, cost, reward_amount, is_open,
-          start_date, end_date, status, priority, assigned_to, notes, created_by,
-          taken_by, total_contributed, target_amount, joined_user_id, join_date,
-          payment_intent_id, completion_comment, plant_tree, trash_pickup_only,
-          created_at, updated_at, rejection_reason, rejection_message, actual_participants,
-          photos_before, photos_after, registered_participants, waste_types, expires_at,
-          extended_count, participant_completions, group_chat_id, private_chats
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          requestId,
-          userId,
-          category,
-          name,
-          description || null,
-          latitude || null,
-          longitude || null,
-          city || null,
-          garbage_size || null,
-          only_foot,
-          possible_by_car,
-          cost || null,
-          reward_amount || null,
-          true, // is_open
-          start_date || null,
-          end_date || null,
-          requestStatus,
-          priority,
-          null, // assigned_to
-          null, // notes
-          userId, // created_by
-          null, // taken_by
-          null, // total_contributed
-          target_amount || null,
-          null, // joined_user_id
-          null, // join_date
-          null, // payment_intent_id (обновим после создания PaymentIntent)
-          null, // completion_comment
-          plant_tree,
-          trash_pickup_only,
-          null, // rejection_reason
-          null, // rejection_message
-          null, // actual_participants
-          uploadedPhotosBefore.length > 0 ? JSON.stringify(uploadedPhotosBefore) : null,
-          uploadedPhotosAfter.length > 0 ? JSON.stringify(uploadedPhotosAfter) : null,
-          registeredParticipants,
-          processedWasteTypes.length > 0 ? JSON.stringify(processedWasteTypes) : null,
-          expiresAt,
-          0, // extended_count
-          null, // participant_completions
-          null, // group_chat_id (обновим после создания чата)
-          privateChats
-        ]
-      );
-
-      // Создаем PaymentIntent если требуется
-      let paymentIntent = null;
-      let clientSecret = null;
-      let stripePaymentIntentId = null;
-
-      if (require_payment && paymentAmountCents > 0) {
-        // Проверяем, что Stripe API ключ настроен
-        if (!process.env.STRIPE_SECRET_KEY) {
-          await connection.rollback();
-          connection.release();
-          return error(res, 'Stripe не настроен на сервере', 500, {
-            requestId: requestId,
-            userId: userId,
-            amountCents: paymentAmountCents,
-            note: 'STRIPE_SECRET_KEY не найден в переменных окружения'
-          });
-        }
-
-        try {
-          // Создаем PaymentIntent с таймаутом
-          const stripePaymentIntent = await Promise.race([
-            stripe.paymentIntents.create({
-              amount: paymentAmountCents,
-              currency: 'usd',
-              payment_method_types: ['card'],
-              capture_method: 'automatic',
-              metadata: {
-                request_id: requestId,
-                user_id: userId,
-                request_category: request_category || category,
-                type: 'request_payment'
-              }
-            }),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Stripe API timeout: создание PaymentIntent заняло больше 15 секунд')), 15000)
-            )
-          ]);
-
-          // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
-          if (!stripePaymentIntent) {
-            throw new Error('Stripe вернул пустой ответ (null или undefined)');
-          }
-
-          if (!stripePaymentIntent.id) {
-            throw new Error('Stripe не вернул payment_intent_id в ответе');
-          }
-
-          if (!stripePaymentIntent.client_secret) {
-            throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + stripePaymentIntent.id);
-          }
-
-          stripePaymentIntentId = stripePaymentIntent.id;
-          clientSecret = stripePaymentIntent.client_secret;
-
-          // Обновляем заявку с payment_intent_id
-          await connection.execute(
-            'UPDATE requests SET payment_intent_id = ? WHERE id = ?',
-            [stripePaymentIntentId, requestId]
-          );
-
-          // Сохраняем PaymentIntent в БД
-          const paymentIntentId = generateId();
-          await connection.execute(
-            `INSERT INTO payment_intents (id, payment_intent_id, user_id, request_id, amount_cents, currency, status, type, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              paymentIntentId,
-              stripePaymentIntentId,
-              userId,
-              requestId,
-              paymentAmountCents,
-              'usd',
-              stripePaymentIntent.status,
-              'request_payment',
-              JSON.stringify({
-                request_id: requestId,
-                user_id: userId,
-                request_category: request_category || category,
-                type: 'request_payment'
-              })
-            ]
-          );
-
-          paymentIntent = {
-            payment_intent_id: stripePaymentIntentId,
-            client_secret: clientSecret
-          };
-        } catch (stripeErr) {
-          // Если ошибка при создании PaymentIntent, откатываем транзакцию
-          await connection.rollback();
-          connection.release();
-          
-          // Возвращаем детальную ошибку в ответе API с МАКСИМУМ информации
-          return error(res, 'Ошибка при создании PaymentIntent в Stripe', 500, {
-            errorMessage: stripeErr.message || 'Неизвестная ошибка',
-            errorType: stripeErr.type || 'StripeError',
-            errorCode: stripeErr.code || 'STRIPE_ERROR',
-            statusCode: stripeErr.statusCode || 500,
-            requestId: requestId,
-            userId: userId,
-            amountCents: paymentAmountCents,
-            amountDollars: parseFloat(cost),
-            category: category,
-            requestCategory: request_category,
-            stripeRaw: stripeErr.raw || null,
-            stripeDeclineCode: stripeErr.decline_code || null,
-            stripeParam: stripeErr.param || null,
-            stack: process.env.NODE_ENV === 'development' ? stripeErr.stack : undefined
-          });
-        }
-      }
-
-      // Создаем групповой чат с таймаутом (не блокируем создание заявки)
-      let groupChatId = null;
-      try {
-        groupChatId = await Promise.race([
-          createGroupChatForRequest(requestId, userId, category),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Таймаут создания группового чата: операция заняла больше 5 секунд')), 5000)
-          )
-        ]);
-        
-        // Обновляем заявку с group_chat_id
-        await connection.execute(
-          'UPDATE requests SET group_chat_id = ? WHERE id = ?',
-          [groupChatId, requestId]
-        );
-      } catch (chatErr) {
-        // КРИТИЧЕСКИ ВАЖНО: НЕ откатываем транзакцию, если не удалось создать чат
-        // Заявка уже создана, чат можно создать позже или асинхронно
-        // Просто логируем ошибку и продолжаем
-        const chatError = {
-          message: chatErr.message || 'Неизвестная ошибка при создании группового чата',
-          requestId: requestId,
-          userId: userId,
-          category: category,
-          note: 'Заявка создана, но чат не создан. Чат можно создать позже через отдельный endpoint.'
-        };
-        
-        // Сохраняем информацию об ошибке для последующего создания чата
-        // Можно создать чат асинхронно после коммита транзакции
-      }
-
-      // Фиксируем транзакцию
-      await connection.commit();
-      connection.release();
-      connection = null;
-      
-      // Инициализация participant_completions для создателя event заявки
-      // ВАЖНО: Делаем ПОСЛЕ коммита транзакции, чтобы не блокировать создание заявки
-      if (category === 'event') {
-        // Выполняем асинхронно, не блокируем ответ
-        const { initializeParticipantCompletion } = require('../utils/participantCompletions');
-        initializeParticipantCompletion(requestId, userId, true)
-          .catch((completionErr) => {
-            // Логируем ошибку, но не прерываем выполнение
-            console.error('Ошибка инициализации participant_completion для создателя event:', completionErr);
-          });
-      }
-      
-      // Если чат не был создан, пытаемся создать его асинхронно (не блокируем ответ)
-      if (!groupChatId) {
-        // Создаем чат асинхронно, не ждем результата
-        createGroupChatForRequest(requestId, userId, category)
-          .then(async (asyncChatId) => {
-            // Обновляем заявку с group_chat_id
-            try {
-              await pool.execute(
-                'UPDATE requests SET group_chat_id = ? WHERE id = ?',
-                [asyncChatId, requestId]
-              );
-            } catch (updateErr) {
-              // Игнорируем ошибки обновления - чат создан, но не привязан к заявке
-            }
-          })
-          .catch((asyncChatErr) => {
-            // Игнорируем ошибки асинхронного создания - заявка уже создана
-          });
-      }
-
-      // Получаем созданную заявку
-      const [requests] = await pool.execute(
-        `SELECT r.* FROM requests r WHERE r.id = ?`,
-        [requestId]
-      );
-
-      if (requests.length === 0) {
-        return error(res, 'Заявка не найдена после создания', 500);
-      }
-
-      const request = requests[0];
-      
-      // Обработка JSON полей
-      if (request.photos_before) {
-        try {
-          request.photos_before = typeof request.photos_before === 'string' 
-            ? JSON.parse(request.photos_before) 
-            : request.photos_before;
-        } catch (e) {
-          request.photos_before = [];
-        }
-      } else {
-        request.photos_before = [];
-      }
-      
-      if (request.photos_after) {
-        try {
-          request.photos_after = typeof request.photos_after === 'string' 
-            ? JSON.parse(request.photos_after) 
-            : request.photos_after;
-        } catch (e) {
-          request.photos_after = [];
-        }
-      } else {
-        request.photos_after = [];
-      }
-
-      if (request.waste_types) {
-        try {
-          request.waste_types = typeof request.waste_types === 'string' 
-            ? JSON.parse(request.waste_types) 
-            : request.waste_types;
-        } catch (e) {
-          request.waste_types = [];
-        }
-      } else {
-        request.waste_types = [];
-      }
-
-      if (request.private_chats) {
-        try {
-          request.private_chats = typeof request.private_chats === 'string' 
-            ? JSON.parse(request.private_chats) 
-            : request.private_chats;
-        } catch (e) {
-          request.private_chats = [];
-        }
-      } else {
-        request.private_chats = [];
-      }
-
-      request.participants = [];
-      request.contributors = [];
-      request.contributions = {};
-      request.donations = [];
-
-      // Нормализация дат
-      const normalizedRequest = normalizeDatesInObject(request);
-
-      // КРИТИЧЕСКИ ВАЖНО: Финальная проверка - если требовался платеж, проверяем что paymentIntent корректен
-      if (require_payment && paymentAmountCents > 0) {
-        if (!paymentIntent) {
-          return error(res, 'Критическая ошибка: заявка создана, но объект paymentIntent равен null', 500, {
-            requestId: requestId,
-            userId: userId,
-            amountCents: paymentAmountCents,
-            note: 'Заявка сохранена в БД с payment_intent_id, но объект paymentIntent не был создан в коде. Это баг сервера.'
-          });
-        }
-
-        if (!paymentIntent.client_secret) {
-          return error(res, 'Критическая ошибка: заявка создана, но client_secret отсутствует', 500, {
-            requestId: requestId,
-            userId: userId,
-            paymentIntentId: paymentIntent.payment_intent_id || 'undefined',
-            amountCents: paymentAmountCents,
-            paymentIntentObject: paymentIntent,
-            note: 'Stripe вернул PaymentIntent, но без client_secret. Возможно проблема с аккаунтом Stripe или API ключом.'
-          });
-        }
-
-        if (!paymentIntent.payment_intent_id) {
-          return error(res, 'Критическая ошибка: заявка создана, но payment_intent_id отсутствует', 500, {
-            requestId: requestId,
-            userId: userId,
-            clientSecret: paymentIntent.client_secret ? 'присутствует' : 'отсутствует',
-            amountCents: paymentAmountCents,
-            paymentIntentObject: paymentIntent,
-            note: 'Объект paymentIntent создан, но payment_intent_id отсутствует'
-          });
-        }
-      }
-
-      // Отправка push-уведомлений (асинхронно)
-      if (latitude && longitude) {
-        sendRequestCreatedNotification({
-          id: requestId,
-          category,
-          name,
-          created_by: userId,
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
-          photos: [...uploadedPhotosBefore, ...uploadedPhotosAfter],
-        }).catch(err => {
-          // Игнорируем ошибки уведомлений
-        });
-      }
-
-      return success(res, {
-        request: normalizedRequest,
-        payment: paymentIntent
-      }, 'Заявка создана успешно', 201);
-
-    } catch (transactionErr) {
-      // Откатываем транзакцию при любой ошибке
-      if (connection) {
-        await connection.rollback();
-        connection.release();
-      }
-      throw transactionErr;
-    }
-
-  } catch (err) {
-    if (connection) {
-      try {
-        await connection.rollback();
-        connection.release();
-      } catch (rollbackErr) {
-        // Игнорируем ошибки отката, но добавляем в детали основной ошибки
-        err.rollbackError = rollbackErr.message;
-      }
-    }
-    
-    // ВСЕГДА возвращаем детальную ошибку в ответе API
-    // Если err уже Error объект, используем его, иначе создаем новый
-    const errorObj = err instanceof Error ? err : new Error(err.message || 'Неизвестная ошибка при создании заявки с платежом');
-    
-    // Добавляем все доступные детали
-    if (err.sqlMessage) errorObj.sqlMessage = err.sqlMessage;
-    if (err.sql) errorObj.sql = err.sql;
-    if (err.errno) errorObj.errno = err.errno;
-    if (err.sqlState) errorObj.sqlState = err.sqlState;
-    if (err.rollbackError) errorObj.rollbackError = err.rollbackError;
-    if (err.code) errorObj.code = err.code;
-    if (process.env.NODE_ENV !== 'production' && err.stack) {
-      errorObj.stack = err.stack;
-    }
-    
-    return error(res, 'Ошибка при создании заявки с платежом', 500, errorObj);
-  }
+  });
 });
 
 module.exports = router;
-
