@@ -711,12 +711,27 @@ async function sendRequestSubmittedNotification({ userIds, requestId, requestCat
  * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestApprovedNotification({ userIds, requestId, messageType = 'creator', requestCategory = 'wasteLocation' }) {
+async function sendRequestApprovedNotification({ userIds, requestId, messageType = 'creator', requestCategory = 'wasteLocation', payoutAmount = null }) {
   const messages = {
-    creator: { title: 'Thank you!', body: 'Thank you for your initiative!' },
-    executor: { title: 'Thank you!', body: 'Thank you for completing the request!' },
+    creator: { 
+      title: payoutAmount ? '💰 Request approved!' : 'Thank you!', 
+      body: payoutAmount 
+        ? `Request approved! You will receive $${payoutAmount}. Get it automatically or instantly in your profile.`
+        : 'Thank you for your initiative!' 
+    },
+    executor: { 
+      title: payoutAmount ? '💰 Request approved!' : 'Thank you!', 
+      body: payoutAmount 
+        ? `Request approved! You will receive $${payoutAmount}. Get it automatically or instantly in your profile.`
+        : 'Thank you for completing the request!' 
+    },
     donor: { title: 'Thank you!', body: 'Thank you for your donation!' },
-    participant: { title: 'Thank you!', body: 'Thank you for participating in the event!' },
+    participant: { 
+      title: payoutAmount ? '💰 Request approved!' : 'Thank you!', 
+      body: payoutAmount 
+        ? `Request approved! You will receive $${payoutAmount}. Get it automatically or instantly in your profile.`
+        : 'Thank you for participating in the event!' 
+    },
   };
 
   const message = messages[messageType] || messages.creator;
@@ -739,10 +754,13 @@ async function sendRequestApprovedNotification({ userIds, requestId, messageType
       type: 'requestApproved',
       requestId: requestId,
       messageType: messageType,
-      initialPageName: 'RequestDetails',
+      payoutAmount: payoutAmount ? payoutAmount.toString() : null,
+      hasPayoutAvailable: payoutAmount ? 'true' : 'false',
+      initialPageName: payoutAmount && (messageType === 'executor' || messageType === 'participant') ? 'Profile' : 'RequestDetails',
       parameterData: JSON.stringify({
         requestId: requestId,
         category: requestCategory,
+        payoutAmount: payoutAmount,
       }),
       deeplink: deeplink,
     },
@@ -1072,6 +1090,78 @@ async function sendTransferFailedNotification({ userIds, transferId }) {
   });
 }
 
+/**
+ * Отправка уведомления о статусе мгновенной выплаты
+ */
+async function sendPayoutNotification({ userId, payoutId, amount, status, failureCode, failureMessage }) {
+  try {
+    const userIds = Array.isArray(userId) ? userId : [userId];
+    const tokens = await getFcmTokensByUserIds(userIds);
+    
+    if (tokens.length === 0) {
+      console.log('🔕 No FCM tokens for payout notification');
+      return;
+    }
+
+    let title, body, data;
+    
+    if (status === 'paid') {
+      title = '💰 Payout received';
+      body = `Instant payout $${amount} successfully transferred to your card`;
+      data = {
+        type: 'payout_success',
+        payout_id: payoutId,
+        amount: amount,
+        status: status
+      };
+    } else if (status === 'failed') {
+      title = '❌ Payout failed';
+      body = `Failed to process payout $${amount}. ${failureMessage || 'Please check your card details'}`;
+      data = {
+        type: 'payout_failed',
+        payout_id: payoutId,
+        amount: amount,
+        status: status,
+        failure_code: failureCode,
+        failure_message: failureMessage
+      };
+    } else {
+      // Other statuses (pending, in_transit)
+      title = '⏳ Payout processing';
+      body = `Payout $${amount} is being processed`;
+      data = {
+        type: 'payout_processing',
+        payout_id: payoutId,
+        amount: amount,
+        status: status
+      };
+    }
+
+    const message = {
+      notification: {
+        title: title,
+        body: body
+      },
+      data: data,
+      tokens: tokens
+    };
+
+    const response = await admin.messaging().sendEachForMulticast(message);
+    
+    console.log(`✅ Payout notification sent: ${response.successCount}/${tokens.length}`);
+    
+    if (response.failureCount > 0) {
+      console.log('❌ Payout notification errors:', response.responses
+        .filter(r => !r.success)
+        .map(r => r.error?.message)
+      );
+    }
+
+  } catch (error) {
+    console.error('❌ Error sending payout push notification:', error);
+  }
+}
+
 module.exports = {
   sendPushNotifications,
   sendRequestCreatedNotification,
@@ -1089,6 +1179,7 @@ module.exports = {
   sendModerationNotification,
   sendTransferPaidNotification,
   sendTransferFailedNotification,
+  sendPayoutNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
 };

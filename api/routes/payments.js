@@ -13,9 +13,9 @@ const router = express.Router();
  * Создание PaymentIntent для доната к заявке
  */
 router.post('/create-donation', authenticate, [
-  body('request_id').notEmpty().withMessage('request_id обязателен'),
-  body('user_id').notEmpty().withMessage('user_id обязателен'),
-  body('amount').isFloat({ min: 0.5 }).withMessage('Минимум 0.5 доллара (50 центов)'),
+  body('request_id').notEmpty().withMessage('request_id is required'),
+  body('user_id').notEmpty().withMessage('user_id is required'),
+  body('amount').isFloat({ min: 0.5 }).withMessage('Minimum 0.5 dollars (50 cents)'),
   body('request_category').optional().isString()
 ], async (req, res) => {
   try {
@@ -28,7 +28,7 @@ router.post('/create-donation', authenticate, [
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Недостаточно прав', 403);
+      return error(res, 'Insufficient permissions', 403);
     }
 
     // Проверяем существование заявки
@@ -38,7 +38,7 @@ router.post('/create-donation', authenticate, [
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     // Проверяем существование пользователя
@@ -48,12 +48,12 @@ router.post('/create-donation', authenticate, [
     );
 
     if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     // Проверяем, что Stripe API ключ настроен
     if (!process.env.STRIPE_SECRET_KEY) {
-      return error(res, 'Stripe не настроен на сервере', 500);
+      return error(res, 'Stripe not configured on server', 500);
     }
 
     // ВАЖНО: amount приходит в долларах (как возвращается на фронт)
@@ -61,7 +61,7 @@ router.post('/create-donation', authenticate, [
     const amountCents = Math.round(parseFloat(amount) * 100);
     
     if (amountCents < 50) {
-      return error(res, 'Минимум 50 центов (требование Stripe)', 400);
+      return error(res, 'Minimum 50 cents (Stripe requirement)', 400);
     }
 
     // Создаем PaymentIntent в Stripe
@@ -94,7 +94,7 @@ router.post('/create-donation', authenticate, [
       }
 
     } catch (stripeErr) {
-      return error(res, 'Ошибка при создании PaymentIntent для доната', 500, {
+      return error(res, 'Error creating PaymentIntent for donation', 500, {
         errorMessage: stripeErr.message || 'Неизвестная ошибка',
         errorType: stripeErr.type || 'StripeError',
         errorCode: stripeErr.code || 'STRIPE_ERROR',
@@ -145,7 +145,7 @@ router.post('/create-donation', authenticate, [
     }, 'Payment intent created');
 
   } catch (err) {
-    return error(res, 'Ошибка при создании доната', 500, err);
+    return error(res, 'Error creating donation', 500, err);
   }
 });
 
@@ -163,8 +163,8 @@ router.post('/create-request-payment', authenticate, async (req, res) => {
  * Завершение заявки и выплата волонтёру
  */
 router.post('/complete-request', authenticate, [
-  body('request_id').notEmpty().withMessage('request_id обязателен'),
-  body('performer_user_id').notEmpty().withMessage('performer_user_id обязателен')
+  body('request_id').notEmpty().withMessage('request_id is required'),
+  body('performer_user_id').notEmpty().withMessage('performer_user_id is required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -181,7 +181,7 @@ router.post('/complete-request', authenticate, [
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
@@ -254,7 +254,7 @@ router.post('/complete-request', authenticate, [
     );
 
     if (stripeAccounts.length === 0) {
-      return error(res, 'Stripe аккаунт исполнителя не найден', 404);
+      return error(res, 'Performer Stripe account not found', 404);
     }
 
     const stripeAccountId = stripeAccounts[0].account_id;
@@ -274,7 +274,7 @@ router.post('/complete-request', authenticate, [
       });
     } catch (transferErr) {
       // Логируем критическую ошибку, но продолжаем
-      return error(res, 'Ошибка при создании transfer', 500, transferErr);
+      return error(res, 'Error creating transfer', 500, transferErr);
     }
 
     // Сохраняем transfer в базу данных
@@ -313,7 +313,7 @@ router.post('/complete-request', authenticate, [
     }, 'Request completed and transfer created');
 
   } catch (err) {
-    return error(res, 'Ошибка при завершении заявки', 500, err);
+    return error(res, 'Error completing request', 500, err);
   }
 });
 
@@ -326,12 +326,12 @@ router.get('/history', authenticate, async (req, res) => {
     const { user_id, page = 1, limit = 20 } = req.query;
 
     if (!user_id) {
-      return error(res, 'user_id обязателен', 400);
+      return error(res, 'user_id is required', 400);
     }
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Недостаточно прав', 403);
+      return error(res, 'Insufficient permissions', 403);
     }
 
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -374,7 +374,7 @@ router.get('/history', authenticate, async (req, res) => {
     }, 'Payment history retrieved');
 
   } catch (err) {
-    return error(res, 'Ошибка при получении истории платежей', 500, err);
+    return error(res, 'Error retrieving payment history', 500, err);
   }
 });
 
@@ -387,12 +387,12 @@ router.get('/payouts', authenticate, async (req, res) => {
     const { user_id, page = 1, limit = 20 } = req.query;
 
     if (!user_id) {
-      return error(res, 'user_id обязателен', 400);
+      return error(res, 'user_id is required', 400);
     }
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Недостаточно прав', 403);
+      return error(res, 'Insufficient permissions', 403);
     }
 
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -436,7 +436,7 @@ router.get('/payouts', authenticate, async (req, res) => {
     }, 'Payout history retrieved');
 
   } catch (err) {
-    return error(res, 'Ошибка при получении истории выплат', 500, err);
+    return error(res, 'Error retrieving payout history', 500, err);
   }
 });
 

@@ -13,9 +13,9 @@ const router = express.Router();
  * Создание Stripe Express Account для волонтёра
  */
 router.post('/create-account', authenticate, [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('first_name').notEmpty().withMessage('first_name обязателен'),
-  body('last_name').notEmpty().withMessage('last_name обязателен'),
+  body('email').isEmail().withMessage('Invalid email'),
+  body('first_name').notEmpty().withMessage('first_name is required'),
+  body('last_name').notEmpty().withMessage('last_name is required'),
   body('phone').optional().isString(),
   body('city').optional().isString(),
   body('country').optional().isString()
@@ -23,7 +23,7 @@ router.post('/create-account', authenticate, [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, errors.array());
+      return error(res, 'Validation error', 400, errors.array());
     }
 
     const { email, first_name, last_name, phone, city, country = 'US' } = req.body;
@@ -54,7 +54,7 @@ router.post('/create-account', authenticate, [
           message: 'Account already exists, onboarding link created'
         }, 'Account link created');
       } catch (err) {
-        return error(res, 'Ошибка при создании Account Link', 500, err);
+        return error(res, 'Error creating Account Link', 500, err);
       }
     }
 
@@ -68,6 +68,13 @@ router.post('/create-account', authenticate, [
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true }
+        },
+        settings: {
+          payouts: {
+            schedule: {
+              interval: 'daily' // Ежедневные выплаты по умолчанию
+            }
+          }
         },
         email: email,
         individual: {
@@ -105,6 +112,13 @@ router.post('/create-account', authenticate, [
               card_payments: { requested: true },
               transfers: { requested: true }
             },
+            settings: {
+              payouts: {
+                schedule: {
+                  interval: 'daily' // Ежедневные выплаты по умолчанию
+                }
+              }
+            },
             email: email,
             individual: {
               first_name: first_name,
@@ -130,10 +144,10 @@ router.post('/create-account', authenticate, [
             }
           });
         } catch (retryErr) {
-          return error(res, 'Ошибка при создании Stripe аккаунта', 500, retryErr);
+          return error(res, 'Error creating Stripe account', 500, retryErr);
         }
       } else {
-        return error(res, 'Ошибка при создании Stripe аккаунта', 500, stripeErr);
+        return error(res, 'Error creating Stripe account', 500, stripeErr);
       }
     }
 
@@ -167,7 +181,7 @@ router.post('/create-account', authenticate, [
     }, 'Account created successfully');
 
   } catch (err) {
-    return error(res, 'Ошибка при создании Stripe аккаунта', 500, err);
+    return error(res, 'Error creating Stripe account', 500, err);
   }
 });
 
@@ -180,12 +194,12 @@ router.get('/account-status', authenticate, async (req, res) => {
     const { user_id } = req.query;
 
     if (!user_id) {
-      return error(res, 'user_id обязателен', 400);
+      return error(res, 'user_id is required', 400);
     }
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Недостаточно прав', 403);
+      return error(res, 'Insufficient permissions', 403);
     }
 
     // Получаем аккаунт из базы данных
@@ -211,7 +225,7 @@ router.get('/account-status', authenticate, async (req, res) => {
     try {
       stripeAccount = await stripe.accounts.retrieve(dbAccount.account_id);
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении статуса аккаунта из Stripe', 500, stripeErr);
+      return error(res, 'Error retrieving account status from Stripe', 500, stripeErr);
     }
 
     // Обновляем статус в базе данных
@@ -255,7 +269,7 @@ router.get('/account-status', authenticate, async (req, res) => {
     }, 'Account status retrieved');
 
   } catch (err) {
-    return error(res, 'Ошибка при проверке статуса аккаунта', 500, err);
+    return error(res, 'Error checking account status', 500, err);
   }
 });
 
@@ -328,6 +342,18 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
         await handleTransferFailed(event.data.object);
         break;
 
+      case 'payout.created':
+        await handlePayoutCreated(event.data.object);
+        break;
+
+      case 'payout.paid':
+        await handlePayoutPaid(event.data.object);
+        break;
+
+      case 'payout.failed':
+        await handlePayoutFailed(event.data.object);
+        break;
+
       default:
         // Игнорируем неизвестные события
         break;
@@ -335,7 +361,7 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
 
     res.json({ received: true });
   } catch (err) {
-    return error(res, 'Ошибка при обработке webhook', 500, err);
+    return error(res, 'Error processing webhook', 500, err);
   }
 });
 
@@ -603,6 +629,113 @@ async function handleTransferFailed(transfer) {
 }
 
 /**
+ * Обработка события payout.created
+ */
+async function handlePayoutCreated(payout) {
+  // Проверяем, есть ли уже этот payout в БД
+  const [existingPayouts] = await pool.execute(
+    'SELECT id FROM instant_payouts WHERE payout_id = ?',
+    [payout.id]
+  );
+
+  if (existingPayouts.length === 0 && payout.method === 'instant') {
+    // Получаем user_id из metadata или связанного аккаунта
+    let userId = null;
+    
+    // Пытаемся найти пользователя по stripe_account_id
+    const [accounts] = await pool.execute(
+      'SELECT user_id FROM stripe_accounts WHERE account_id = ?',
+      [payout.destination || '']
+    );
+    
+    if (accounts.length > 0) {
+      userId = accounts[0].user_id;
+      
+      // Создаем запись в БД
+      const payoutId = generateId();
+      await pool.execute(
+        `INSERT INTO instant_payouts (id, user_id, stripe_account_id, payout_id, amount_cents, currency, status, external_account_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          payoutId,
+          userId,
+          payout.destination,
+          payout.id,
+          payout.amount,
+          payout.currency,
+          payout.status,
+          payout.destination || null
+        ]
+      );
+    }
+  }
+}
+
+/**
+ * Обработка события payout.paid
+ */
+async function handlePayoutPaid(payout) {
+  await pool.execute(
+    'UPDATE instant_payouts SET status = ?, arrival_date = FROM_UNIXTIME(?), updated_at = NOW() WHERE payout_id = ?',
+    ['paid', payout.arrival_date, payout.id]
+  );
+
+  // Отправляем push-уведомление пользователю
+  const [payouts] = await pool.execute(
+    'SELECT user_id, amount_cents FROM instant_payouts WHERE payout_id = ?',
+    [payout.id]
+  );
+
+  if (payouts.length > 0) {
+    const { sendPayoutNotification } = require('../services/pushNotification');
+    try {
+      await sendPayoutNotification({
+        userId: payouts[0].user_id,
+        payoutId: payout.id,
+        amount: (payouts[0].amount_cents / 100).toFixed(2),
+        status: 'paid'
+      });
+    } catch (notifErr) {
+      console.error('❌ Ошибка отправки push-уведомления при выплате:', notifErr);
+    }
+  }
+}
+
+/**
+ * Обработка события payout.failed
+ */
+async function handlePayoutFailed(payout) {
+  await pool.execute(
+    `UPDATE instant_payouts 
+     SET status = ?, failure_code = ?, failure_message = ?, updated_at = NOW() 
+     WHERE payout_id = ?`,
+    ['failed', payout.failure_code, payout.failure_message, payout.id]
+  );
+
+  // Отправляем push-уведомление об ошибке
+  const [payouts] = await pool.execute(
+    'SELECT user_id, amount_cents FROM instant_payouts WHERE payout_id = ?',
+    [payout.id]
+  );
+
+  if (payouts.length > 0) {
+    const { sendPayoutNotification } = require('../services/pushNotification');
+    try {
+      await sendPayoutNotification({
+        userId: payouts[0].user_id,
+        payoutId: payout.id,
+        amount: (payouts[0].amount_cents / 100).toFixed(2),
+        status: 'failed',
+        failureCode: payout.failure_code,
+        failureMessage: payout.failure_message
+      });
+    } catch (notifErr) {
+      console.error('❌ Ошибка отправки push-уведомления при ошибке выплаты:', notifErr);
+    }
+  }
+}
+
+/**
  * Удаляет донат при ошибке/отмене оплаты
  * Откатывает total_contributed в заявке
  */
@@ -643,6 +776,424 @@ async function deleteDonationIfFailed(paymentIntentId, requestId) {
     console.error('Ошибка при удалении доната после отмены оплаты:', err);
   }
 }
+
+// ============================================================================
+// УПРАВЛЕНИЕ PAYOUT НАСТРОЙКАМИ
+// ============================================================================
+
+/**
+ * GET /api/stripe/payout-methods/:user_id
+ * Получение доступных методов выплат для пользователя
+ */
+router.get('/payout-methods/:user_id', authenticate, async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    // Проверяем права доступа
+    if (req.user.userId !== user_id && !req.user.isAdmin) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    // Получаем Stripe аккаунт пользователя
+    const [accounts] = await pool.execute(
+      'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+      [user_id]
+    );
+
+    if (accounts.length === 0) {
+      return error(res, 'Stripe account not found', 404);
+    }
+
+    const accountId = accounts[0].account_id;
+
+    // Получаем информацию об аккаунте из Stripe
+    const stripeAccount = await stripe.accounts.retrieve(accountId);
+    
+    // Получаем external accounts (банковские счета и карты)
+    const externalAccounts = await stripe.accounts.listExternalAccounts(accountId, {
+      limit: 100
+    });
+
+    // Проверяем возможности instant payout
+    const hasInstantPayoutCapability = stripeAccount.capabilities?.transfers === 'active';
+    
+    // Получаем настройки payout
+    const payoutSettings = {
+      schedule: stripeAccount.settings?.payouts?.schedule || null,
+      statement_descriptor: stripeAccount.settings?.payouts?.statement_descriptor || null,
+      debit_negative_balances: stripeAccount.settings?.payouts?.debit_negative_balances || false
+    };
+
+    // Форматируем external accounts
+    const formattedAccounts = externalAccounts.data.map(account => ({
+      id: account.id,
+      object: account.object, // 'bank_account' или 'card'
+      type: account.object === 'card' ? 'debit_card' : 'bank_account',
+      last4: account.last4,
+      brand: account.brand || null, // Для карт
+      bank_name: account.bank_name || null, // Для банковских счетов
+      currency: account.currency,
+      country: account.country,
+      default_for_currency: account.default_for_currency,
+      status: account.status || 'new',
+      available_payout_methods: account.available_payout_methods || []
+    }));
+
+    return success(res, {
+      account_id: accountId,
+      instant_payout_available: hasInstantPayoutCapability,
+      payout_settings: payoutSettings,
+      external_accounts: formattedAccounts,
+      can_add_debit_card: stripeAccount.country === 'US', // Instant payout в основном для US
+      onboarding_complete: stripeAccount.charges_enabled && stripeAccount.payouts_enabled
+    });
+
+  } catch (stripeErr) {
+    return error(res, 'Error retrieving payout methods', 500, {
+      stripe_error: stripeErr.message,
+      error_type: stripeErr.type,
+      error_code: stripeErr.code
+    });
+  }
+});
+
+/**
+ * POST /api/stripe/instant-payout
+ * Создание мгновенной выплаты на дебетовую карту
+ */
+router.post('/instant-payout', authenticate, [
+  body('user_id').notEmpty().withMessage('user_id is required'),
+  body('amount').isFloat({ min: 1 }).withMessage('Minimum 1 dollar'),
+  body('external_account_id').optional().isString().withMessage('External account ID')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return error(res, 'Validation error', 400, errors.array());
+    }
+
+    const { user_id, amount, external_account_id } = req.body;
+
+    // Проверяем права доступа
+    if (req.user.userId !== user_id && !req.user.isAdmin) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    // Получаем Stripe аккаунт пользователя
+    const [accounts] = await pool.execute(
+      'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+      [user_id]
+    );
+
+    if (accounts.length === 0) {
+      return error(res, 'Stripe account not found', 404);
+    }
+
+    const accountId = accounts[0].account_id;
+
+    // Конвертируем в центы
+    const amountCents = Math.round(parseFloat(amount) * 100);
+
+    // Создаем instant payout
+    const payoutParams = {
+      amount: amountCents,
+      currency: 'usd',
+      method: 'instant'
+    };
+
+    // Если указан конкретный external account
+    if (external_account_id) {
+      payoutParams.destination = external_account_id;
+    }
+
+    const payout = await stripe.payouts.create(payoutParams, {
+      stripeAccount: accountId
+    });
+
+    // Сохраняем информацию о payout в БД (опционально)
+    const payoutId = generateId();
+    await pool.execute(
+      `INSERT INTO instant_payouts (id, user_id, stripe_account_id, payout_id, amount_cents, currency, status, external_account_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        payoutId,
+        user_id,
+        accountId,
+        payout.id,
+        amountCents,
+        'usd',
+        payout.status,
+        external_account_id || null
+      ]
+    );
+
+    return success(res, {
+      payout_id: payout.id,
+      amount_cents: amountCents,
+      amount_dollars: amount,
+      status: payout.status,
+      arrival_date: payout.arrival_date,
+      method: payout.method,
+      external_account_id: external_account_id,
+      message: 'Instant payout created successfully'
+    });
+
+  } catch (stripeErr) {
+    return error(res, 'Error creating instant payout', 500, {
+      stripe_error: stripeErr.message,
+      error_type: stripeErr.type,
+      error_code: stripeErr.code,
+      decline_code: stripeErr.decline_code || null
+    });
+  }
+});
+
+/**
+ * PUT /api/stripe/payout-schedule/:user_id
+ * Обновление расписания выплат для пользователя
+ */
+router.put('/payout-schedule/:user_id', authenticate, [
+  body('interval').isIn(['manual', 'daily', 'weekly', 'monthly']).withMessage('Invalid interval'),
+  body('delay_days').optional().isInt({ min: 0, max: 365 }).withMessage('delay_days must be between 0 and 365')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return error(res, 'Validation error', 400, errors.array());
+    }
+
+    const { user_id } = req.params;
+    const { interval, delay_days } = req.body;
+
+    // Проверяем права доступа
+    if (req.user.userId !== user_id && !req.user.isAdmin) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    // Получаем Stripe аккаунт пользователя
+    const [accounts] = await pool.execute(
+      'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+      [user_id]
+    );
+
+    if (accounts.length === 0) {
+      return error(res, 'Stripe account not found', 404);
+    }
+
+    const accountId = accounts[0].account_id;
+
+    // Обновляем настройки payout в Stripe
+    const updateData = {
+      settings: {
+        payouts: {
+          schedule: {
+            interval: interval
+          }
+        }
+      }
+    };
+
+    // Добавляем delay_days если указан и интервал не manual
+    if (delay_days !== undefined && interval !== 'manual') {
+      updateData.settings.payouts.schedule.delay_days = delay_days;
+    }
+
+    const updatedAccount = await stripe.accounts.update(accountId, updateData);
+
+    return success(res, {
+      account_id: accountId,
+      payout_schedule: updatedAccount.settings.payouts.schedule,
+      message: 'Payout schedule updated successfully'
+    });
+
+  } catch (stripeErr) {
+    return error(res, 'Error updating payout schedule', 500, {
+      stripe_error: stripeErr.message,
+      error_type: stripeErr.type,
+      error_code: stripeErr.code
+    });
+  }
+});
+
+/**
+ * GET /api/stripe/instant-payouts/:user_id
+ * Получение истории мгновенных выплат пользователя
+ */
+router.get('/instant-payouts/:user_id', authenticate, async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Проверяем права доступа
+    if (req.user.userId !== user_id && !req.user.isAdmin) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Получаем instant payouts из БД
+    const [payouts] = await pool.execute(
+      `SELECT * FROM instant_payouts 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [user_id, limitNum, offset]
+    );
+
+    // Получаем общее количество
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) as total FROM instant_payouts WHERE user_id = ?',
+      [user_id]
+    );
+    const total = countResult[0]?.total || 0;
+
+    // Получаем актуальную информацию из Stripe для последних payouts
+    const detailedPayouts = await Promise.all(
+      payouts.map(async (payout) => {
+        try {
+          // Получаем Stripe аккаунт
+          const stripePayout = await stripe.payouts.retrieve(payout.payout_id, {
+            stripeAccount: payout.stripe_account_id
+          });
+
+          return {
+            id: payout.id,
+            payout_id: payout.payout_id,
+            amount_cents: payout.amount_cents,
+            amount_dollars: (payout.amount_cents / 100).toFixed(2),
+            currency: payout.currency,
+            status: stripePayout.status, // Актуальный статус из Stripe
+            method: stripePayout.method,
+            external_account_id: payout.external_account_id,
+            failure_code: stripePayout.failure_code || payout.failure_code,
+            failure_message: stripePayout.failure_message || payout.failure_message,
+            arrival_date: stripePayout.arrival_date,
+            created_at: payout.created_at,
+            stripe_data: {
+              automatic: stripePayout.automatic,
+              balance_transaction: stripePayout.balance_transaction,
+              description: stripePayout.description
+            }
+          };
+        } catch (stripeErr) {
+          // Если не можем получить из Stripe, возвращаем данные из БД
+          return {
+            id: payout.id,
+            payout_id: payout.payout_id,
+            amount_cents: payout.amount_cents,
+            amount_dollars: (payout.amount_cents / 100).toFixed(2),
+            currency: payout.currency,
+            status: payout.status,
+            method: 'instant',
+            external_account_id: payout.external_account_id,
+            failure_code: payout.failure_code,
+            failure_message: payout.failure_message,
+            arrival_date: payout.arrival_date,
+            created_at: payout.created_at,
+            stripe_error: stripeErr.message
+          };
+        }
+      })
+    );
+
+    return success(res, {
+      payouts: detailedPayouts,
+      total: total,
+      page: pageNum,
+      limit: limitNum,
+      has_more: total > (pageNum * limitNum)
+    });
+
+  } catch (err) {
+    return error(res, 'Error retrieving instant payout history', 500, err);
+  }
+});
+
+/**
+ * GET /api/stripe/balance/:user_id
+ * Получение доступного баланса пользователя для выплат
+ */
+router.get('/balance/:user_id', authenticate, async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    // Проверяем права доступа
+    if (req.user.userId !== user_id && !req.user.isAdmin) {
+      return error(res, 'Insufficient permissions', 403);
+    }
+
+    // Получаем Stripe аккаунт пользователя
+    const [accounts] = await pool.execute(
+      'SELECT account_id, payouts_enabled FROM stripe_accounts WHERE user_id = ?',
+      [user_id]
+    );
+
+    if (accounts.length === 0) {
+      return error(res, 'Stripe account not found', 404);
+    }
+
+    const { account_id: accountId, payouts_enabled: payoutsEnabled } = accounts[0];
+
+    // Получаем баланс из Stripe
+    let stripeBalance = null;
+    try {
+      const balance = await stripe.balance.retrieve({
+        stripeAccount: accountId
+      });
+
+      stripeBalance = {
+        available: balance.available.map(b => ({
+          amount: b.amount, // в центах
+          amount_dollars: (b.amount / 100).toFixed(2),
+          currency: b.currency
+        })),
+        pending: balance.pending.map(b => ({
+          amount: b.amount, // в центах  
+          amount_dollars: (b.amount / 100).toFixed(2),
+          currency: b.currency
+        }))
+      };
+    } catch (stripeErr) {
+      return error(res, 'Error retrieving balance from Stripe', 500, {
+        stripe_error: stripeErr.message,
+        error_type: stripeErr.type,
+        error_code: stripeErr.code
+      });
+    }
+
+    // Получаем информацию о последних выплатах
+    const [recentPayouts] = await pool.execute(
+      `SELECT * FROM instant_payouts 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC 
+       LIMIT 5`,
+      [user_id]
+    );
+
+    // Получаем настройки payout расписания
+    const stripeAccount = await stripe.accounts.retrieve(accountId);
+    const payoutSchedule = stripeAccount.settings?.payouts?.schedule || null;
+
+    return success(res, {
+      account_id: accountId,
+      payouts_enabled: payoutsEnabled,
+      balance: stripeBalance,
+      payout_schedule: payoutSchedule,
+      recent_payouts: recentPayouts.map(p => ({
+        id: p.id,
+        amount_dollars: (p.amount_cents / 100).toFixed(2),
+        status: p.status,
+        created_at: p.created_at
+      })),
+      can_instant_payout: payoutsEnabled && stripeBalance?.available?.some(b => b.amount > 100) // минимум $1
+    });
+
+  } catch (err) {
+    return error(res, 'Error retrieving balance', 500, err);
+  }
+});
 
 module.exports = router;
 

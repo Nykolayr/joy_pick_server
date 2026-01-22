@@ -6186,3 +6186,245 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 8. **Верификация email:** После регистрации автоматически отправляется код верификации (6 цифр), действителен 10 минут
 9. **Real-time чаты:** Используйте Server-Sent Events (SSE) для получения новых сообщений в реальном времени через `GET /api/chats/:chatId/events`
 
+---
+
+## Управление Payout и мгновенными выплатами
+
+### Получение баланса пользователя
+
+**GET** `/stripe/balance/:user_id`
+
+**Требует аутентификации**
+
+**Описание:**
+Получает доступный баланс пользователя для выплат и информацию о настройках.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "account_id": "acct_xxxxx",
+    "payouts_enabled": true,
+    "balance": {
+      "available": [
+        {
+          "amount": 5000,
+          "amount_dollars": "50.00",
+          "currency": "usd"
+        }
+      ],
+      "pending": [
+        {
+          "amount": 2500,
+          "amount_dollars": "25.00", 
+          "currency": "usd"
+        }
+      ]
+    },
+    "payout_schedule": {
+      "interval": "daily",
+      "delay_days": 2
+    },
+    "recent_payouts": [
+      {
+        "id": "uuid",
+        "amount_dollars": "30.00",
+        "status": "paid",
+        "created_at": "2025-01-22T10:30:00Z"
+      }
+    ],
+    "can_instant_payout": true
+  }
+}
+```
+
+---
+
+### Получение методов выплат
+
+**GET** `/stripe/payout-methods/:user_id`
+
+**Требует аутентификации**
+
+**Описание:**
+Получает доступные методы выплат для пользователя, включая банковские счета и дебетовые карты.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "account_id": "acct_xxxxx",
+    "instant_payout_available": true,
+    "payout_settings": {
+      "schedule": {
+        "interval": "daily",
+        "delay_days": 2
+      },
+      "statement_descriptor": null,
+      "debit_negative_balances": false
+    },
+    "external_accounts": [
+      {
+        "id": "ba_xxxxx",
+        "object": "bank_account",
+        "type": "bank_account",
+        "last4": "6789",
+        "brand": null,
+        "bank_name": "STRIPE TEST BANK",
+        "currency": "usd",
+        "country": "US",
+        "default_for_currency": true,
+        "status": "verified"
+      },
+      {
+        "id": "card_xxxxx", 
+        "object": "card",
+        "type": "debit_card",
+        "last4": "4242",
+        "brand": "visa",
+        "bank_name": null,
+        "currency": "usd",
+        "country": "US",
+        "default_for_currency": false,
+        "status": "verified"
+      }
+    ],
+    "can_add_debit_card": true,
+    "onboarding_complete": true
+  }
+}
+```
+
+---
+
+### Создание мгновенной выплаты
+
+**POST** `/stripe/instant-payout`
+
+**Требует аутентификации**
+
+**Описание:**
+Создает мгновенную выплату на дебетовую карту (поступает в течение 30 минут).
+
+**Request Body:**
+```json
+{
+  "user_id": "uuid-пользователя",
+  "amount": 50.00,
+  "external_account_id": "card_xxxxx"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Instant payout created successfully",
+  "data": {
+    "payout_id": "po_xxxxx",
+    "amount_cents": 5000,
+    "amount_dollars": "50.00",
+    "status": "in_transit",
+    "arrival_date": 1737123456,
+    "method": "instant",
+    "external_account_id": "card_xxxxx"
+  }
+}
+```
+
+**Важно:**
+- Доступно только для US дебетовых карт Visa/MasterCard
+- Комиссия Stripe: 1.5% от суммы
+- Минимум: $1.00, максимум зависит от карты
+- Средства поступают в течение 30 минут
+
+---
+
+### Обновление расписания выплат
+
+**PUT** `/stripe/payout-schedule/:user_id`
+
+**Требует аутентификации**
+
+**Request Body:**
+```json
+{
+  "interval": "daily",
+  "delay_days": 2
+}
+```
+
+**Параметры:**
+- `interval`: `"manual"`, `"daily"`, `"weekly"`, `"monthly"`
+- `delay_days`: от 0 до 365 дней (только для автоматических выплат)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Payout schedule updated successfully",
+  "data": {
+    "account_id": "acct_xxxxx",
+    "payout_schedule": {
+      "interval": "daily",
+      "delay_days": 2
+    }
+  }
+}
+```
+
+---
+
+### История мгновенных выплат
+
+**GET** `/stripe/instant-payouts/:user_id`
+
+**Требует аутентификации**
+
+**Query параметры:**
+- `page` - номер страницы (по умолчанию 1)
+- `limit` - количество записей (по умолчанию 20, максимум 100)
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "payouts": [
+      {
+        "id": "uuid",
+        "payout_id": "po_xxxxx",
+        "amount_cents": 5000,
+        "amount_dollars": "50.00",
+        "currency": "usd",
+        "status": "paid",
+        "method": "instant",
+        "external_account_id": "card_xxxxx",
+        "failure_code": null,
+        "failure_message": null,
+        "arrival_date": 1737123456,
+        "created_at": "2025-01-22T10:30:00Z",
+        "stripe_data": {
+          "automatic": false,
+          "balance_transaction": "txn_xxxxx",
+          "description": "Instant payout"
+        }
+      }
+    ],
+    "total": 5,
+    "page": 1,
+    "limit": 20,
+    "has_more": false
+  }
+}
+```
+
+**Статусы payout:**
+- `pending` - в обработке
+- `in_transit` - отправлен, ожидает поступления
+- `paid` - успешно выплачен
+- `failed` - ошибка выплаты
+- `canceled` - отменен
+

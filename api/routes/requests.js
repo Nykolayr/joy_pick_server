@@ -1992,7 +1992,15 @@ async function handleWasteApproval(requestId, creatorId) {
     sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'wasteLocation' }).catch(() => {});
   }
   if (executorUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: executorUserIds, requestId, messageType: 'executor', requestCategory: 'wasteLocation' }).catch(() => {});
+    // Отправляем исполнителю уведомление с информацией о выплате
+    const payoutAmount = amountToTransfer > 0 ? amountToTransfer.toFixed(2) : null;
+    sendRequestApprovedNotification({ 
+      userIds: executorUserIds, 
+      requestId, 
+      messageType: 'executor', 
+      requestCategory: 'wasteLocation',
+      payoutAmount: payoutAmount
+    }).catch(() => {});
   }
   if (donorUserIds.length > 0) {
     sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'wasteLocation' }).catch(() => {});
@@ -2075,7 +2083,15 @@ async function handleEventApproval(requestId, creatorId) {
 
   // 6. Отправляем push-уведомления
   if (creatorId) {
-    sendRequestApprovedNotification({ userIds: [creatorId], requestId, messageType: 'creator', requestCategory: 'event' }).catch(() => {});
+    // Отправляем создателю уведомление с информацией о выплате (для событий деньги идут создателю)
+    const payoutAmount = amountToTransfer > 0 ? amountToTransfer.toFixed(2) : null;
+    sendRequestApprovedNotification({ 
+      userIds: [creatorId], 
+      requestId, 
+      messageType: 'creator', 
+      requestCategory: 'event',
+      payoutAmount: payoutAmount
+    }).catch(() => {});
   }
   if (participantUserIds.length > 0) {
     sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant', requestCategory: 'event' }).catch(() => {});
