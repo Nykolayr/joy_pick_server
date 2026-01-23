@@ -345,8 +345,8 @@ router.get('/history', authenticate, async (req, res) => {
        LEFT JOIN requests r ON pi.request_id = r.id
        WHERE pi.user_id = ?
        ORDER BY pi.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [user_id, limitNum, offset]
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      [user_id]
     );
 
     // Получаем общее количество
@@ -406,8 +406,8 @@ router.get('/payouts', authenticate, async (req, res) => {
        LEFT JOIN requests r ON t.request_id = r.id
        WHERE t.performer_user_id = ?
        ORDER BY t.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [user_id, limitNum, offset]
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      [user_id]
     );
 
     // Получаем общее количество

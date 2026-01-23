@@ -296,15 +296,25 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!webhookSecret) {
-    return error(res, 'Webhook secret не настроен', 500);
+    return error(res, 'Webhook secret not configured', 500);
   }
 
   let event;
-
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
-    return error(res, `Webhook signature verification failed: ${err.message}`, 400, err);
+    return error(res, 'Webhook signature verification failed', 400, {
+      ...err,
+      webhook_signature_error: true,
+      errorDetails: {
+        errorMessage: err.message,
+        errorName: err.name,
+        hasSignature: !!sig,
+        hasWebhookSecret: !!webhookSecret,
+        signatureLength: sig?.length || 0,
+        note: 'Check STRIPE_WEBHOOK_SECRET in environment variables'
+      }
+    });
   }
 
   try {
@@ -359,9 +369,29 @@ router.post('/webhooks', express.raw({ type: 'application/json' }), async (req, 
         break;
     }
 
-    res.json({ received: true });
+    // ВАЖНО: Stripe требует HTTP 200-299 для успешной доставки
+    return res.status(200).json({ 
+      received: true,
+      event_type: event.type,
+      event_id: event.id,
+      message: 'Webhook processed successfully'
+    });
   } catch (err) {
-    return error(res, 'Error processing webhook', 500, err);
+    // Возвращаем 500 с детальной информацией, чтобы Stripe повторил запрос
+    return error(res, 'Error processing webhook event', 500, {
+      ...err,
+      event_type: event?.type || 'unknown',
+      event_id: event?.id || 'unknown',
+      webhook_processing_error: true,
+      errorDetails: {
+        errorMessage: err.message,
+        errorName: err.name,
+        errorCode: err.code,
+        eventType: event?.type,
+        eventId: event?.id,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      }
+    });
   }
 });
 
@@ -441,6 +471,11 @@ async function handlePaymentIntentRequiresCapture(paymentIntent) {
  * Обработка события payment_intent.succeeded
  */
 async function handlePaymentIntentSucceeded(paymentIntent) {
+  // Проверка обязательных полей
+  if (!paymentIntent || !paymentIntent.id) {
+    throw new Error('PaymentIntent ID is required');
+  }
+
   const [paymentIntents] = await pool.execute(
     'SELECT * FROM payment_intents WHERE payment_intent_id = ?',
     [paymentIntent.id]
@@ -459,12 +494,12 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        paymentIntent.id,
+        paymentIntent.id || 'unknown',
         paymentIntent.metadata?.user_id || null,
         paymentIntent.metadata?.request_id || null,
-        paymentIntent.amount,
-        paymentIntent.currency,
-        paymentIntent.status,
+        paymentIntent.amount || 0,
+        paymentIntent.currency || 'usd',
+        paymentIntent.status || 'succeeded',
         paymentIntent.metadata?.type || 'unknown',
         JSON.stringify(paymentIntent.metadata || {})
       ]
@@ -1038,8 +1073,8 @@ router.get('/instant-payouts/:user_id', authenticate, async (req, res) => {
       `SELECT * FROM instant_payouts 
        WHERE user_id = ? 
        ORDER BY created_at DESC 
-       LIMIT ? OFFSET ?`,
-      [user_id, limitNum, offset]
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      [user_id]
     );
 
     // Получаем общее количество
@@ -1192,6 +1227,283 @@ router.get('/balance/:user_id', authenticate, async (req, res) => {
 
   } catch (err) {
     return error(res, 'Error retrieving balance', 500, err);
+  }
+});
+
+/**
+ * POST /api/stripe/test-webhook
+ * Тестовый эндпоинт для симуляции webhook событий от Stripe
+ * Позволяет проверить обработку webhook без реальных событий от Stripe
+ */
+router.post('/test-webhook', authenticate, [
+  body('event_type').notEmpty().withMessage('event_type is required'),
+  body('event_data').optional().isObject().withMessage('event_data must be an object')
+], async (req, res) => {
+  // КРИТИЧЕСКИ ВАЖНО: Обеспечиваем, что ответ всегда будет отправлен
+  let responseSent = false;
+  
+  const sendResponse = (status, data) => {
+    if (!responseSent) {
+      responseSent = true;
+      return res.status(status).json(data);
+    }
+  };
+
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return sendResponse(400, {
+        success: false,
+        message: 'Validation error',
+        errors: errors.array()
+      });
+    }
+
+    const { event_type, event_data } = req.body;
+
+    // Создаем тестовое событие в формате Stripe
+    const testEvent = {
+      id: `evt_test_${Date.now()}`,
+      object: 'event',
+      type: event_type,
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: event_data || {}
+      },
+      livemode: false,
+      pending_webhooks: 0,
+      request: {
+        id: null,
+        idempotency_key: null
+      }
+    };
+
+    // Симулируем обработку webhook
+    let processingResult = {
+      success: false,
+      event_type: event_type,
+      event_id: testEvent.id,
+      message: '',
+      errorDetails: null
+    };
+
+    try {
+      // Обработка различных типов событий (та же логика, что в реальном webhook)
+      switch (event_type) {
+        case 'account.updated':
+          try {
+            await handleAccountUpdated(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Account updated event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payment_intent.succeeded':
+          try {
+            // Нормализуем данные для обработчика
+            // ВАЖНО: Для тестовых данных проверяем, существует ли user_id в БД
+            const testUserId = event_data?.metadata?.user_id;
+            let validUserId = null;
+            
+            if (testUserId && testUserId.startsWith('test_')) {
+              // Тестовый user_id - проверяем, существует ли он в БД
+              const [users] = await pool.execute('SELECT id FROM users WHERE id = ?', [testUserId]);
+              if (users.length === 0) {
+                // Тестовый user_id не существует - используем NULL для теста
+                validUserId = null;
+                processingResult.message = 'Payment intent succeeded event processed (test user_id not found, using NULL)';
+              } else {
+                validUserId = testUserId;
+              }
+            } else if (testUserId) {
+              // Реальный user_id - проверяем существование
+              const [users] = await pool.execute('SELECT id FROM users WHERE id = ?', [testUserId]);
+              if (users.length > 0) {
+                validUserId = testUserId;
+              } else {
+                validUserId = null;
+                processingResult.message = 'Payment intent succeeded event processed (user_id not found, using NULL)';
+              }
+            }
+            
+            const normalizedPaymentIntent = {
+              id: event_data?.id || 'pi_test_missing',
+              status: event_data?.status || 'succeeded',
+              amount: event_data?.amount || 0,
+              currency: event_data?.currency || 'usd',
+              metadata: {
+                ...(event_data?.metadata || {}),
+                user_id: validUserId || null
+              }
+            };
+            
+            await handlePaymentIntentSucceeded(normalizedPaymentIntent);
+            processingResult.success = true;
+            if (!processingResult.message) {
+              processingResult.message = 'Payment intent succeeded event processed successfully';
+            }
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payment_intent.requires_capture':
+          try {
+            await handlePaymentIntentRequiresCapture(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payment intent requires capture event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payment_intent.payment_failed':
+          try {
+            await handlePaymentIntentFailed(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payment intent failed event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payment_intent.canceled':
+          try {
+            await handlePaymentIntentCanceled(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payment intent canceled event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'transfer.created':
+          try {
+            await handleTransferCreated(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Transfer created event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'transfer.paid':
+          try {
+            await handleTransferPaid(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Transfer paid event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'transfer.failed':
+          try {
+            await handleTransferFailed(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Transfer failed event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payout.created':
+          try {
+            await handlePayoutCreated(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payout created event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payout.paid':
+          try {
+            await handlePayoutPaid(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payout paid event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        case 'payout.failed':
+          try {
+            await handlePayoutFailed(testEvent.data.object);
+            processingResult.success = true;
+            processingResult.message = 'Payout failed event processed successfully';
+          } catch (handlerErr) {
+            throw handlerErr;
+          }
+          break;
+
+        default:
+          processingResult.success = false;
+          processingResult.message = `Unknown event type: ${event_type}`;
+          processingResult.errorDetails = {
+            supportedEvents: [
+              'account.updated',
+              'payment_intent.succeeded',
+              'payment_intent.requires_capture',
+              'payment_intent.payment_failed',
+              'payment_intent.canceled',
+              'transfer.created',
+              'transfer.paid',
+              'transfer.failed',
+              'payout.created',
+              'payout.paid',
+              'payout.failed'
+            ]
+          };
+      }
+    } catch (processingErr) {
+      processingResult.success = false;
+      processingResult.message = 'Error processing webhook event';
+      processingResult.errorDetails = {
+        errorMessage: processingErr.message || 'Unknown error',
+        errorName: processingErr.name || 'Error',
+        errorCode: processingErr.code || null,
+        errno: processingErr.errno || null,
+        sqlMessage: processingErr.sqlMessage || null,
+        sql: processingErr.sql || null,
+        stack: process.env.NODE_ENV === 'development' ? processingErr.stack : undefined
+      };
+    }
+
+    // ВАЖНО: Всегда возвращаем ответ, даже если обработка не удалась
+    return sendResponse(200, {
+      success: true,
+      message: processingResult.success ? 'Webhook test completed' : 'Webhook test failed',
+      data: {
+        test_event: testEvent,
+        processing_result: processingResult,
+        note: 'This is a test endpoint. Real webhooks from Stripe go to /api/stripe/webhooks'
+      }
+    });
+
+  } catch (err) {
+    // КРИТИЧЕСКИ ВАЖНО: Всегда возвращаем ответ, даже при ошибке
+    try {
+      if (!responseSent) {
+        return error(res, 'Error testing webhook', 500, {
+          ...err,
+          errorMessage: err.message || 'Unknown error',
+          errorName: err.name || 'Error',
+          errorCode: err.code || null,
+          stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
+      }
+    } catch (responseErr) {
+      // Если даже error() падает, возвращаем минимальный ответ
+      return sendResponse(500, {
+        success: false,
+        message: 'Critical error in test-webhook endpoint',
+        error: err.message || 'Unknown error',
+        responseError: responseErr.message
+      });
+    }
   }
 });
 

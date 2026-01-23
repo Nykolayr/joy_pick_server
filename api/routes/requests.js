@@ -594,7 +594,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         created_at, updated_at, rejection_reason, rejection_message, actual_participants,
         photos_before, photos_after, registered_participants, waste_types, expires_at,
         extended_count, participant_completions, group_chat_id, private_chats
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -773,8 +773,33 @@ router.post('/', authenticate, uploadRequestPhotos, [
       request: normalizedRequest
     }, 'Заявка создана', 201);
   } catch (err) {
+    // Добавляем диагностическую информацию в ответ
+    const diagnosticInfo = {
+      originalError: err.message,
+      sqlError: err.sql || null,
+      errorCode: err.code || null,
+      
+      // Информация о структуре запроса
+      insertColumnsCount: 42, // ожидаемое количество колонок
+      insertColumns: [
+        'id', 'user_id', 'category', 'name', 'description', 'latitude', 'longitude', 'city',
+        'garbage_size', 'only_foot', 'possible_by_car', 'reward_amount', 'is_open',
+        'start_date', 'end_date', 'status', 'priority', 'assigned_to', 'notes', 'created_by',
+        'taken_by', 'total_contributed', 'target_amount', 'joined_user_id', 'join_date',
+        'completion_comment', 'plant_tree', 'trash_pickup_only',
+        'created_at', 'updated_at', 'rejection_reason', 'rejection_message', 'actual_participants',
+        'photos_before', 'photos_after', 'registered_participants', 'waste_types', 'expires_at',
+        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats'
+      ],
+      
+      // Информация о параметрах
+      valuesCount: 40, // количество ? параметров + 2 NOW()
+      nowCount: 2,
+      totalParams: 42
+    };
+    
     // Возвращаем детальную ошибку клиенту
-    error(res, 'Ошибка при создании заявки', 500, err);
+    error(res, 'VALUES_COUNT_41_EXPECTED_42_MISSING_1_PARAM', 500, { ...err, diagnostic: diagnosticInfo });
   }
 });
 

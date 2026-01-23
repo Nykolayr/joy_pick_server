@@ -6428,3 +6428,124 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 - `failed` - ошибка выплаты
 - `canceled` - отменен
 
+---
+
+### Тестирование Webhook событий
+
+**POST** `/stripe/test-webhook`
+
+**Требует аутентификации**
+
+**Описание:**
+Тестовый эндпоинт для симуляции webhook событий от Stripe. Позволяет проверить обработку webhook без реальных событий от Stripe. Полезно для отладки и тестирования обработки событий.
+
+**Request Body:**
+```json
+{
+  "event_type": "payment_intent.succeeded",
+  "event_data": {
+    "id": "pi_test_123",
+    "status": "succeeded",
+    "amount": 5000,
+    "currency": "usd",
+    "metadata": {
+      "request_id": "uuid-заявки",
+      "user_id": "uuid-пользователя",
+      "type": "donation"
+    }
+  }
+}
+```
+
+**Поддерживаемые типы событий:**
+- `account.updated`
+- `payment_intent.succeeded`
+- `payment_intent.requires_capture`
+- `payment_intent.payment_failed`
+- `payment_intent.canceled`
+- `transfer.created`
+- `transfer.paid`
+- `transfer.failed`
+- `payout.created`
+- `payout.paid`
+- `payout.failed`
+
+**Response (200) - Успех:**
+```json
+{
+  "success": true,
+  "message": "Webhook test completed",
+  "data": {
+    "test_event": {
+      "id": "evt_test_1234567890",
+      "object": "event",
+      "type": "payment_intent.succeeded",
+      "created": 1234567890
+    },
+    "processing_result": {
+      "success": true,
+      "event_type": "payment_intent.succeeded",
+      "event_id": "evt_test_1234567890",
+      "message": "Payment intent succeeded event processed successfully"
+    },
+    "note": "This is a test endpoint. Real webhooks from Stripe go to /api/stripe/webhooks"
+  }
+}
+```
+
+**Response (200) - Ошибка обработки:**
+```json
+{
+  "success": true,
+  "message": "Webhook test failed",
+  "data": {
+    "test_event": {
+      "id": "evt_test_1234567890",
+      "type": "payment_intent.succeeded"
+    },
+    "processing_result": {
+      "success": false,
+      "event_type": "payment_intent.succeeded",
+      "event_id": "evt_test_1234567890",
+      "message": "Error processing webhook event",
+      "errorDetails": {
+        "errorMessage": "Column count doesn't match value count",
+        "errorName": "Error",
+        "errorCode": "ER_WRONG_VALUE_COUNT_ON_ROW",
+        "sqlMessage": "Column count doesn't match value count at row 1",
+        "sql": "INSERT INTO ..."
+      }
+    }
+  }
+}
+```
+
+**Response (400) - Неизвестный тип события:**
+```json
+{
+  "success": true,
+  "message": "Webhook test failed",
+  "data": {
+    "processing_result": {
+      "success": false,
+      "message": "Unknown event type: unknown_event",
+      "errorDetails": {
+        "supportedEvents": [
+          "account.updated",
+          "payment_intent.succeeded",
+          ...
+        ]
+      }
+    }
+  }
+}
+```
+
+**Важно:**
+- Этот эндпоинт только для тестирования
+- Реальные webhook от Stripe идут на `/api/stripe/webhooks`
+- Все ошибки обработки возвращаются в `processing_result.errorDetails`
+- Можно использовать для отладки проблем с webhook обработкой
+
+---
+
