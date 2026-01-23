@@ -1,8 +1,10 @@
 const express = require('express');
+const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 const stripe = require('../config/stripe');
+const { generateId } = require('../utils/uuid');
 
 const router = express.Router();
 
@@ -1395,6 +1397,193 @@ router.get('/requests/closed', async (req, res) => {
     });
   } catch (err) {
     return error(res, 'Ошибка при получении закрытых заявок', 500, err);
+  }
+});
+
+// ============================================================================
+// СЕКЦИЯ: СОЗДАНИЕ TRANSFER ВРУЧНУЮ
+// ============================================================================
+
+/**
+ * POST /api/stripe-admin/create-transfer
+ * Создание Transfer вручную для заявки
+ * 
+ * Используется когда:
+ * - Transfer не создался автоматически при одобрении заявки
+ * - Нужно создать Transfer для старых заявок
+ * - Нужно повторить неудачный Transfer
+ */
+router.post('/create-transfer', [
+  body('request_id').notEmpty().withMessage('request_id is required'),
+  body('performer_user_id').notEmpty().withMessage('performer_user_id is required'),
+  body('amount_cents').optional().isInt({ min: 1 }).withMessage('amount_cents must be positive integer')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return error(res, 'Validation error', 400, errors.array());
+    }
+
+    const { request_id, performer_user_id, amount_cents } = req.body;
+
+    // Получаем заявку
+    const [requests] = await pool.execute(
+      'SELECT id, category, name, created_by FROM requests WHERE id = ?',
+      [request_id]
+    );
+
+    if (requests.length === 0) {
+      return error(res, 'Request not found', 404);
+    }
+
+    const request = requests[0];
+
+    // Получаем все донаты для заявки
+    const [donations] = await pool.execute(
+      `SELECT d.*, pi.payment_intent_id, pi.status as payment_status
+       FROM donations d
+       LEFT JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+       WHERE d.request_id = ? AND pi.status = 'succeeded'`,
+      [request_id]
+    );
+
+    if (donations.length === 0) {
+      return error(res, 'No successful donations found for this request', 400);
+    }
+
+    // Рассчитываем сумму
+    const totalAmountCents = donations.reduce((sum, d) => sum + Math.round(parseFloat(d.amount) * 100), 0);
+    
+    // Комиссия платформы: 7%
+    const platformFeeCents = Math.round(totalAmountCents * 0.07);
+    
+    // Комиссия Stripe: 2.9% + $0.30 за транзакцию
+    const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
+    
+    // Сумма для Transfer (можно переопределить вручную)
+    const transferAmountCents = amount_cents || (totalAmountCents - platformFeeCents - stripeFeeCents);
+
+    if (transferAmountCents <= 0) {
+      return error(res, 'Transfer amount must be positive', 400);
+    }
+
+    // Проверяем, не создан ли уже Transfer для этой заявки
+    const [existingTransfers] = await pool.execute(
+      'SELECT * FROM transfers WHERE request_id = ? AND performer_user_id = ?',
+      [request_id, performer_user_id]
+    );
+
+    if (existingTransfers.length > 0) {
+      return error(res, 'Transfer already exists for this request and performer', 400, {
+        existing_transfer: existingTransfers[0]
+      });
+    }
+
+    // Получаем stripe_account_id исполнителя
+    const [stripeAccounts] = await pool.execute(
+      'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+      [performer_user_id]
+    );
+
+    if (stripeAccounts.length === 0) {
+      return error(res, 'Performer Stripe account not found', 404);
+    }
+
+    const stripeAccountId = stripeAccounts[0].account_id;
+
+    // Получаем первый PaymentIntent для source_transaction
+    const [paymentIntents] = await pool.execute(
+      `SELECT payment_intent_id FROM donations d
+       JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+       WHERE d.request_id = ? AND pi.status = 'succeeded'
+       LIMIT 1`,
+      [request_id]
+    );
+
+    // Создаем Transfer в Stripe
+    let transfer;
+    try {
+      transfer = await stripe.transfers.create({
+        amount: transferAmountCents,
+        currency: 'usd',
+        destination: stripeAccountId,
+        source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
+        metadata: {
+          request_id: request_id,
+          performer_user_id: performer_user_id,
+          created_by: 'admin_manual'
+        }
+      });
+    } catch (transferErr) {
+      return error(res, 'Error creating transfer in Stripe', 500, {
+        ...transferErr,
+        errorDetails: {
+          errorMessage: transferErr.message,
+          errorType: transferErr.type,
+          errorCode: transferErr.code,
+          stripeAccountId: stripeAccountId,
+          transferAmountCents: transferAmountCents
+        }
+      });
+    }
+
+    // Сохраняем transfer в базу данных
+    const transferId = generateId();
+    await pool.execute(
+      `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        transferId,
+        transfer.id,
+        request_id,
+        performer_user_id,
+        transferAmountCents,
+        platformFeeCents,
+        stripeFeeCents,
+        'usd',
+        'pending',
+        paymentIntents[0]?.payment_intent_id || null
+      ]
+    );
+
+    // Получаем детальную информацию о Transfer из Stripe
+    const stripeTransfer = await stripe.transfers.retrieve(transfer.id);
+
+    return success(res, {
+      transfer: {
+        id: transferId,
+        transfer_id: transfer.id,
+        request_id: request_id,
+        performer_user_id: performer_user_id,
+        amount_cents: transferAmountCents,
+        amount_dollars: (transferAmountCents / 100).toFixed(2),
+        platform_fee_cents: platformFeeCents,
+        platform_fee_dollars: (platformFeeCents / 100).toFixed(2),
+        stripe_fee_cents: stripeFeeCents,
+        stripe_fee_dollars: (stripeFeeCents / 100).toFixed(2),
+        currency: 'usd',
+        status: stripeTransfer.status,
+        created: stripeTransfer.created,
+        stripe_data: {
+          destination: stripeTransfer.destination,
+          source_transaction: stripeTransfer.source_transaction,
+          metadata: stripeTransfer.metadata
+        }
+      },
+      request_info: {
+        id: request.id,
+        category: request.category,
+        name: request.name
+      },
+      calculations: {
+        total_donations_cents: totalAmountCents,
+        total_donations_dollars: (totalAmountCents / 100).toFixed(2),
+        donations_count: donations.length
+      }
+    }, 'Transfer created successfully');
+
+  } catch (err) {
+    return error(res, 'Error creating transfer', 500, err);
   }
 });
 
