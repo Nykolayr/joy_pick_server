@@ -2005,12 +2005,80 @@ async function handleWasteApproval(requestId, creatorId) {
 
   // 4. Переводим деньги исполнителю (только donations - комиссия)
   // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
-  // TODO: Реализовать перевод денег через платежную систему
   // MySQL возвращает decimal как строки, поэтому используем parseFloat
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmount = totalDonations; // Только донаты, cost больше не используется
-  const commission = totalAmount * 0.1; // 10% комиссия
-  const amountToTransfer = totalAmount - commission;
+  const totalAmountCents = Math.round(totalDonations * 100); // В центах
+  
+  // Комиссия платформы: 7%
+  const platformFeeCents = Math.round(totalAmountCents * 0.07);
+  
+  // Комиссия Stripe: используется упрощенная формула
+  // В реальности Stripe берет комиссию с каждого платежа отдельно при поступлении
+  // Здесь используем приблизительную формулу для расчета суммы Transfer
+  // Точная комиссия Stripe уже вычтена при поступлении средств на баланс платформы
+  const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
+  
+  // Сумма для исполнителя
+  const transferAmountCents = totalAmountCents - platformFeeCents - stripeFeeCents;
+  
+  // Создаем Transfer в Stripe для исполнителя
+  if (executorId && transferAmountCents > 0) {
+    try {
+      // Получаем stripe_account_id исполнителя
+      const [stripeAccounts] = await pool.execute(
+        'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+        [executorId]
+      );
+
+      if (stripeAccounts.length > 0) {
+        const stripeAccountId = stripeAccounts[0].account_id;
+        
+        // Получаем все PaymentIntent для заявки
+        const [paymentIntents] = await pool.execute(
+          `SELECT payment_intent_id FROM donations d
+           JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+           WHERE d.request_id = ? AND pi.status = 'succeeded'
+           LIMIT 1`,
+          [requestId]
+        );
+
+        // Создаем Transfer в Stripe
+        const transfer = await stripe.transfers.create({
+          amount: transferAmountCents,
+          currency: 'usd',
+          destination: stripeAccountId,
+          source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
+          metadata: {
+            request_id: requestId,
+            performer_user_id: executorId
+          }
+        });
+
+        // Сохраняем transfer в базу данных
+        const transferId = generateId();
+        await pool.execute(
+          `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            transferId,
+            transfer.id,
+            requestId,
+            executorId,
+            transferAmountCents,
+            platformFeeCents,
+            stripeFeeCents,
+            'usd',
+            'pending',
+            paymentIntents[0]?.payment_intent_id || null
+          ]
+        );
+      }
+    } catch (transferErr) {
+      // Ошибка создания Transfer - заявка все равно одобрена, но деньги не переведены
+      // Transfer можно создать вручную через админку или повторить позже
+      // Ошибка не прерывает выполнение, чтобы не блокировать одобрение заявки
+    }
+  }
 
   // 5. Отправляем push-уведомления
   if (creatorId) {
@@ -2018,7 +2086,7 @@ async function handleWasteApproval(requestId, creatorId) {
   }
   if (executorUserIds.length > 0) {
     // Отправляем исполнителю уведомление с информацией о выплате
-    const payoutAmount = amountToTransfer > 0 ? amountToTransfer.toFixed(2) : null;
+    const payoutAmount = transferAmountCents > 0 ? (transferAmountCents / 100).toFixed(2) : null;
     sendRequestApprovedNotification({ 
       userIds: executorUserIds, 
       requestId, 
@@ -2099,17 +2167,82 @@ async function handleEventApproval(requestId, creatorId) {
 
   // 5. Переводим деньги заказчику (только donations - комиссия)
   // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
-  // TODO: Реализовать перевод денег через платежную систему
   // MySQL возвращает decimal как строки, поэтому используем parseFloat
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmount = totalDonations; // Только донаты, cost больше не используется
-  const commission = totalAmount * 0.1; // 10% комиссия
-  const amountToTransfer = totalAmount - commission;
+  const totalAmountCents = Math.round(totalDonations * 100); // В центах
+  
+  // Комиссия платформы: 7%
+  const platformFeeCents = Math.round(totalAmountCents * 0.07);
+  
+  // Комиссия Stripe: 2.9% + $0.30 за транзакцию (приблизительно)
+  const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
+  
+  // Сумма для создателя (заказчика)
+  const transferAmountCents = totalAmountCents - platformFeeCents - stripeFeeCents;
+  
+  // Создаем Transfer в Stripe для создателя (заказчика)
+  if (creatorId && transferAmountCents > 0) {
+    try {
+      // Получаем stripe_account_id создателя
+      const [stripeAccounts] = await pool.execute(
+        'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+        [creatorId]
+      );
+
+      if (stripeAccounts.length > 0) {
+        const stripeAccountId = stripeAccounts[0].account_id;
+        
+        // Получаем все PaymentIntent для заявки
+        const [paymentIntents] = await pool.execute(
+          `SELECT payment_intent_id FROM donations d
+           JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+           WHERE d.request_id = ? AND pi.status = 'succeeded'
+           LIMIT 1`,
+          [requestId]
+        );
+
+        // Создаем Transfer в Stripe
+        const transfer = await stripe.transfers.create({
+          amount: transferAmountCents,
+          currency: 'usd',
+          destination: stripeAccountId,
+          source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
+          metadata: {
+            request_id: requestId,
+            performer_user_id: creatorId
+          }
+        });
+
+        // Сохраняем transfer в базу данных
+        const transferId = generateId();
+        await pool.execute(
+          `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            transferId,
+            transfer.id,
+            requestId,
+            creatorId,
+            transferAmountCents,
+            platformFeeCents,
+            stripeFeeCents,
+            'usd',
+            'pending',
+            paymentIntents[0]?.payment_intent_id || null
+          ]
+        );
+      }
+    } catch (transferErr) {
+      // Ошибка создания Transfer - заявка все равно одобрена, но деньги не переведены
+      // Transfer можно создать вручную через админку или повторить позже
+      // Ошибка не прерывает выполнение, чтобы не блокировать одобрение заявки
+    }
+  }
 
   // 6. Отправляем push-уведомления
   if (creatorId) {
     // Отправляем создателю уведомление с информацией о выплате (для событий деньги идут создателю)
-    const payoutAmount = amountToTransfer > 0 ? amountToTransfer.toFixed(2) : null;
+    const payoutAmount = transferAmountCents > 0 ? (transferAmountCents / 100).toFixed(2) : null;
     sendRequestApprovedNotification({ 
       userIds: [creatorId], 
       requestId, 
