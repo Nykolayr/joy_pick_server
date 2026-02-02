@@ -173,6 +173,11 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `coins_from_created` | integer | Нет | Монеты за созданные заявки (только чтение) |
 | `coins_from_participation` | integer | Нет | Монеты за участие (только чтение) |
 | `stripe_id` | string | Нет | Stripe ID (только чтение) |
+| `stripe_account_status` | string | Нет | Кэш статуса Stripe: `none` \| `incomplete` \| `complete` (только чтение) |
+| `stripe_status_label` | string | Нет | Текст для экрана статуса (EN) (только чтение) |
+| `can_donate` | boolean | Нет | Можно принимать платежи (charges_enabled) (только чтение) |
+| `can_receive_payouts` | boolean | Нет | Можно получать выплаты (payouts_enabled) (только чтение) |
+| `stripe_status_updated_at` | datetime | Нет | Когда последний раз обновляли статус из Stripe (только чтение) |
 | `score` | integer | Нет | Рейтинг пользователя (только чтение) |
 | `admin` | boolean | Нет | Статус администратора (только чтение) |
 | `created_time` | datetime | Нет | Дата создания (только чтение) |
@@ -203,6 +208,11 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "coins_from_created": 50,
   "coins_from_participation": 100,
   "stripe_id": null,
+  "stripe_account_status": "complete",
+  "stripe_status_label": "Account ready",
+  "can_donate": true,
+  "can_receive_payouts": true,
+  "stripe_status_updated_at": "2024-01-15T12:00:00.000Z",
   "score": 85,
   "admin": false,
   "created_time": "2024-01-01T00:00:00.000Z"
@@ -627,6 +637,8 @@ if (registerResponse.statusCode == 200) {
 
 **Требует аутентификации**
 
+Возвращает текущего пользователя со всеми полями, включая актуальный статус Stripe. При каждом запросе, если у пользователя есть Stripe-аккаунт, сервер запрашивает текущий статус в Stripe API и обновляет кэш в таблице `users`, поэтому поля `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at` в ответе всегда соответствуют данным Stripe. Отдельный вызов `GET /api/stripe/account-status` для отображения статуса не нужен.
+
 **Ответ (200):**
 ```json
 {
@@ -637,7 +649,12 @@ if (registerResponse.statusCode == 200) {
       "id": "uuid",
       "email": "user@example.com",
       "display_name": "Имя пользователя",
-      // ... все поля пользователя
+      "stripe_account_status": "complete",
+      "stripe_status_label": "Account ready",
+      "can_donate": true,
+      "can_receive_payouts": true,
+      "stripe_status_updated_at": "2024-01-15T12:00:00.000Z",
+      // ... остальные поля пользователя
     }
   }
 }
@@ -1246,6 +1263,8 @@ Future<Map<String, dynamic>> getUsersList({
 
 **Требует аутентификации** (можно получить только свои данные или админ)
 
+При каждом запросе, если у запрашиваемого пользователя есть Stripe-аккаунт, сервер обновляет статус из Stripe API, поэтому поля `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at` в ответе актуальны. В объекте `user` возвращаются все поля модели User.
+
 **Ответ (200):**
 ```json
 {
@@ -1255,7 +1274,12 @@ Future<Map<String, dynamic>> getUsersList({
       "id": "uuid",
       "email": "user@example.com",
       "display_name": "Имя пользователя",
-      // ... все поля
+      "stripe_account_status": "complete",
+      "can_donate": true,
+      "can_receive_payouts": true,
+      "stripe_status_updated_at": "2024-01-15T12:00:00.000Z",
+      "stripe_status_label": "Account ready",
+      // ... остальные поля
     }
   }
 }
@@ -1268,6 +1292,8 @@ Future<Map<String, dynamic>> getUsersList({
 **PUT** `/users/:id`
 
 **Требует аутентификации**
+
+После обновления сервер подтягивает статус Stripe из API (если у пользователя есть аккаунт) и возвращает объект `user` со всеми полями модели User, включая `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at`.
 
 **Поддерживает два способа отправки:**
 
@@ -1365,7 +1391,38 @@ Future<void> updateUserAvatar({
   "success": true,
   "message": "Данные пользователя обновлены",
   "data": {
-    "user": { /* обновленные данные */ }
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "display_name": "Имя",
+      "stripe_account_status": "complete",
+      "stripe_status_label": "Account ready",
+      "can_donate": true,
+      "can_receive_payouts": true,
+      "stripe_status_updated_at": "2024-01-15T12:00:00.000Z",
+      "fcm_token": "...",
+      "photo_url": "...",
+      "city": "...",
+      "first_name": "...",
+      "second_name": "...",
+      "country": "...",
+      "gender": "...",
+      "count_performed": 0,
+      "count_orders": 0,
+      "jcoins": 0,
+      "coins_from_created": 0,
+      "coins_from_participation": 0,
+      "stripe_id": "acct_xxx",
+      "score": 0,
+      "admin": false,
+      "super_admin": false,
+      "auth_type": "email",
+      "latitude": 0,
+      "longitude": 0,
+      "created_time": "...",
+      "about": null,
+      "social_links": []
+    }
   }
 }
 ```
@@ -1398,7 +1455,7 @@ Future<void> updateUserAvatar({
 - `page` (int, default: 1) - номер страницы
 - `limit` (int, default: 20) - количество на странице
 - `category` (string) - фильтр: `wasteLocation`, `speedCleanup`, `event`
-- `status` (string) - фильтр: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`
+- `status` (string, опционально) - фильтр по статусу: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`. Если не указан — возвращаются заявки с **любым** статусом (включая архивные и ожидающие оплаты).
 - `city` (string) - фильтр по городу
 - `latitude` (float) - широта для поиска по радиусу
 - `longitude` (float) - долгота для поиска по радиусу
@@ -1468,9 +1525,37 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
 
 ---
 
+### Получение моих заявок (создатель / исполнитель / донатер / участник)
+
+**GET** `/requests/my`
+
+**Требует аутентификации.**
+
+Возвращает все заявки, где текущий пользователь является **создателем** (`created_by`), **исполнителем** (`taken_by`), **присоединившимся** (`joined_user_id` — для waste/speedCleanup), **донатером** (есть запись в `donations`) или **участником события** (в `actual_participants` / `registered_participants`). Любой тип заявки и любой статус (включая `archived`). Удобно для раздела «Мои заявки» в приложении.
+
+**Query параметры:**
+- `page` (int, default: 1) — номер страницы
+- `limit` (int, default: 20, max: 100) — количество на странице
+- `category` (string, опционально) — фильтр: `wasteLocation`, `speedCleanup`, `event`
+- `status` (string, опционально) — фильтр: `new`, `inProgress`, `pending`, `approved`, `rejected`, `completed`, `archived`
+
+**Пример запроса:**
+```
+GET /api/requests/my?page=1&limit=20
+Authorization: Bearer <jwt_token>
+```
+
+**Ответ (200):** такой же формат, как у `GET /requests` — `data.requests` (массив заявок) и `data.pagination`.
+
+---
+
 ### Получение заявки по ID
 
 **GET** `/requests/:id`
+
+Для заявок **wasteLocation** / **speedCleanup** со статусом **pending** и с донатами в ответ добавляются поля ожидаемой выплаты исполнителю (после одобрения админом):
+- `estimated_executor_payout_cents` (int или null) — сумма в центах;
+- `estimated_executor_payout_dollars` (string или null) — сумма в долларах, например `"2.50"`.
 
 **Ответ (200):**
 ```json
@@ -1480,6 +1565,8 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
     "request": {
       "id": "uuid",
       // ... все поля заявки
+      "estimated_executor_payout_cents": 250,
+      "estimated_executor_payout_dollars": "2.50",
       "registered_participants": ["user_id1", "user_id2"],
       "actual_participants": [],
       "donations": [
@@ -1962,6 +2049,8 @@ Future<void> createRequestWithPayment({
 
 **Описание:**
 Обновление заявки. При изменении статуса автоматически выполняются соответствующие действия (начисление коинов, перевод денег, отправка push-уведомлений).
+
+**При одобрении wasteLocation** в ответ добавляется `transfer_result`: `{ transferCreated: boolean, transferError?: string }`. Если Transfer не создан, по `transferError` можно понять причину: `executor_missing` — нет исполнителя (joined_user_id), `executor_has_no_stripe_account` — исполнитель не подключил Stripe, `no_succeeded_payment_in_stripe` — нет успешной оплаты по донатам, `no_donations_or_zero_amount` — нет донатов, `stripe_transfer_failed` — ошибка Stripe при создании Transfer.
 
 **Тело запроса:** (все поля опциональны)
 ```json
@@ -5711,7 +5800,7 @@ final response = await http.post(
 **Требует аутентификации**
 
 **Описание:**
-Проверяет статус Stripe аккаунта пользователя и возвращает актуальную информацию из Stripe API.
+Проверяет статус Stripe аккаунта пользователя и возвращает актуальную информацию из Stripe API. При каждом вызове обновляет кэш в таблице `users`: поля `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at`. Эти поля затем возвращаются в `GET /api/auth/me` и `GET /api/users/:id`, поэтому экран статуса Stripe можно показывать без лишнего вызова этого эндпоинта.
 
 **Response (200):**
 ```json
@@ -5747,6 +5836,7 @@ final response = await http.post(
 **Важно:**
 - `account_link_url` возвращается только если `onboarding_complete = false`
 - Статус автоматически обновляется из Stripe API при каждом запросе
+- Кэш в `users` обновляется при вызове этого эндпоинта и по вебхуку Stripe `account.updated`
 
 ---
 
@@ -6041,7 +6131,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 **GET** `/stripe-admin/requests/active`
 
 **Описание:**
-Получает список активных заявок (new, inProgress, pending), которые являются платными или имеют донаты.
+Получает список активных заявок (new, inProgress, pending), которые являются платными или имеют донаты. В каждой заявке возвращаются `joined_user_id`, `created_by` и вычисляемое поле `performer_user_id` (исполнитель, которому предназначается transfer: присоединившийся пользователь или создатель).
 
 **Response (200):**
 ```json
@@ -6054,6 +6144,9 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
         "name": "Название заявки",
         "category": "wasteLocation",
         "status": "inProgress",
+        "joined_user_id": "uuid-исполнителя",
+        "created_by": "uuid-создателя",
+        "performer_user_id": "uuid-исполнителя",
         "created_at": "2024-01-15T10:30:00.000Z",
         "updated_at": "2024-01-15T12:30:00.000Z",
         "donations": [
@@ -6096,7 +6189,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 **GET** `/stripe-admin/requests/closed`
 
 **Описание:**
-Получает список закрытых заявок (approved, rejected, completed), которые являются платными или имеют донаты.
+Получает список закрытых заявок (approved, rejected, completed), которые являются платными или имеют донаты. Transfers берутся из локальной таблицы `transfers` по `request_id`. В каждой заявке возвращаются `joined_user_id`, `created_by` и `performer_user_id` (исполнитель, которому предназначается transfer).
 
 **Response (200):**
 ```json
@@ -6109,6 +6202,9 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
         "name": "Название заявки",
         "category": "wasteLocation",
         "status": "completed",
+        "joined_user_id": "uuid-исполнителя",
+        "created_by": "uuid-создателя",
+        "performer_user_id": "uuid-исполнителя",
         "created_at": "2024-01-15T10:30:00.000Z",
         "updated_at": "2024-01-15T16:30:00.000Z",
         "donations": [
@@ -6197,49 +6293,12 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 **Требует суперадминских прав**
 
 **Описание:**
-Создание Transfer вручную для заявки. Этот эндпоинт позволяет администратору создать Transfer в Stripe, когда автоматическое создание не произошло или требуется ручное вмешательство.
+Создание Transfer вручную для заявки. **Перед созданием трансфера бэкенд автоматически проверяет каждый донат в Stripe** и удаляет из заявки те, у которых платёж не успешен (`requires_payment_method`, `canceled` и т.д.). Админу не нужно вручную удалять такие донаты — достаточно нажать «Создать перевод»; расчёт суммы и трансфер идут только по успешным донатам.
 
-**Когда использовать этот эндпоинт:**
-
-1. **Transfer не создался автоматически при одобрении заявки**
-   - Ошибка при автоматическом создании Transfer
-   - Проблемы с Stripe API во время одобрения
-   - Ошибки в обработчике одобрения заявки
-
-2. **Обработка старых заявок**
-   - Заявки, одобренные до внедрения автоматического создания Transfer
-   - Заявки, где Transfer был удален или не был создан по техническим причинам
-   - Миграция данных для существующих заявок
-
-3. **Повторное создание Transfer**
-   - Если предыдущий Transfer был отменен или не выполнен
-   - Если нужно исправить ошибку в сумме или получателе
-   - Если Transfer был создан с неправильными параметрами
-
-4. **Корректировка суммы Transfer**
-   - Если нужно переопределить автоматически рассчитанную сумму
-   - Если комиссии были рассчитаны неправильно
-   - Если нужно учесть дополнительные факторы
-
-5. **Тестирование и отладка**
-   - Проверка работы системы Transfer
-   - Тестирование различных сценариев выплат
-   - Отладка проблем с Stripe API
-
-**Для чего используется:**
-
-- **Перевод денег исполнителю/создателю:** Transfer переводит средства с баланса платформы на Stripe баланс пользователя
-- **Учет комиссий:** Автоматически рассчитывает комиссию платформы (7%) и Stripe (2.9% + $0.30)
-- **Отслеживание выплат:** Сохраняет информацию о Transfer в БД для мониторинга и отчетности
-- **Интеграция с Stripe:** Создает реальный Transfer в Stripe, который затем обрабатывается через webhook
-
-**Важные замечания:**
-
-- Transfer создается только если есть успешные донаты для заявки
-- Исполнитель/создатель должен иметь настроенный Stripe аккаунт
-- Если Transfer уже существует, вернется ошибка (предотвращает дублирование)
-- Сумма рассчитывается автоматически, но можно переопределить через `amount_cents`
-- После создания Transfer обрабатывается Stripe и статус обновляется через webhook
+**Ответ (200)** при успехе содержит, в том числе:
+- `removed_failed_donations` — сколько донатов с неуспешным платежом было удалено перед трансфером
+- `removed_failed_donation_ids` — их id
+- Если удалён хотя бы один: сообщение вида «Transfer created. Before transfer, N donation(s) with failed/incomplete payment were removed from the request.»
 
 **Request Body:**
 ```json
@@ -6255,12 +6314,14 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 - `performer_user_id` (обязательный) - UUID исполнителя/создателя, кому переводим деньги
 - `amount_cents` (опциональный) - сумма в центах. Если не указана, рассчитывается автоматически с учетом комиссий
 
-**Response (200):**
+**Response (200):** В `data` также возвращаются `removed_failed_donations` (число удалённых неуспешных донатов) и `removed_failed_donation_ids`.
 ```json
 {
   "success": true,
   "message": "Transfer created successfully",
   "data": {
+    "removed_failed_donations": 1,
+    "removed_failed_donation_ids": ["uuid-доната"],
     "transfer": {
       "id": "uuid",
       "transfer_id": "tr_xxxxx",
@@ -6301,6 +6362,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 **Ошибки:**
 - `400` - Validation error, Request not found, No successful donations found, Transfer already exists
+- `402` - Недостаточно средств на платформенном Stripe-аккаунте (balance_insufficient)
 - `404` - Performer Stripe account not found
 - `500` - Error creating transfer in Stripe, Error creating transfer
 
@@ -6346,13 +6408,14 @@ POST /api/stripe-admin/create-transfer
 **Workflow создания Transfer:**
 
 1. **Проверка заявки:** Система проверяет существование заявки
-2. **Проверка донатов:** Проверяет наличие успешных донатов для заявки
-3. **Проверка Transfer:** Убеждается, что Transfer еще не создан
-4. **Проверка Stripe аккаунта:** Проверяет наличие Stripe аккаунта у исполнителя
-5. **Расчет суммы:** Рассчитывает сумму с учетом комиссий (или использует указанную)
-6. **Создание в Stripe:** Создает Transfer через Stripe API
-7. **Сохранение в БД:** Сохраняет информацию о Transfer в базу данных
-8. **Возврат результата:** Возвращает детальную информацию о созданном Transfer
+2. **Удаление неуспешных донатов:** Для каждого доната проверяется статус в Stripe; донаты с платёжом не в статусе succeeded/requires_capture удаляются из заявки и из расчёта (админу ничего делать не нужно)
+3. **Проверка донатов:** Проверяет наличие успешных донатов для заявки (после удаления неуспешных)
+4. **Проверка Transfer:** Убеждается, что Transfer еще не создан
+5. **Проверка Stripe аккаунта:** Проверяет наличие Stripe аккаунта у исполнителя
+6. **Расчет суммы:** Рассчитывает сумму с учетом комиссий (или использует указанную)
+7. **Создание в Stripe:** Создает Transfer через Stripe API
+8. **Сохранение в БД:** Сохраняет информацию о Transfer в базу данных
+9. **Возврат результата:** Возвращает детальную информацию о созданном Transfer и количество удалённых неуспешных донатов
 
 **После создания Transfer:**
 
@@ -6360,6 +6423,20 @@ POST /api/stripe-admin/create-transfer
 - Статус Transfer обновляется через webhook (`transfer.paid`, `transfer.failed`)
 - Пользователь может получить деньги через instant payout или автоматическую выплату
 - Админ может отслеживать статус Transfer через `/api/stripe-admin/transfers`
+
+---
+
+### Удаление доната из заявки (ручное, по необходимости)
+
+**DELETE** `/stripe-admin/requests/:request_id/donations/:donation_id`
+
+**Требует суперадминских прав**
+
+Удаляет запись доната из заявки и уменьшает `total_contributed`. Обычно не требуется: при вызове `POST /stripe-admin/create-transfer` неуспешные донаты удаляются автоматически. Используйте только если нужно вручную исключить конкретный донат по другой причине.
+
+**Ответ (200):** `removed_donation_id`, `amount_removed`, `request_id`, `message`.
+
+---
 
 **Типичные сценарии:**
 
@@ -6425,10 +6502,23 @@ POST /api/stripe-admin/create-transfer
         "created_at": "2025-01-22T10:30:00Z"
       }
     ],
-    "can_instant_payout": true
+    "can_instant_payout": true,
+    "pending_transfers": [
+      {
+        "request_id": "uuid",
+        "amount_cents": 78,
+        "amount_dollars": "0.78",
+        "status": "pending",
+        "created_at": "2025-01-22T10:00:00Z"
+      }
+    ],
+    "pending_transfers_total_cents": 78,
+    "pending_transfers_total_dollars": "0.78"
   }
 }
 ```
+
+**Поля «ожидаемые выплаты»:** `pending_transfers` — список выплат из нашей БД (transfers), где пользователь получатель; `pending_transfers_total_*` — их сумма. Показывайте на фронте блок «Ожидаемые: $X.XX» по этим полям. Если список пустой при одобренной заявке — Transfer не был создан, создайте его вручную через админку (create-transfer).
 
 ---
 

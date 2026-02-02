@@ -9,6 +9,7 @@ const { authenticate } = require('../middleware/auth');
 const { verifyFirebaseToken } = require('../config/firebase');
 const { sendVerificationCode } = require('../config/email');
 const { verifyPassword, hashPassword } = require('../utils/password');
+const stripeRouter = require('./stripe.js');
 
 const router = express.Router();
 
@@ -305,17 +306,22 @@ router.post('/login', [
 
 /**
  * GET /api/auth/me
- * Получение данных текущего пользователя
+ * Получение данных текущего пользователя.
+ * При наличии Stripe-аккаунта запрашивает актуальный статус из Stripe и обновляет кэш в users.
  */
 router.get('/me', authenticate, async (req, res) => {
   try {
+    const userId = req.user.userId;
+    await stripeRouter.refreshUserStripeStatusIfNeeded(userId);
+
     const [users] = await pool.execute(
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
-      [req.user.userId]
+      [userId]
     );
 
     if (users.length === 0) {

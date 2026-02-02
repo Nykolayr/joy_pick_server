@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../config/database');
-const stripe = require('../config/stripe');
+const stripe = require('../config/stripe.js');
 
 const router = express.Router();
 

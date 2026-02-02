@@ -16,10 +16,108 @@ const {
   sendModerationNotification
 } = require('../services/pushNotification');
 const { createGroupChatForRequest } = require('../utils/chatHelpers');
-const stripe = require('../config/stripe');
+const { insertTransferPayoutCheck } = require('../utils/transferPayoutCheck.js');
+const stripe = require('../config/stripe.js');
 const { deleteInactiveRequests, checkEventAfterStartDate } = require('../../scripts/cronTasks');
 
 const router = express.Router();
+
+/**
+ * Преобразует сырую строку заявки из БД в объект для ответа (JSON-поля, булевы значения, даты).
+ */
+function processRequestListItem(request) {
+  const result = Object.assign({}, request);
+
+  if (request.photos_before) {
+    try {
+      result.photos_before = typeof request.photos_before === 'string' ? JSON.parse(request.photos_before) : request.photos_before;
+    } catch (e) {
+      result.photos_before = [];
+    }
+  } else {
+    result.photos_before = [];
+  }
+
+  if (request.photos_after) {
+    try {
+      result.photos_after = typeof request.photos_after === 'string' ? JSON.parse(request.photos_after) : request.photos_after;
+    } catch (e) {
+      result.photos_after = [];
+    }
+  } else {
+    result.photos_after = [];
+  }
+
+  if (request.waste_types) {
+    try {
+      result.waste_types = typeof request.waste_types === 'string' ? JSON.parse(request.waste_types) : request.waste_types;
+    } catch (e) {
+      result.waste_types = [];
+    }
+  } else {
+    result.waste_types = [];
+  }
+
+  if (request.actual_participants) {
+    try {
+      result.actual_participants = typeof request.actual_participants === 'string' ? JSON.parse(request.actual_participants) : request.actual_participants;
+    } catch (e) {
+      result.actual_participants = [];
+    }
+  } else {
+    result.actual_participants = [];
+  }
+
+  if (request.registered_participants) {
+    try {
+      result.registered_participants = typeof request.registered_participants === 'string' ? JSON.parse(request.registered_participants) : request.registered_participants;
+    } catch (e) {
+      result.registered_participants = [];
+    }
+  } else {
+    result.registered_participants = [];
+  }
+
+  if (request.category === 'event' && request.created_by) {
+    if (!result.registered_participants.includes(request.created_by)) {
+      result.registered_participants.push(request.created_by);
+    }
+  }
+
+  if (request.participant_completions) {
+    try {
+      result.participant_completions = typeof request.participant_completions === 'string' ? JSON.parse(request.participant_completions) : request.participant_completions;
+    } catch (e) {
+      result.participant_completions = {};
+    }
+  } else {
+    result.participant_completions = {};
+  }
+
+  if (request.group_chat_id) {
+    result.group_chat_id = request.group_chat_id;
+  } else {
+    result.group_chat_id = null;
+  }
+
+  if (request.private_chats) {
+    try {
+      result.private_chats = typeof request.private_chats === 'string' ? JSON.parse(request.private_chats) : request.private_chats;
+    } catch (e) {
+      result.private_chats = [];
+    }
+  } else {
+    result.private_chats = [];
+  }
+
+  result.only_foot = Boolean(result.only_foot);
+  result.possible_by_car = Boolean(result.possible_by_car);
+  result.is_open = Boolean(result.is_open);
+  result.plant_tree = Boolean(result.plant_tree);
+  result.trash_pickup_only = Boolean(result.trash_pickup_only);
+
+  return normalizeDatesInObject(result);
+}
 
 /**
  * GET /api/requests
@@ -71,11 +169,8 @@ router.get('/', async (req, res) => {
     if (status) {
       conditions.push('r.status = ?');
       params.push(status);
-    } else {
-      // Исключаем архивные заявки из общего списка, если статус не указан явно
-      conditions.push('r.status != ?');
-      params.push('archived');
     }
+    // Без параметра status отдаём заявки с любым статусом (включая archived и ожидающие оплаты)
 
     if (city) {
       conditions.push('r.city = ?');
@@ -123,123 +218,7 @@ router.get('/', async (req, res) => {
 
     const [requests] = await pool.execute(query, params);
 
-    // Обработка результатов
-    const processedRequests = requests.map(request => {
-      const result = Object.assign({}, request);
-      
-      // Обработка photos_before из JSON поля
-      if (request.photos_before) {
-        try {
-          result.photos_before = typeof request.photos_before === 'string' 
-            ? JSON.parse(request.photos_before) 
-            : request.photos_before;
-        } catch (e) {
-          result.photos_before = [];
-        }
-      } else {
-        result.photos_before = [];
-      }
-      
-      // Обработка photos_after из JSON поля
-      if (request.photos_after) {
-        try {
-          result.photos_after = typeof request.photos_after === 'string' 
-            ? JSON.parse(request.photos_after) 
-            : request.photos_after;
-        } catch (e) {
-          result.photos_after = [];
-        }
-      } else {
-        result.photos_after = [];
-      }
-      // Обработка waste_types из JSON поля
-      if (request.waste_types) {
-        try {
-          result.waste_types = typeof request.waste_types === 'string' 
-            ? JSON.parse(request.waste_types) 
-            : request.waste_types;
-        } catch (e) {
-          result.waste_types = [];
-        }
-      } else {
-        result.waste_types = [];
-      }
-      // Обработка actual_participants из JSON поля
-      if (request.actual_participants) {
-        try {
-          result.actual_participants = typeof request.actual_participants === 'string' 
-            ? JSON.parse(request.actual_participants) 
-            : request.actual_participants;
-        } catch (e) {
-          result.actual_participants = [];
-        }
-      } else {
-        result.actual_participants = [];
-      }
-      
-      // Обработка registered_participants из JSON поля (для event)
-      if (request.registered_participants) {
-        try {
-          result.registered_participants = typeof request.registered_participants === 'string' 
-            ? JSON.parse(request.registered_participants) 
-            : request.registered_participants;
-        } catch (e) {
-          result.registered_participants = [];
-        }
-      } else {
-        result.registered_participants = [];
-      }
-      
-      // КРИТИЧЕСКИ ВАЖНО: Для event заявок создатель всегда должен быть в списке участников
-      if (request.category === 'event' && request.created_by) {
-        if (!result.registered_participants.includes(request.created_by)) {
-          result.registered_participants.push(request.created_by);
-        }
-      }
-      
-      // Обработка participant_completions из JSON поля
-      if (request.participant_completions) {
-        try {
-          result.participant_completions = typeof request.participant_completions === 'string' 
-            ? JSON.parse(request.participant_completions) 
-            : request.participant_completions;
-        } catch (e) {
-          result.participant_completions = {};
-        }
-      } else {
-        result.participant_completions = {};
-      }
-
-      // Обработка group_chat_id
-      if (request.group_chat_id) {
-        result.group_chat_id = request.group_chat_id;
-      } else {
-        result.group_chat_id = null;
-      }
-
-      // Обработка private_chats из JSON поля (для event заявок)
-      if (request.private_chats) {
-        try {
-          result.private_chats = typeof request.private_chats === 'string' 
-            ? JSON.parse(request.private_chats) 
-            : request.private_chats;
-        } catch (e) {
-          result.private_chats = [];
-        }
-      } else {
-        result.private_chats = [];
-      }
-      
-      // Преобразование булевых значений
-      result.only_foot = Boolean(result.only_foot);
-      result.possible_by_car = Boolean(result.possible_by_car);
-      result.is_open = Boolean(result.is_open);
-      result.plant_tree = Boolean(result.plant_tree);
-      result.trash_pickup_only = Boolean(result.trash_pickup_only);
-      
-      // Нормализация дат в UTC
-      return normalizeDatesInObject(result);
-    });
+    const processedRequests = requests.map(processRequestListItem);
 
     // Получение общего количества
     let countQuery = 'SELECT COUNT(DISTINCT r.id) as total FROM requests r';
@@ -287,6 +266,81 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/requests/my
+ * Заявки, где текущий пользователь — создатель, исполнитель, донатер или участник (любой тип и статус).
+ * Требует аутентификации.
+ */
+router.get('/my', authenticate, async (req, res) => {
+  const userId = req.user.userId || req.user.id;
+  if (!userId) {
+    return error(res, 'Unauthorized', 401);
+  }
+
+  try {
+    await deleteInactiveRequests();
+    await checkEventAfterStartDate();
+  } catch (cleanupErr) {
+    // не прерываем запрос
+  }
+
+  try {
+    const { page = 1, limit = 20, category, status } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    // created_by, taken_by, donor, присоединившийся (joined_user_id для waste/speedCleanup), участник event (actual/registered_participants)
+    const conditions = [
+      `(r.created_by = ? OR r.taken_by = ? OR r.joined_user_id = ?
+        OR r.id IN (SELECT request_id FROM donations WHERE user_id = ?)
+        OR (r.actual_participants IS NOT NULL AND JSON_CONTAINS(r.actual_participants, CAST(CONCAT('"', ?, '"') AS JSON), '$'))
+        OR (r.registered_participants IS NOT NULL AND JSON_CONTAINS(r.registered_participants, CAST(CONCAT('"', ?, '"') AS JSON), '$')))`
+    ];
+    const params = [userId, userId, userId, userId, userId, userId];
+
+    if (category) {
+      conditions.push('r.category = ?');
+      params.push(category);
+    }
+    if (status) {
+      conditions.push('r.status = ?');
+      params.push(status);
+    }
+
+    const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+    const query = `
+      SELECT r.*
+      FROM requests r
+      ${whereClause}
+      ORDER BY r.created_at DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `;
+    const [requests] = await pool.execute(query, params);
+    const processedRequests = requests.map(processRequestListItem);
+
+    const countQuery = `
+      SELECT COUNT(DISTINCT r.id) as total
+      FROM requests r
+      ${whereClause}
+    `;
+    const [countResult] = await pool.execute(countQuery, params);
+    const total = countResult[0].total;
+
+    success(res, {
+      requests: processedRequests,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (err) {
+    error(res, 'Error retrieving my requests', 500, err);
+  }
+});
+
+/**
  * GET /api/requests/:id
  * Получение заявки по ID
  */
@@ -320,6 +374,20 @@ router.get('/:id', async (req, res) => {
       [id]
     );
     request.donations = donations;
+
+    // Ожидаемая сумма исполнителю при pending (waste/speedCleanup) — чтобы показать «вы получите ~$X после одобрения»
+    if (request.status === 'pending' && (request.category === 'wasteLocation' || request.category === 'speedCleanup') && donations.length > 0) {
+      const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+      const totalCents = Math.round(totalDonations * 100);
+      const platformFeeCents = Math.round(totalCents * 0.07);
+      const stripeFeeCents = Math.round(totalCents * 0.029) + (donations.length * 30);
+      const transferCents = totalCents - platformFeeCents - stripeFeeCents;
+      request.estimated_executor_payout_cents = Math.max(0, transferCents);
+      request.estimated_executor_payout_dollars = (request.estimated_executor_payout_cents / 100).toFixed(2);
+    } else {
+      request.estimated_executor_payout_cents = null;
+      request.estimated_executor_payout_dollars = null;
+    }
 
     // Обработка данных
     // photos_before и photos_after теперь JSON массивы, а не строки
@@ -1203,11 +1271,12 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
 
     // 2. Обработка одобрения заявки (approved)
+    let wasteTransferResult = null;
     if (statusChangedToApproved) {
       try {
         if (requestCategory === 'wasteLocation') {
           // Для waste: начислить коины, перевести деньги исполнителю, отправить пуши, статус -> archived
-          await handleWasteApproval(id, requestCreatedBy);
+          wasteTransferResult = await handleWasteApproval(id, requestCreatedBy);
         } else if (requestCategory === 'event') {
           // Для event: начислить коины (только реальным участникам), перевести деньги заказчику, отправить пуши, статус -> archived
           await handleEventApproval(id, requestCreatedBy);
@@ -1333,7 +1402,11 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
-    success(res, { request: normalizedRequest }, 'Заявка обновлена');
+    const responseData = { request: normalizedRequest };
+    if (wasteTransferResult) {
+      responseData.transfer_result = wasteTransferResult;
+    }
+    success(res, responseData, 'Заявка обновлена');
   } catch (err) {
     error(res, 'Ошибка при обновлении заявки', 500, err);
   }
@@ -1515,13 +1588,24 @@ router.post('/:id/join', authenticate, async (req, res) => {
     }
     
     const requestStatus = currentRequest[0].status;
-    
-    // Если статус не 'new' - нельзя присоединиться
-    if (requestStatus !== 'new') {
-      return error(res, 'К этой заявке нельзя присоединиться', 400);
+
+    // Разрешаем присоединение: статус 'new' ИЛИ статус 'inProgress' при пустом joined_user_id (исправление рассинхрона)
+    const canJoin = requestStatus === 'new' || (requestStatus === 'inProgress' && !request.joined_user_id);
+    if (!canJoin) {
+      const statusReasons = {
+        inProgress: 'Someone has already joined this request',
+        approved: 'Request has been approved and is closed',
+        archived: 'Request is archived',
+        completed: 'Request is completed',
+        rejected: 'Request was rejected',
+        pending_payment: 'Request is awaiting payment',
+        pendingApproval: 'Request is under review',
+      };
+      const reason = statusReasons[requestStatus] || `Request status: ${requestStatus}`;
+      return error(res, reason, 400, { request_status: requestStatus, reason });
     }
 
-    // Проверка, не присоединился ли уже кто-то
+    // Проверка, не присоединился ли уже кто-то (другой пользователь)
     if (request.joined_user_id && request.joined_user_id !== userId) {
       // Проверка истечения срока (1 день)
       const joinDate = new Date(request.join_date);
@@ -1955,11 +2039,17 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
 });
 
 /**
- * Обработка одобрения заявки типа wasteLocation
+ * Обработка одобрения заявки типа wasteLocation.
+ * Возвращает { transferCreated: boolean, transferError?: string } чтобы админка/фронт видели причину, если Transfer не создан.
  */
 async function handleWasteApproval(requestId, creatorId) {
   const coinsToAward = 1;
   const awardedUserIds = new Set();
+  let transferResult = { transferCreated: false };
+
+  // 0. Удаляем из заявки донаты с неуспешным платежом (как будто их не было)
+  const { removeFailedDonationsFromRequest } = require('../utils/donationTransferHelpers');
+  await removeFailedDonationsFromRequest(requestId).catch(() => {});
 
   // 1. Начисляем коины создателю
   if (creatorId) {
@@ -2003,80 +2093,110 @@ async function handleWasteApproval(requestId, creatorId) {
     }
   }
 
-  // 4. Переводим деньги исполнителю (только donations - комиссия)
-  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
-  // MySQL возвращает decimal как строки, поэтому используем parseFloat
+  // 4. Переводим деньги исполнителю только если у него полный Stripe (can_receive_payouts).
+  // Иначе не делаем transfer и не возвращаем донатерам — вся сумма остаётся на счёте приложения.
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmountCents = Math.round(totalDonations * 100); // В центах
-  
-  // Комиссия платформы: 7%
+  const totalAmountCents = Math.round(totalDonations * 100);
   const platformFeeCents = Math.round(totalAmountCents * 0.07);
-  
-  // Комиссия Stripe: используется упрощенная формула
-  // В реальности Stripe берет комиссию с каждого платежа отдельно при поступлении
-  // Здесь используем приблизительную формулу для расчета суммы Transfer
-  // Точная комиссия Stripe уже вычтена при поступлении средств на баланс платформы
   const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
-  
-  // Сумма для исполнителя
   const transferAmountCents = totalAmountCents - platformFeeCents - stripeFeeCents;
-  
-  // Создаем Transfer в Stripe для исполнителя
-  if (executorId && transferAmountCents > 0) {
+
+  if (!executorId) {
+    transferResult.transferError = 'executor_missing';
+  } else if (transferAmountCents <= 0) {
+    transferResult.transferError = 'no_donations_or_zero_amount';
+  } else {
     try {
-      // Получаем stripe_account_id исполнителя
+      const [executorUser] = await pool.execute(
+        'SELECT can_receive_payouts FROM users WHERE id = ?',
+        [executorId]
+      );
       const [stripeAccounts] = await pool.execute(
         'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
         [executorId]
       );
+      const executorCanReceive = executorUser[0]?.can_receive_payouts === 1 && stripeAccounts.length > 0;
 
-      if (stripeAccounts.length > 0) {
+      if (!executorCanReceive) {
+        transferResult.transferError = 'executor_incomplete_stripe';
+        transferResult.left_on_platform = true;
+      } else {
         const stripeAccountId = stripeAccounts[0].account_id;
-        
-        // Получаем все PaymentIntent для заявки
-        const [paymentIntents] = await pool.execute(
+        let sourcePaymentIntentId = null;
+
+        const [paymentIntentsFromDb] = await pool.execute(
           `SELECT payment_intent_id FROM donations d
            JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
            WHERE d.request_id = ? AND pi.status = 'succeeded'
            LIMIT 1`,
           [requestId]
         );
-
-        // Создаем Transfer в Stripe
-        const transfer = await stripe.transfers.create({
-          amount: transferAmountCents,
-          currency: 'usd',
-          destination: stripeAccountId,
-          source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
-          metadata: {
-            request_id: requestId,
-            performer_user_id: executorId
+        if (paymentIntentsFromDb.length > 0) {
+          sourcePaymentIntentId = paymentIntentsFromDb[0].payment_intent_id;
+        }
+        if (!sourcePaymentIntentId) {
+          const [donationsWithPi] = await pool.execute(
+            'SELECT payment_intent_id FROM donations WHERE request_id = ? AND payment_intent_id IS NOT NULL',
+            [requestId]
+          );
+          for (const row of donationsWithPi) {
+            try {
+              const stripePI = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+              if (stripePI.status === 'succeeded') {
+                sourcePaymentIntentId = stripePI.id;
+                await pool.execute(
+                  'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+                  ['succeeded', stripePI.id]
+                );
+                break;
+              }
+            } catch (e) {}
           }
-        });
+        }
 
-        // Сохраняем transfer в базу данных
-        const transferId = generateId();
-        await pool.execute(
-          `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            transferId,
-            transfer.id,
-            requestId,
-            executorId,
-            transferAmountCents,
-            platformFeeCents,
-            stripeFeeCents,
-            'usd',
-            'pending',
-            paymentIntents[0]?.payment_intent_id || null
-          ]
-        );
+        if (!sourcePaymentIntentId) {
+          transferResult.transferError = 'no_succeeded_payment_in_stripe';
+        } else {
+          // source_transaction принимает charge id (ch_xxx), не payment_intent id (pi_xxx)
+          let sourceTransactionId = null;
+          try {
+            const pi = await stripe.paymentIntents.retrieve(sourcePaymentIntentId, { expand: ['latest_charge'] });
+            const lc = pi.latest_charge;
+            sourceTransactionId = (typeof lc === 'object' && lc?.id) ? lc.id : (typeof lc === 'string' ? lc : null);
+          } catch (e) {}
+          const transfer = await stripe.transfers.create({
+            amount: transferAmountCents,
+            currency: 'usd',
+            destination: stripeAccountId,
+            source_transaction: sourceTransactionId || undefined,
+            metadata: {
+              request_id: requestId,
+              performer_user_id: executorId
+            }
+          });
+          const transferId = generateId();
+          await pool.execute(
+            `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              transferId,
+              transfer.id,
+              requestId,
+              executorId,
+              transferAmountCents,
+              platformFeeCents,
+              stripeFeeCents,
+              'usd',
+              'pending',
+              sourcePaymentIntentId
+            ]
+          );
+          insertTransferPayoutCheck(transferId, executorId, transferAmountCents).catch(() => {});
+          transferResult = { transferCreated: true };
+        }
       }
     } catch (transferErr) {
-      // Ошибка создания Transfer - заявка все равно одобрена, но деньги не переведены
-      // Transfer можно создать вручную через админку или повторить позже
-      // Ошибка не прерывает выполнение, чтобы не блокировать одобрение заявки
+      transferResult.transferError = transferErr.message || 'stripe_transfer_failed';
     }
   }
 
@@ -2108,6 +2228,8 @@ async function handleWasteApproval(requestId, creatorId) {
     'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
     ['archived', requestId]
   );
+
+  return transferResult;
 }
 
 /**
@@ -2116,6 +2238,10 @@ async function handleWasteApproval(requestId, creatorId) {
 async function handleEventApproval(requestId, creatorId) {
   const coinsToAward = 1;
   const awardedUserIds = new Set();
+
+  // 0. Удаляем из заявки донаты с неуспешным платежом (как будто их не было)
+  const { removeFailedDonationsFromRequest } = require('../utils/donationTransferHelpers');
+  await removeFailedDonationsFromRequest(requestId).catch(() => {});
 
   // 1. Начисляем коины заказчику (создателю заявки)
   if (creatorId) {
@@ -2165,94 +2291,120 @@ async function handleEventApproval(requestId, creatorId) {
     }
   }
 
-  // 5. Переводим деньги заказчику (только donations - комиссия)
-  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
-  // MySQL возвращает decimal как строки, поэтому используем parseFloat
+  // 5. Общую сумму делим на всех approved участников. Долю тех, у кого полный Stripe — переводим им.
+  // Долю тех, у кого нет полного Stripe — оставляем на счёте приложения (не переводим, не возвращаем).
   const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
-  const totalAmountCents = Math.round(totalDonations * 100); // В центах
-  
-  // Комиссия платформы: 7%
+  const totalAmountCents = Math.round(totalDonations * 100);
   const platformFeeCents = Math.round(totalAmountCents * 0.07);
-  
-  // Комиссия Stripe: 2.9% + $0.30 за транзакцию (приблизительно)
   const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
-  
-  // Сумма для создателя (заказчика)
-  const transferAmountCents = totalAmountCents - platformFeeCents - stripeFeeCents;
-  
-  // Создаем Transfer в Stripe для создателя (заказчика)
-  if (creatorId && transferAmountCents > 0) {
-    try {
-      // Получаем stripe_account_id создателя
-      const [stripeAccounts] = await pool.execute(
-        'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
-        [creatorId]
-      );
+  const netTransferCents = totalAmountCents - platformFeeCents - stripeFeeCents;
+  const totalParticipants = approvedParticipants.length || 1;
+  const amountPerPerson = totalParticipants > 0 ? Math.floor(netTransferCents / totalParticipants) : 0;
 
-      if (stripeAccounts.length > 0) {
-        const stripeAccountId = stripeAccounts[0].account_id;
-        
-        // Получаем все PaymentIntent для заявки
-        const [paymentIntents] = await pool.execute(
-          `SELECT payment_intent_id FROM donations d
-           JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
-           WHERE d.request_id = ? AND pi.status = 'succeeded'
-           LIMIT 1`,
+  const eligibleParticipantIds = approvedParticipants.length > 0
+    ? (await pool.execute(
+        `SELECT u.id FROM users u
+         INNER JOIN stripe_accounts sa ON sa.user_id = u.id
+         WHERE u.can_receive_payouts = 1 AND u.id IN (${approvedParticipants.map(() => '?').join(',')})`,
+        approvedParticipants
+      ))[0].map(r => r.id)
+    : [];
+
+  let participantsWithPayout = [];
+  if (eligibleParticipantIds.length > 0 && amountPerPerson > 0) {
+      let sourcePaymentIntentId = null;
+      const [paymentIntentsFromDb] = await pool.execute(
+        `SELECT payment_intent_id FROM donations d
+         JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+         WHERE d.request_id = ? AND pi.status = 'succeeded'
+         LIMIT 1`,
+        [requestId]
+      );
+      if (paymentIntentsFromDb.length > 0) sourcePaymentIntentId = paymentIntentsFromDb[0].payment_intent_id;
+      if (!sourcePaymentIntentId) {
+        const [donationsWithPi] = await pool.execute(
+          'SELECT payment_intent_id FROM donations WHERE request_id = ? AND payment_intent_id IS NOT NULL',
           [requestId]
         );
-
-        // Создаем Transfer в Stripe
-        const transfer = await stripe.transfers.create({
-          amount: transferAmountCents,
-          currency: 'usd',
-          destination: stripeAccountId,
-          source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
-          metadata: {
-            request_id: requestId,
-            performer_user_id: creatorId
-          }
-        });
-
-        // Сохраняем transfer в базу данных
-        const transferId = generateId();
-        await pool.execute(
-          `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            transferId,
-            transfer.id,
-            requestId,
-            creatorId,
-            transferAmountCents,
-            platformFeeCents,
-            stripeFeeCents,
-            'usd',
-            'pending',
-            paymentIntents[0]?.payment_intent_id || null
-          ]
-        );
+        for (const row of donationsWithPi) {
+          try {
+            const stripePI = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+            if (stripePI.status === 'succeeded') {
+              sourcePaymentIntentId = stripePI.id;
+              await pool.execute(
+                'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+                ['succeeded', stripePI.id]
+              );
+              break;
+            }
+          } catch (e) {}
+        }
       }
-    } catch (transferErr) {
-      // Ошибка создания Transfer - заявка все равно одобрена, но деньги не переведены
-      // Transfer можно создать вручную через админку или повторить позже
-      // Ошибка не прерывает выполнение, чтобы не блокировать одобрение заявки
-    }
+      let sourceTransactionId = null;
+      if (sourcePaymentIntentId) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(sourcePaymentIntentId, { expand: ['latest_charge'] });
+          const lc = pi.latest_charge;
+          sourceTransactionId = (typeof lc === 'object' && lc?.id) ? lc.id : (typeof lc === 'string' ? lc : null);
+        } catch (e) {}
+      }
+      if (sourcePaymentIntentId) {
+        const platformFeePerTransfer = Math.floor(platformFeeCents / eligibleParticipantIds.length);
+        const stripeFeePerTransfer = Math.floor(stripeFeeCents / eligibleParticipantIds.length);
+        for (const performerId of eligibleParticipantIds) {
+          try {
+            const [acc] = await pool.execute('SELECT account_id FROM stripe_accounts WHERE user_id = ?', [performerId]);
+            if (acc.length === 0) continue;
+            const transfer = await stripe.transfers.create({
+              amount: amountPerPerson,
+              currency: 'usd',
+              destination: acc[0].account_id,
+              source_transaction: sourceTransactionId || undefined,
+              metadata: { request_id: requestId, performer_user_id: performerId }
+            });
+            const transferId = generateId();
+            await pool.execute(
+              `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [transferId, transfer.id, requestId, performerId, amountPerPerson, platformFeePerTransfer, stripeFeePerTransfer, 'usd', 'pending', sourcePaymentIntentId]
+            );
+            insertTransferPayoutCheck(transferId, performerId, amountPerPerson).catch(() => {});
+            participantsWithPayout.push({ userId: performerId, amountCents: amountPerPerson });
+          } catch (transferErr) {}
+        }
+      }
   }
+  // Если нет участников с полным Stripe — ничего не переводим и не возвращаем, сумма остаётся на счёте приложения.
 
   // 6. Отправляем push-уведомления
   if (creatorId) {
-    // Отправляем создателю уведомление с информацией о выплате (для событий деньги идут создателю)
-    const payoutAmount = transferAmountCents > 0 ? (transferAmountCents / 100).toFixed(2) : null;
-    sendRequestApprovedNotification({ 
-      userIds: [creatorId], 
-      requestId, 
-      messageType: 'creator', 
+    const creatorPayout = participantsWithPayout.find(p => p.userId === creatorId);
+    const payoutAmount = creatorPayout ? (creatorPayout.amountCents / 100).toFixed(2) : null;
+    sendRequestApprovedNotification({
+      userIds: [creatorId],
+      requestId,
+      messageType: 'creator',
       requestCategory: 'event',
       payoutAmount: payoutAmount
     }).catch(() => {});
   }
   if (participantUserIds.length > 0) {
-    sendRequestApprovedNotification({ userIds: participantUserIds, requestId, messageType: 'participant', requestCategory: 'event' }).catch(() => {});
+    for (const p of participantsWithPayout) {
+      if (p.userId !== creatorId) {
+        sendRequestApprovedNotification({
+          userIds: [p.userId],
+          requestId,
+          messageType: 'participant',
+          requestCategory: 'event',
+          payoutAmount: (p.amountCents / 100).toFixed(2)
+        }).catch(() => {});
+      }
+    }
+    const notifiedParticipantIds = new Set(participantsWithPayout.map(p => p.userId));
+    const others = participantUserIds.filter(id => !notifiedParticipantIds.has(id));
+    if (others.length > 0) {
+      sendRequestApprovedNotification({ userIds: others, requestId, messageType: 'participant', requestCategory: 'event' }).catch(() => {});
+    }
   }
   if (donorUserIds.length > 0) {
     sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'event' }).catch(() => {});

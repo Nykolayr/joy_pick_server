@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin, requireSuperAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadUserAvatar, getFileUrlFromPath } = require('../middleware/upload');
+const stripeRouter = require('./stripe.js');
 
 const router = express.Router();
 
@@ -104,7 +105,8 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
 
 /**
  * GET /api/users/:id
- * Получение данных пользователя по ID
+ * Получение данных пользователя по ID.
+ * При наличии Stripe-аккаунта у запрашиваемого пользователя статус обновляется из Stripe API.
  * Любой авторизованный пользователь может получить данные другого пользователя
  */
 router.get('/:id', authenticate, async (req, res) => {
@@ -114,12 +116,15 @@ router.get('/:id', authenticate, async (req, res) => {
     const isAdmin = req.user.isAdmin;
     const isOwnProfile = currentUserId === id;
 
+    await stripeRouter.refreshUserStripeStatusIfNeeded(id);
+
     const [users] = await pool.execute(
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links
+       about, social_links,
+       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
       [id]
     );
@@ -359,13 +364,16 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       params
     );
 
-    // Получение обновленных данных
+    await stripeRouter.refreshUserStripeStatusIfNeeded(id);
+
+    // Получение обновленных данных (включая актуальный статус Stripe)
     const [users] = await pool.execute(
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links
+       about, social_links,
+       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
       [id]
     );

@@ -3,8 +3,9 @@ const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
-const stripe = require('../config/stripe');
+const stripe = require('../config/stripe.js');
 const { generateId } = require('../utils/uuid');
+const { insertTransferPayoutCheck } = require('../utils/transferPayoutCheck.js');
 
 const router = express.Router();
 
@@ -62,7 +63,7 @@ router.get('/payment-intents', async (req, res) => {
       paymentIntents.map(async (pi) => {
         try {
           const stripePI = await stripe.paymentIntents.retrieve(pi.payment_intent_id, {
-            expand: ['charges.data.payment_method', 'charges.data.balance_transaction']
+            expand: ['charges.data.balance_transaction']
           });
 
           return {
@@ -130,7 +131,7 @@ router.get('/payment-intents/:payment_intent_id', async (req, res) => {
     // Получаем детальную информацию из Stripe
     try {
       const stripePI = await stripe.paymentIntents.retrieve(payment_intent_id, {
-        expand: ['charges.data.payment_method', 'charges.data.balance_transaction']
+        expand: ['charges.data.balance_transaction']
       });
 
       // Получаем связанные данные из БД
@@ -584,7 +585,7 @@ router.get('/charges', async (req, res) => {
       // Получаем через PaymentIntent
       try {
         const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id, {
-          expand: ['charges.data.payment_method', 'charges.data.balance_transaction']
+          expand: ['charges.data.balance_transaction']
         });
         charges = paymentIntent.charges?.data || [];
       } catch (stripeErr) {
@@ -1191,13 +1192,17 @@ router.get('/requests/active', async (req, res) => {
 
     // Получаем ID всех заявок для загрузки донатов одним запросом
     const requestIds = requests.map(r => r.id);
-    const [allDonations] = await pool.execute(`
-      SELECT d.*, u.email, u.display_name
-      FROM donations d
-      LEFT JOIN users u ON d.user_id = u.id
-      WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
-      ORDER BY d.created_at DESC
-    `, requestIds);
+    let allDonations = [];
+    if (requestIds.length > 0) {
+      const [donationsResult] = await pool.execute(`
+        SELECT d.*, u.email, u.display_name
+        FROM donations d
+        LEFT JOIN users u ON d.user_id = u.id
+        WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
+        ORDER BY d.created_at DESC
+      `, requestIds);
+      allDonations = donationsResult;
+    }
 
     // Группируем донаты по заявкам
     const donationsByRequest = {};
@@ -1229,6 +1234,11 @@ router.get('/requests/active', async (req, res) => {
                   amount_received: stripePI.amount_received / 100,
                   is_captured: stripePI.amount_received > 0
                 };
+                // Синхронизируем статус в БД (актуальный статус из Stripe перед отправкой на фронт)
+                await pool.execute(
+                  'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+                  [stripePI.status, stripePI.id]
+                ).catch(() => {});
               } catch (stripeErr) {
                 stripeInfo = { stripe_error: stripeErr.message };
               }
@@ -1245,6 +1255,11 @@ router.get('/requests/active', async (req, res) => {
           })
         );
 
+        // Исполнитель для выплаты: waste — joined_user_id, event/speedCleanup — created_by
+        const performer_user_id = request.category === 'wasteLocation'
+          ? (request.joined_user_id || null)
+          : (request.created_by || null);
+
         return {
           id: request.id,
           name: request.name,
@@ -1252,6 +1267,9 @@ router.get('/requests/active', async (req, res) => {
           status: request.status,
           created_at: request.created_at,
           updated_at: request.updated_at,
+          joined_user_id: request.joined_user_id || null,
+          created_by: request.created_by || null,
+          performer_user_id,
           donations: detailedDonations,
           donations_count: request.donations_count,
           total_donations: request.total_donations
@@ -1264,19 +1282,18 @@ router.get('/requests/active', async (req, res) => {
       total: detailedRequests.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении активных заявок', 500, err);
+    return error(res, 'Error retrieving active requests', 500, err);
   }
 });
 
 /**
  * GET /api/stripe-admin/requests/closed
- * Получение закрытых/архивных заявок с донатами/платными
- * 
- * Закрытые заявки: approved, rejected, completed
+ * Получение закрытых/архивных заявок с донатами
+ *
+ * Закрытые заявки: approved, rejected, completed, archived (waste/event после одобрения переходят в archived)
  */
 router.get('/requests/closed', async (req, res) => {
   try {
-    // Получаем закрытые заявки, которые платные или имеют донаты
     const [requests] = await pool.execute(`
       SELECT r.*, 
              u.email as creator_email, u.display_name as creator_name,
@@ -1285,7 +1302,7 @@ router.get('/requests/closed', async (req, res) => {
       FROM requests r
       LEFT JOIN users u ON r.created_by = u.id
       LEFT JOIN donations d ON r.id = d.request_id
-      WHERE r.status IN ('approved', 'rejected', 'completed')
+      WHERE r.status IN ('approved', 'rejected', 'completed', 'archived')
         AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
       GROUP BY r.id
       ORDER BY r.updated_at DESC
@@ -1293,13 +1310,17 @@ router.get('/requests/closed', async (req, res) => {
 
     // Получаем ID всех заявок для загрузки донатов одним запросом
     const requestIds = requests.map(r => r.id);
-    const [allDonations] = await pool.execute(`
-      SELECT d.*, u.email, u.display_name
-      FROM donations d
-      LEFT JOIN users u ON d.user_id = u.id
-      WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
-      ORDER BY d.created_at DESC
-    `, requestIds);
+    let allDonations = [];
+    if (requestIds.length > 0) {
+      const [donationsResult] = await pool.execute(`
+        SELECT d.*, u.email, u.display_name
+        FROM donations d
+        LEFT JOIN users u ON d.user_id = u.id
+        WHERE d.request_id IN (${requestIds.map(() => '?').join(',')})
+        ORDER BY d.created_at DESC
+      `, requestIds);
+      allDonations = donationsResult;
+    }
 
     // Группируем донаты по заявкам
     const donationsByRequest = {};
@@ -1347,21 +1368,20 @@ router.get('/requests/closed', async (req, res) => {
           })
         );
 
-        // Получаем информацию о переводах (только для закрытых заявок)
+        // Получаем переводы из нашей БД (при создании Transfer мы не передаём transfer_group в Stripe, поэтому stripe.transfers.list по transfer_group возвращает пустой список)
         let transfers = [];
         try {
-          const stripeTransfers = await stripe.transfers.list({
-            transfer_group: `request_${request.id}`,
-            limit: 10
-          });
-          
-          transfers = stripeTransfers.data.map(transfer => ({
-            to_user_id: transfer.metadata?.user_id || 'unknown',
-            amount: transfer.amount / 100,
-            transfer_id: transfer.id,
-            status: transfer.status,
-            created: transfer.created,
-            error: transfer.failure_message || null
+          const [dbTransfers] = await pool.execute(
+            'SELECT transfer_id, performer_user_id, amount_cents, status, created_at FROM transfers WHERE request_id = ? ORDER BY created_at DESC',
+            [request.id]
+          );
+          transfers = dbTransfers.map(t => ({
+            to_user_id: t.performer_user_id,
+            amount: t.amount_cents / 100,
+            transfer_id: t.transfer_id,
+            status: t.status,
+            created: t.created_at,
+            error: null
           }));
         } catch (transferErr) {
           // Игнорируем ошибки получения переводов
@@ -1373,6 +1393,11 @@ router.get('/requests/closed', async (req, res) => {
         const totalTransferred = transfers.reduce((sum, t) => sum + t.amount, 0);
         requestBalance = totalCaptured - totalTransferred;
 
+        // Исполнитель для выплаты: waste — joined_user_id, event/speedCleanup — created_by
+        const performer_user_id = request.category === 'wasteLocation'
+          ? (request.joined_user_id || null)
+          : (request.created_by || null);
+
         return {
           id: request.id,
           name: request.name,
@@ -1380,6 +1405,9 @@ router.get('/requests/closed', async (req, res) => {
           status: request.status,
           created_at: request.created_at,
           updated_at: request.updated_at,
+          joined_user_id: request.joined_user_id || null,
+          created_by: request.created_by || null,
+          performer_user_id,
           donations: detailedDonations,
           donations_count: request.donations_count,
           total_donations: request.total_donations,
@@ -1396,7 +1424,56 @@ router.get('/requests/closed', async (req, res) => {
       total: detailedRequests.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении закрытых заявок', 500, err);
+    return error(res, 'Error retrieving closed requests', 500, err);
+  }
+});
+
+// ============================================================================
+// СЕКЦИЯ: УДАЛЕНИЕ ДОНАТА ИЗ ЗАЯВКИ (АДМИН)
+// ============================================================================
+
+/**
+ * DELETE /api/stripe-admin/requests/:request_id/donations/:donation_id
+ * Удаление доната из заявки (ручное, для админа).
+ *
+ * Используется когда:
+ * - Донат не прошёл (требуется метод оплаты, отменён и т.д.), но запись в БД осталась
+ * - Нужно исключить такой донат из заявки, обновить total_contributed и только потом создавать трансфер
+ *
+ * После удаления: total_contributed заявки уменьшается на сумму доната.
+ * Если у доната есть payment_intent не в статусе succeeded — в Stripe он не отменяется (можно отменить отдельно при необходимости).
+ */
+router.delete('/requests/:request_id/donations/:donation_id', async (req, res) => {
+  try {
+    const { request_id, donation_id } = req.params;
+
+    const [donations] = await pool.execute(
+      'SELECT id, request_id, amount, payment_intent_id FROM donations WHERE id = ? AND request_id = ?',
+      [donation_id, request_id]
+    );
+
+    if (donations.length === 0) {
+      return error(res, 'Donation not found or does not belong to this request', 404);
+    }
+
+    const donation = donations[0];
+    const amount = parseFloat(donation.amount) || 0;
+
+    await pool.execute('DELETE FROM donations WHERE id = ? AND request_id = ?', [donation_id, request_id]);
+
+    await pool.execute(
+      'UPDATE requests SET total_contributed = GREATEST(0, COALESCE(total_contributed, 0) - ?), updated_at = NOW() WHERE id = ?',
+      [amount, request_id]
+    );
+
+    return success(res, {
+      removed_donation_id: donation_id,
+      amount_removed: amount,
+      request_id,
+      message: 'Донат удалён из заявки. total_contributed обновлён. Можно создавать трансфер по оставшимся донатам.'
+    });
+  } catch (err) {
+    return error(res, 'Error removing donation from request', 500, err);
   }
 });
 
@@ -1407,7 +1484,9 @@ router.get('/requests/closed', async (req, res) => {
 /**
  * POST /api/stripe-admin/create-transfer
  * Создание Transfer вручную для заявки
- * 
+ *
+ * Рекомендуемый порядок: сначала удалить неуспешные донаты через DELETE .../donations/:donation_id (если нужно), затем вызвать create-transfer.
+ *
  * Используется когда:
  * - Transfer не создался автоматически при одобрении заявки
  * - Нужно создать Transfer для старых заявок
@@ -1438,8 +1517,16 @@ router.post('/create-transfer', [
 
     const request = requests[0];
 
-    // Получаем все донаты для заявки
-    const [donations] = await pool.execute(
+    // Перед трансфером проверяем каждый донат в Stripe и удаляем из заявки те, у которых платёж не успешен
+    // (requires_payment_method, canceled и т.д.) — админу не нужно удалять их вручную
+    const { removeFailedDonationsFromRequest } = require('../utils/donationTransferHelpers');
+    const removalResult = await removeFailedDonationsFromRequest(request_id).catch((err) => {
+      console.error('removeFailedDonationsFromRequest error:', err);
+      return { removed: 0, removedDonationIds: [] };
+    });
+
+    // Получаем донаты со статусом succeeded в БД (после удаления неуспешных)
+    let [donations] = await pool.execute(
       `SELECT d.*, pi.payment_intent_id, pi.status as payment_status
        FROM donations d
        LEFT JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
@@ -1447,8 +1534,34 @@ router.post('/create-transfer', [
       [request_id]
     );
 
+    // Fallback: если вебхук не обновил — проверяем Stripe и синхронизируем БД
     if (donations.length === 0) {
-      return error(res, 'No successful donations found for this request', 400);
+      const [allDonations] = await pool.execute(
+        'SELECT d.* FROM donations d WHERE d.request_id = ? AND d.payment_intent_id IS NOT NULL',
+        [request_id]
+      );
+      for (const row of allDonations) {
+        try {
+          const stripePI = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+          if (stripePI.status === 'succeeded') {
+            await pool.execute(
+              'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+              ['succeeded', stripePI.id]
+            );
+          }
+        } catch (e) {}
+      }
+      [donations] = await pool.execute(
+        `SELECT d.*, pi.payment_intent_id, pi.status as payment_status
+         FROM donations d
+         LEFT JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
+         WHERE d.request_id = ? AND pi.status = 'succeeded'`,
+        [request_id]
+      );
+    }
+
+    if (donations.length === 0) {
+      return error(res, 'No successful donations found for this request. Check that payment is succeeded in Stripe.', 400);
     }
 
     // Рассчитываем сумму
@@ -1491,23 +1604,32 @@ router.post('/create-transfer', [
 
     const stripeAccountId = stripeAccounts[0].account_id;
 
-    // Получаем первый PaymentIntent для source_transaction
+    // Получаем первый PaymentIntent и из него — Charge ID (source_transaction принимает ch_xxx, не pi_xxx)
     const [paymentIntents] = await pool.execute(
-      `SELECT payment_intent_id FROM donations d
+      `SELECT d.payment_intent_id FROM donations d
        JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
        WHERE d.request_id = ? AND pi.status = 'succeeded'
        LIMIT 1`,
       [request_id]
     );
+    const piId = paymentIntents[0]?.payment_intent_id;
+    let sourceTransactionId = null;
+    if (piId) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] });
+        const latestCharge = pi.latest_charge;
+        sourceTransactionId = (typeof latestCharge === 'object' && latestCharge?.id) ? latestCharge.id : (typeof latestCharge === 'string' ? latestCharge : null);
+      } catch (e) {}
+    }
 
-    // Создаем Transfer в Stripe
+    // Создаем Transfer в Stripe (source_transaction = charge id ch_xxx)
     let transfer;
     try {
       transfer = await stripe.transfers.create({
         amount: transferAmountCents,
         currency: 'usd',
         destination: stripeAccountId,
-        source_transaction: paymentIntents[0]?.payment_intent_id || undefined,
+        source_transaction: sourceTransactionId || undefined,
         metadata: {
           request_id: request_id,
           performer_user_id: performer_user_id,
@@ -1515,16 +1637,34 @@ router.post('/create-transfer', [
         }
       });
     } catch (transferErr) {
-      return error(res, 'Error creating transfer in Stripe', 500, {
+      const code = transferErr.code || transferErr.raw?.code;
+      const isBalanceInsufficient = code === 'balance_insufficient';
+
+      const userMessage = isBalanceInsufficient
+        ? 'На платформенном Stripe-аккаунте недостаточно средств для создания трансфера. Частая причина — автоматические выплаты (payouts) забирают баланс. Включите ручные выплаты в Stripe Dashboard: https://dashboard.stripe.com/account/payouts — тогда средства будут доступны для трансферов исполнителям.'
+        : 'Error creating transfer in Stripe';
+
+      const errorPayload = {
         ...transferErr,
         errorDetails: {
           errorMessage: transferErr.message,
           errorType: transferErr.type,
-          errorCode: transferErr.code,
+          errorCode: code,
+          balance_insufficient: isBalanceInsufficient,
           stripeAccountId: stripeAccountId,
-          transferAmountCents: transferAmountCents
+          transferAmountCents: transferAmountCents,
+          doc_url: transferErr.doc_url || transferErr.raw?.doc_url
         }
-      });
+      };
+      // При любой ошибке трансфера возвращаем результат удаления неуспешных донатов:
+      // если что-то удалили — клиент может показать «Обновите страницу» и обновить список платежей
+      errorPayload.removed_failed_donations = removalResult.removed;
+      errorPayload.removed_failed_donation_ids = removalResult.removedDonationIds || [];
+      if (removalResult.removed > 0) {
+        errorPayload.message_removal = `Из заявки удалено ${removalResult.removed} донат(ов) с неуспешным платежом. Обновите страницу, чтобы увидеть актуальный список платежей.`;
+      }
+
+      return error(res, userMessage, isBalanceInsufficient ? 402 : 500, errorPayload);
     }
 
     // Сохраняем transfer в базу данных
@@ -1545,6 +1685,8 @@ router.post('/create-transfer', [
         paymentIntents[0]?.payment_intent_id || null
       ]
     );
+
+    insertTransferPayoutCheck(transferId, performer_user_id, transferAmountCents).catch(() => {});
 
     // Получаем детальную информацию о Transfer из Stripe
     const stripeTransfer = await stripe.transfers.retrieve(transfer.id);
@@ -1579,8 +1721,12 @@ router.post('/create-transfer', [
         total_donations_cents: totalAmountCents,
         total_donations_dollars: (totalAmountCents / 100).toFixed(2),
         donations_count: donations.length
-      }
-    }, 'Transfer created successfully');
+      },
+      removed_failed_donations: removalResult.removed,
+      removed_failed_donation_ids: removalResult.removedDonationIds || []
+    }, removalResult.removed > 0
+      ? `Transfer created. Before transfer, ${removalResult.removed} donation(s) with failed/incomplete payment were removed from the request.`
+      : 'Transfer created successfully');
 
   } catch (err) {
     return error(res, 'Error creating transfer', 500, err);

@@ -1,12 +1,63 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
-const stripe = require('../config/stripe');
+const stripe = require('../config/stripe.js');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 
 const router = express.Router();
+
+/**
+ * Обновляет кэш статуса Stripe в таблице users.
+ * Вызывать при GET account-status и по вебхуку account.updated.
+ * @param {string} userId - ID пользователя
+ * @param {object|null} stripeAccount - объект аккаунта из Stripe или null (нет аккаунта)
+ */
+async function updateUserStripeStatusCache(userId, stripeAccount) {
+  try {
+    if (!stripeAccount) {
+      await pool.execute(
+        `UPDATE users SET stripe_account_status = 'none', stripe_status_label = ?, can_donate = 0, can_receive_payouts = 0, stripe_status_updated_at = NOW() WHERE id = ?`,
+        ['No Stripe account', userId]
+      );
+      return;
+    }
+    const chargesEnabled = !!stripeAccount.charges_enabled;
+    const payoutsEnabled = !!stripeAccount.payouts_enabled;
+    const detailsSubmitted = !!stripeAccount.details_submitted;
+    const complete = chargesEnabled && payoutsEnabled && detailsSubmitted;
+    const stripe_account_status = complete ? 'complete' : 'incomplete';
+    const stripe_status_label = complete
+      ? 'Stripe account active — you can receive payouts'
+      : 'Stripe account incomplete — complete setup to receive payouts';
+    await pool.execute(
+      `UPDATE users SET stripe_account_status = ?, stripe_status_label = ?, can_donate = ?, can_receive_payouts = ?, stripe_status_updated_at = NOW() WHERE id = ?`,
+      [stripe_account_status, stripe_status_label, chargesEnabled ? 1 : 0, payoutsEnabled ? 1 : 0, userId]
+    );
+  } catch (e) {
+    // не прерываем основной поток
+  }
+}
+
+/**
+ * Обновляет кэш статуса Stripe в users по актуальным данным из Stripe API.
+ * Вызывать при GET /auth/me, чтобы в ответе всегда был актуальный статус.
+ * @param {string} userId - ID пользователя
+ * @returns {Promise<boolean>} true если кэш обновлён, false если аккаунта нет или ошибка
+ */
+async function refreshUserStripeStatusIfNeeded(userId) {
+  try {
+    const [rows] = await pool.execute('SELECT account_id FROM stripe_accounts WHERE user_id = ?', [userId]);
+    if (rows.length === 0) return false;
+    const accountId = rows[0].account_id;
+    const account = await stripe.accounts.retrieve(accountId);
+    await updateUserStripeStatusCache(userId, account);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 /**
  * POST /api/stripe/create-account
@@ -209,12 +260,17 @@ router.get('/account-status', authenticate, async (req, res) => {
     );
 
     if (accounts.length === 0) {
+      await updateUserStripeStatusCache(user_id, null);
       return success(res, {
         account_id: null,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: false,
-        onboarding_complete: false
+        onboarding_complete: false,
+        stripe_account_status: 'none',
+        stripe_status_label: 'No Stripe account',
+        can_donate: false,
+        can_receive_payouts: false
       }, 'Account not found');
     }
 
@@ -241,7 +297,17 @@ router.get('/account-status', authenticate, async (req, res) => {
       ]
     );
 
-    const onboardingComplete = stripeAccount.charges_enabled && stripeAccount.payouts_enabled && stripeAccount.details_submitted;
+    const chargesEnabled = !!stripeAccount.charges_enabled;
+    const payoutsEnabled = !!stripeAccount.payouts_enabled;
+    const detailsSubmitted = !!stripeAccount.details_submitted;
+    const onboardingComplete = chargesEnabled && payoutsEnabled && detailsSubmitted;
+
+    const stripe_account_status = onboardingComplete ? 'complete' : 'incomplete';
+    const stripe_status_label = onboardingComplete
+      ? 'Stripe account active — you can receive payouts'
+      : 'Stripe account incomplete — complete setup to receive payouts';
+    const can_donate = chargesEnabled;
+    const can_receive_payouts = payoutsEnabled;
 
     // Если нужен доонбординг, создаем Account Link
     let accountLinkUrl = null;
@@ -259,12 +325,18 @@ router.get('/account-status', authenticate, async (req, res) => {
       }
     }
 
+    await updateUserStripeStatusCache(dbAccount.user_id, stripeAccount);
+
     return success(res, {
       account_id: dbAccount.account_id,
-      charges_enabled: stripeAccount.charges_enabled || false,
-      payouts_enabled: stripeAccount.payouts_enabled || false,
-      details_submitted: stripeAccount.details_submitted || false,
+      charges_enabled: chargesEnabled,
+      payouts_enabled: payoutsEnabled,
+      details_submitted: detailsSubmitted,
       onboarding_complete: onboardingComplete,
+      stripe_account_status,
+      stripe_status_label,
+      can_donate,
+      can_receive_payouts,
       account_link_url: accountLinkUrl
     }, 'Account status retrieved');
 
@@ -405,6 +477,7 @@ async function handleAccountUpdated(account) {
   );
 
   if (accounts.length > 0) {
+    const dbAccount = accounts[0];
     await pool.execute(
       `UPDATE stripe_accounts 
        SET charges_enabled = ?, payouts_enabled = ?, details_submitted = ?, updated_at = NOW()
@@ -416,6 +489,7 @@ async function handleAccountUpdated(account) {
         account.id
       ]
     );
+    await updateUserStripeStatusCache(dbAccount.user_id, account);
   }
 }
 
@@ -898,13 +972,16 @@ router.get('/payout-methods/:user_id', authenticate, async (req, res) => {
  */
 router.post('/instant-payout', authenticate, [
   body('user_id').notEmpty().withMessage('user_id is required'),
-  body('amount').isFloat({ min: 1 }).withMessage('Minimum 1 dollar'),
+  body('amount').isFloat({ min: 1 }).withMessage('Instant payouts are only available for $1 or more. For smaller amounts, the payout will be sent automatically within 2 days according to your payout schedule.'),
   body('external_account_id').optional().isString().withMessage('External account ID')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return error(res, 'Validation error', 400, errors.array());
+      const errList = errors.array();
+      const amountErr = errList.find(e => e.param === 'amount');
+      const message = amountErr ? amountErr.msg : 'Validation error';
+      return error(res, message, 400, errList);
     }
 
     const { user_id, amount, external_account_id } = req.body;
@@ -960,6 +1037,12 @@ router.post('/instant-payout', authenticate, [
         payout.status,
         external_account_id || null
       ]
+    );
+
+    // Убираем напоминания из cron: пользователь уже получил деньги через instant payout
+    await pool.execute(
+      "UPDATE transfer_payout_checks SET status = 'money_available', updated_at = NOW() WHERE performer_user_id = ? AND status = 'pending'",
+      [user_id]
     );
 
     return success(res, {
@@ -1148,7 +1231,8 @@ router.get('/instant-payouts/:user_id', authenticate, async (req, res) => {
 
 /**
  * GET /api/stripe/balance/:user_id
- * Получение доступного баланса пользователя для выплат
+ * Получение доступного баланса пользователя для выплат.
+ * Перед ответом синхронизирует с Stripe статусы payment_intents и transfers для этого пользователя (компенсация при отключённом вебхуке).
  */
 router.get('/balance/:user_id', authenticate, async (req, res) => {
   try {
@@ -1170,6 +1254,47 @@ router.get('/balance/:user_id', authenticate, async (req, res) => {
     }
 
     const { account_id: accountId, payouts_enabled: payoutsEnabled } = accounts[0];
+
+    // Синхронизация с Stripe до формирования ответа (если вебхук отключён)
+    try {
+      // 1) PaymentIntents по донатам заявок, где пользователь — исполнитель или создатель (event)
+      const [donationRows] = await pool.execute(
+        `SELECT DISTINCT d.payment_intent_id FROM donations d
+         INNER JOIN requests r ON r.id = d.request_id
+         WHERE (r.joined_user_id = ? OR (r.category = 'event' AND r.created_by = ?))
+           AND d.payment_intent_id IS NOT NULL`,
+        [user_id, user_id]
+      );
+      for (const row of donationRows) {
+        try {
+          const stripePI = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+          await pool.execute(
+            'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
+            [stripePI.status, stripePI.id]
+          );
+        } catch (e) {
+          // один неудачный PI не прерываем
+        }
+      }
+      // 2) Transfers, где пользователь — получатель: синхронизируем только reversed
+      const [userTransfers] = await pool.execute(
+        'SELECT transfer_id FROM transfers WHERE performer_user_id = ?',
+        [user_id]
+      );
+      for (const t of userTransfers) {
+        try {
+          const st = await stripe.transfers.retrieve(t.transfer_id);
+          if (st.reversed) {
+            await pool.execute(
+              'UPDATE transfers SET status = ?, updated_at = NOW() WHERE transfer_id = ?',
+              ['reversed', t.transfer_id]
+            );
+          }
+        } catch (e) {}
+      }
+    } catch (syncErr) {
+      // сбой синхронизации не блокирует ответ по балансу
+    }
 
     // Получаем баланс из Stripe
     let stripeBalance = null;
@@ -1207,6 +1332,16 @@ router.get('/balance/:user_id', authenticate, async (req, res) => {
       [user_id]
     );
 
+    // Ожидаемые/уже отправленные выплаты из нашей БД (transfers) — чтобы показывать «деньги в пути»
+    const [transfersToUser] = await pool.execute(
+      `SELECT id, transfer_id, request_id, amount_cents, status, created_at 
+       FROM transfers 
+       WHERE performer_user_id = ? AND (status IS NULL OR status != 'reversed')
+       ORDER BY created_at DESC`,
+      [user_id]
+    );
+    const pendingTransfersTotalCents = transfersToUser.reduce((sum, t) => sum + (t.amount_cents || 0), 0);
+
     // Получаем настройки payout расписания
     const stripeAccount = await stripe.accounts.retrieve(accountId);
     const payoutSchedule = stripeAccount.settings?.payouts?.schedule || null;
@@ -1223,6 +1358,16 @@ router.get('/balance/:user_id', authenticate, async (req, res) => {
         created_at: p.created_at
       })),
       can_instant_payout: payoutsEnabled && stripeBalance?.available?.some(b => b.amount > 100) // минимум $1
+      // Ожидаемые выплаты: из нашей БД (если Transfer создан — здесь будет сумма; в Stripe она попадёт в pending/available)
+      , pending_transfers: transfersToUser.map(t => ({
+        request_id: t.request_id,
+        amount_cents: t.amount_cents,
+        amount_dollars: (t.amount_cents / 100).toFixed(2),
+        status: t.status || 'pending',
+        created_at: t.created_at
+      })),
+      pending_transfers_total_cents: pendingTransfersTotalCents,
+      pending_transfers_total_dollars: (pendingTransfersTotalCents / 100).toFixed(2)
     });
 
   } catch (err) {
@@ -1507,5 +1652,6 @@ router.post('/test-webhook', authenticate, [
   }
 });
 
+router.refreshUserStripeStatusIfNeeded = refreshUserStripeStatusIfNeeded;
 module.exports = router;
 

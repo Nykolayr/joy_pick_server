@@ -40,6 +40,21 @@ async function getAllAdminIds() {
 }
 
 /**
+ * Получение ID суперадминов (для пушей о сбоях выплат)
+ * @returns {Promise<Array<string>>} Массив ID пользователей с super_admin = TRUE
+ */
+async function getSuperAdminIds() {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id FROM users WHERE super_admin = TRUE AND fcm_token IS NOT NULL AND fcm_token != ""'
+    );
+    return rows.map(r => r.id);
+  } catch (error) {
+    return [];
+  }
+}
+
+/**
  * Получение FCM токенов пользователей по их ID
  * @param {Array<string>} userIds - Массив ID пользователей
  * @returns {Promise<Array<string>>} Массив FCM токенов
@@ -1091,6 +1106,45 @@ async function sendTransferFailedNotification({ userIds, transferId }) {
 }
 
 /**
+ * Пуш получателю: деньги перечислены и доступны в приложении (после проверки cron)
+ */
+async function sendTransferAvailableToUserNotification({ userId, amountDollars }) {
+  return await sendNotificationToUsers({
+    title: 'Money transferred',
+    body: `$${amountDollars} has been transferred. You can get it in the app.`,
+    userIds: [userId],
+    sound: 'default',
+    data: {
+      type: 'transferAvailable',
+      initialPageName: 'Profile',
+    },
+  });
+}
+
+/**
+ * Пуш суперадминам: проверка выплаты не прошла (деньги не дошли после 2 проверок)
+ */
+async function sendTransferCheckFailedToSuperAdmins({ transferId, performerUserId, amountCents, requestId, details }) {
+  const superAdminIds = await getSuperAdminIds();
+  if (superAdminIds.length === 0) return { successCount: 0, failureCount: 0 };
+  const amountDollars = (amountCents / 100).toFixed(2);
+  const body = `Transfer ${transferId}: $${amountDollars} to user ${performerUserId}, request ${requestId}. ${details || 'Money not available after check.'}`;
+  return await sendNotificationToUsers({
+    title: 'Transfer check failed',
+    body,
+    userIds: superAdminIds,
+    sound: 'default',
+    data: {
+      type: 'transferCheckFailed',
+      transferId,
+      performerUserId,
+      requestId,
+      amountCents: String(amountCents),
+    },
+  });
+}
+
+/**
  * Отправка уведомления о статусе мгновенной выплаты
  */
 async function sendPayoutNotification({ userId, payoutId, amount, status, failureCode, failureMessage }) {
@@ -1179,8 +1233,11 @@ module.exports = {
   sendModerationNotification,
   sendTransferPaidNotification,
   sendTransferFailedNotification,
+  sendTransferAvailableToUserNotification,
+  sendTransferCheckFailedToSuperAdmins,
   sendPayoutNotification,
   getFcmTokensByUserIds,
   getFcmTokensByRadius,
+  getSuperAdminIds,
 };
 

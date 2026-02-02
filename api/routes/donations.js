@@ -7,6 +7,7 @@ const { generateId } = require('../utils/uuid');
 const { sendDonationNotification } = require('../services/pushNotification');
 const { normalizeDatesInObject } = require('../utils/datetime');
 const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
+const stripe = require('../config/stripe.js');
 
 const router = express.Router();
 
@@ -119,14 +120,14 @@ router.get('/:id', authenticate, async (req, res) => {
  * Создание доната
  */
 router.post('/', authenticate, [
-  body('requestId').notEmpty().withMessage('ID заявки обязателен'),
-  body('amount').isInt({ min: 1 }).withMessage('Сумма должна быть положительным числом'),
-  body('paymentIntentId').notEmpty().withMessage('ID PaymentIntent обязателен')
+  body('requestId').notEmpty().withMessage('Request ID is required'),
+  body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number'),
+  body('paymentIntentId').notEmpty().withMessage('Payment Intent ID is required')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { requestId, amount, paymentIntentId } = req.body;
@@ -139,10 +140,50 @@ router.post('/', authenticate, [
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
+
+    // Проверка PaymentIntent в Stripe: только успешный платёж или requires_capture допускаем к созданию доната
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    } catch (stripeErr) {
+      return error(res, 'Invalid payment. Payment could not be verified. Please try again.', 400, {
+        reason: 'stripe_retrieve_failed',
+        stripe_error: stripeErr.message
+      });
+    }
+
+    if (paymentIntent.metadata?.user_id && paymentIntent.metadata.user_id !== userId) {
+      return error(res, 'This payment does not belong to your account.', 403);
+    }
+    if (paymentIntent.metadata?.request_id && paymentIntent.metadata.request_id !== requestId) {
+      return error(res, 'This payment is not for this request.', 400);
+    }
+
+    const amountCents = Math.round(parseFloat(amount) * 100);
+    if (paymentIntent.amount !== amountCents) {
+      return error(res, 'Payment amount does not match the donation amount.', 400);
+    }
+
+    const allowedStatuses = ['succeeded', 'requires_capture'];
+    if (!allowedStatuses.includes(paymentIntent.status)) {
+      const statusMessages = {
+        requires_payment_method: 'Payment method required. Please add a valid card and try again.',
+        requires_confirmation: 'Payment requires confirmation. Please complete the payment.',
+        requires_action: 'Additional authentication required. Please complete the payment.',
+        canceled: 'Payment was canceled.',
+        processing: 'Payment is still processing. Please wait and try again.'
+      };
+      const message = statusMessages[paymentIntent.status] || `Payment status "${paymentIntent.status}" is not valid. Payment must succeed before creating a donation.`;
+      return error(res, message, 400, {
+        reason: 'payment_not_complete',
+        stripe_status: paymentIntent.status
+      });
+    }
+
     const donationId = generateId();
 
     // Создание доната
@@ -167,7 +208,7 @@ router.post('/', authenticate, [
       await addUserToGroupChatByRequest(requestId, userId);
     } catch (chatErr) {
       // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
+      return error(res, 'Error adding to group chat', 500, chatErr);
     }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
@@ -199,10 +240,10 @@ router.post('/', authenticate, [
     // Нормализация дат в UTC
     const normalizedDonation = normalizeDatesInObject(donations[0]);
 
-    success(res, { donation: normalizedDonation }, 'Донат создан', 201);
+    success(res, { donation: normalizedDonation }, 'Donation created', 201);
   } catch (err) {
     console.error('Ошибка создания доната:', err);
-    error(res, 'Ошибка при создании доната', 500);
+    error(res, 'Error creating donation', 500);
   }
 });
 
@@ -253,7 +294,7 @@ router.delete('/by-payment-intent/:payment_intent_id', authenticate, async (req,
 
     // Отменяем PaymentIntent в Stripe (если еще не отменен)
     try {
-      const stripe = require('../config/stripe');
+      const stripe = require('../config/stripe.js');
       const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id);
       
       if (paymentIntent.status !== 'canceled' && 

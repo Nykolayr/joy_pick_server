@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
-const stripe = require('../config/stripe');
+const stripe = require('../config/stripe.js');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
@@ -259,6 +259,17 @@ router.post('/complete-request', authenticate, [
 
     const stripeAccountId = stripeAccounts[0].account_id;
 
+    // source_transaction принимает charge id (ch_xxx), не payment_intent id (pi_xxx)
+    let sourceTransactionId = null;
+    const firstPiId = allPaymentIntents[0];
+    if (firstPiId) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(firstPiId, { expand: ['latest_charge'] });
+        const lc = pi.latest_charge;
+        sourceTransactionId = (typeof lc === 'object' && lc?.id) ? lc.id : (typeof lc === 'string' ? lc : null);
+      } catch (e) {}
+    }
+
     // Создаем Transfer
     let transfer;
     try {
@@ -266,7 +277,7 @@ router.post('/complete-request', authenticate, [
         amount: transferAmountCents,
         currency: 'usd',
         destination: stripeAccountId,
-        source_transaction: allPaymentIntents[0] || undefined,
+        source_transaction: sourceTransactionId || undefined,
         metadata: {
           request_id: request_id,
           performer_user_id: performer_user_id

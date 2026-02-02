@@ -8,8 +8,8 @@ const cron = require('node-cron');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
-// Импорт API
-const apiApp = require('./api');
+// Импорт API (явно index.js — иначе на части хостингов "Cannot find module './api'" )
+const apiApp = require('./api/index');
 const { runAllCronTasks } = require('./scripts/cronTasks');
 
 const app = express();

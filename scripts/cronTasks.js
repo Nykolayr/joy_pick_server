@@ -20,7 +20,9 @@ const {
   sendReminderNotification,
   sendRequestExpiredNotification,
   sendRequestRejectedNotification,
-  sendEventTimeNotification
+  sendEventTimeNotification,
+  sendTransferAvailableToUserNotification,
+  sendTransferCheckFailedToSuperAdmins
 } = require('../api/services/pushNotification');
 const { generateId } = require('../api/utils/uuid');
 const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
@@ -1086,6 +1088,129 @@ async function cleanupUnpaidRequests() {
 }
 
 /**
+ * Проверка доступности выплат: через (2 дня + 2 ч) после Transfer проверяем баланс Stripe.
+ * Если деньги доступны — пуш получателю; если нет — повтор через 6 ч; при второй неудаче — пуш суперадминам.
+ */
+async function checkTransferPayoutAvailability() {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT c.id AS check_id, c.transfer_id, c.performer_user_id, c.amount_cents, c.attempt
+       FROM transfer_payout_checks c
+       WHERE c.status = 'pending' AND c.check_after <= NOW()`
+    );
+
+    if (rows.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    let processed = 0;
+    let errors = 0;
+
+    for (const row of rows) {
+      try {
+        const { check_id, transfer_id, performer_user_id, amount_cents, attempt } = row;
+        const amountDollars = (amount_cents / 100).toFixed(2);
+
+        const [transfers] = await pool.execute(
+          'SELECT transfer_id AS stripe_transfer_id, request_id FROM transfers WHERE id = ?',
+          [transfer_id]
+        );
+        const stripeTransferId = transfers[0]?.stripe_transfer_id || transfer_id;
+        const requestId = transfers[0]?.request_id || null;
+
+        const [accounts] = await pool.execute(
+          'SELECT account_id FROM stripe_accounts WHERE user_id = ?',
+          [performer_user_id]
+        );
+
+        let availableCents = 0;
+        if (accounts.length > 0) {
+          try {
+            const balance = await stripe.balance.retrieve({ stripeAccount: accounts[0].account_id });
+            const usd = (balance.available || []).find(b => b.currency === 'usd');
+            availableCents = usd ? usd.amount : 0;
+          } catch (stripeErr) {
+            // Ошибка Stripe — считаем, что деньги не доступны
+          }
+        }
+
+        if (availableCents >= amount_cents) {
+          await sendTransferAvailableToUserNotification({
+            userId: performer_user_id,
+            amountDollars
+          });
+          await pool.execute(
+            "UPDATE transfer_payout_checks SET status = 'money_available', updated_at = NOW() WHERE id = ?",
+            [check_id]
+          );
+          await logCronAction(
+            'checkTransferPayoutAvailability',
+            requestId,
+            null,
+            `Проверка выплаты ${transfer_id}: деньги доступны, пуш отправлен пользователю ${performer_user_id}`,
+            'completed',
+            { transfer_id, performer_user_id, amount_cents }
+          );
+          processed++;
+        } else {
+          if (attempt === 1) {
+            await pool.execute(
+              `UPDATE transfer_payout_checks SET check_after = DATE_ADD(NOW(), INTERVAL 6 HOUR), attempt = 2, updated_at = NOW() WHERE id = ?`,
+              [check_id]
+            );
+            await logCronAction(
+              'checkTransferPayoutAvailability',
+              requestId,
+              null,
+              `Проверка выплаты ${transfer_id}: деньги ещё не доступны, повтор через 6 ч`,
+              'completed',
+              { transfer_id, performer_user_id, amount_cents }
+            );
+            processed++;
+          } else {
+            const details = `Balance check failed: available=${availableCents} cents, required=${amount_cents} cents. Stripe transfer: ${stripeTransferId}.`;
+            await sendTransferCheckFailedToSuperAdmins({
+              transferId: stripeTransferId,
+              performerUserId: performer_user_id,
+              amountCents: amount_cents,
+              requestId,
+              details
+            });
+            await pool.execute(
+              "UPDATE transfer_payout_checks SET status = 'alert_sent', updated_at = NOW() WHERE id = ?",
+              [check_id]
+            );
+            await logCronAction(
+              'checkTransferPayoutAvailability',
+              requestId,
+              null,
+              `Проверка выплаты ${transfer_id}: деньги не дошли после 2 проверок, пуш суперадминам`,
+              'completed',
+              { transfer_id, performer_user_id, amount_cents }
+            );
+            processed++;
+          }
+        }
+      } catch (err) {
+        errors++;
+        await logCronAction(
+          'checkTransferPayoutAvailability',
+          null,
+          null,
+          `Ошибка проверки выплаты ${row.transfer_id}: ${err.message || 'Неизвестная ошибка'}`,
+          'error',
+          { error: err.message, transfer_id: row.transfer_id }
+        );
+      }
+    }
+
+    return { processed, errors, total: rows.length };
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Здесь можно добавлять новые периодические задачи
  */
 async function runAllCronTasks() {
@@ -1097,6 +1222,7 @@ async function runAllCronTasks() {
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
     results.checkEventTimes = await checkEventTimes();
     results.checkEventAfterStartDate = await checkEventAfterStartDate();
+    results.checkTransferPayoutAvailability = await checkTransferPayoutAvailability();
     results.notifyInactiveWasteRequests = await notifyInactiveWasteRequests();
     results.cleanupUnpaidRequests = await cleanupUnpaidRequests();
 
@@ -1201,6 +1327,7 @@ module.exports = {
   autoCompleteSpeedCleanup,
   checkWasteReminders,
   checkExpiredWasteJoins,
+  checkTransferPayoutAvailability,
   notifyInactiveWasteRequests,
   deleteInactiveRequests,
   checkEventTimes,
