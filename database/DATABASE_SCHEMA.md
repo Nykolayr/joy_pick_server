@@ -2,7 +2,7 @@
 
 **Важно:** Этот файл содержит актуальную структуру всех таблиц базы данных. При изменении структуры таблиц обновляйте соответствующие разделы.
 
-## Список всех таблиц (13 таблиц)
+## Список всех таблиц (16 таблиц)
 
 1. `users` - Пользователи (27 колонок) - [users_table_structure.md](users_table_structure.md)
 2. `requests` - Заявки (44 колонки) - [requests_table_structure.md](requests_table_structure.md)
@@ -10,13 +10,16 @@
 4. `messages` - Сообщения в чатах (10 колонок) - [messages_table_structure.md](messages_table_structure.md)
 5. `chat_participants` - Участники чатов (5 колонок) - [chat_participants_table_structure.md](chat_participants_table_structure.md)
 6. `donations` - Донаты (6 колонок) - [donations_table_structure.md](donations_table_structure.md)
-7. `partners` - Партнеры (10 колонок) - [partners_table_structure.md](partners_table_structure.md)
-8. `recycling_stations` - Станции переработки (11 колонок) - [recycling_stations_table_structure.md](recycling_stations_table_structure.md)
-9. `user_completed_requests` - Завершенные заявки (5 колонок) - TODO
-10. `waste_types` - Типы отходов (5 колонок) - TODO
-11. `email_verifications` - Верификация email (16 колонок) - TODO
-12. `push_notifications` - Push уведомления (8 колонок) - TODO
-13. `cron_actions` - Действия cron (8 колонок) - TODO
+7. `partners` - Партнеры (14 колонок) - [partners_table_structure.md](partners_table_structure.md)
+8. `partner_branches` - Филиалы партнёров (8 колонок) - [partner_branches_table_structure.md](partner_branches_table_structure.md)
+9. `partner_sellers` - Продавцы партнёров (9 колонок) - [partner_sellers_table_structure.md](partner_sellers_table_structure.md)
+10. `partner_coin_redemptions` - Списания коинов у волонтёров у партнёров (10 колонок) - [partner_coin_redemptions_table_structure.md](partner_coin_redemptions_table_structure.md)
+11. `recycling_stations` - Станции переработки (11 колонок) - [recycling_stations_table_structure.md](recycling_stations_table_structure.md)
+12. `user_completed_requests` - Завершенные заявки (5 колонок) - TODO
+13. `waste_types` - Типы отходов (5 колонок) - TODO
+14. `email_verifications` - Верификация email (16 колонок) - TODO
+15. `push_notifications` - Push уведомления (8 колонок) - TODO
+16. `cron_actions` - Действия cron (8 колонок) - TODO
 
 ## Удаленные таблицы (помечены на удаление)
 
@@ -33,7 +36,10 @@
 - ✅ `messages_table_structure.md` - структура таблицы messages
 - ✅ `chat_participants_table_structure.md` - структура таблицы chat_participants
 - ✅ `donations_table_structure.md` - структура таблицы donations
-- ✅ `partners_table_structure.md` - структура таблицы partners
+- ✅ `partners_table_structure.md` - структура таблицы partners (в т.ч. admin_email, currency, exchange_rate)
+- ✅ `partner_branches_table_structure.md` - структура таблицы partner_branches
+- ✅ `partner_sellers_table_structure.md` - структура таблицы partner_sellers
+- ✅ `partner_coin_redemptions_table_structure.md` - структура таблицы partner_coin_redemptions
 - ✅ `recycling_stations_table_structure.md` - структура таблицы recycling_stations
 - ⏳ Остальные таблицы - TODO
 
@@ -47,3 +53,4 @@
 
 2025-12-24 - Создана полная структура документации для основных таблиц
 2025-12-24 - Упрощена таблица partners, создана таблица recycling_stations, удалены неиспользуемые таблицы (members, partner_photos, partner_types)
+2026-01 - Партнёры и коины: в partners добавлены admin_email, admin_password_hash, currency, exchange_rate_cents_per_coin. Добавлены таблицы partner_branches, partner_sellers, partner_coin_redemptions. Миграции 010–013.

@@ -17,6 +17,8 @@ const storage = multer.diskStorage({
     
     if (file.fieldname.includes('photo') || file.fieldname.includes('Photo')) {
       subfolder = 'photos';
+    } else if (file.fieldname.includes('logo') || file.fieldname.includes('Logo')) {
+      subfolder = 'logos';
     } else if (file.fieldname.includes('avatar') || file.fieldname.includes('Avatar')) {
       subfolder = 'avatars';
     }
@@ -75,6 +77,14 @@ const uploadPartnerPhotos = upload.fields([
 ]);
 
 /**
+ * Middleware для загрузки партнёра: фото + логотип
+ */
+const uploadPartnerWithLogo = upload.fields([
+  { name: 'photos', maxCount: 10 },
+  { name: 'logo', maxCount: 1 }
+]);
+
+/**
  * Middleware для загрузки аватара пользователя
  */
 const uploadUserAvatar = upload.single('photo');
@@ -125,6 +135,7 @@ module.exports = {
   upload,
   uploadRequestPhotos,
   uploadPartnerPhotos,
+  uploadPartnerWithLogo,
   uploadUserAvatar,
   uploadSingle,
   uploadMultiple,

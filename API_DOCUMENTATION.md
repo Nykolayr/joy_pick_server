@@ -3268,14 +3268,19 @@ API для управления партнерами. Партнеры - это 
 |------|-----|--------------|----------|
 | `id` | string (UUID) | Нет (автогенерация) | Уникальный идентификатор партнера |
 | `name` | string | Да | Название партнера |
+| `logo_url` | string (URL) | Нет | URL логотипа партнёра |
 | `photo_urls` | array[string] | Нет | Массив URL фотографий партнера (JSON) |
-| `latitude` | float | Нет | Широта местоположения |
-| `longitude` | float | Нет | Долгота местоположения |
-| `address` | string | Нет | Адрес партнера |
 | `activity` | string | Нет | Деятельность партнера |
 | `website_url` | string (URL) | Нет | URL сайта партнера |
+| `admin_email` | string | Нет | Логин админа партнёра (email) для входа в кабинет |
+| `currency` | string | Да при создании | Валюта скидки за коины (USD, RUB и т.д.). Справочник: GET /api/references/currencies |
+| `exchange_rate_cents_per_coin` | int | Да при создании | Скидка в центах (или младших единицах валюты) за 1 коин (например 50 = 0.50 USD). Целое, ≥ 1 |
 | `created_at` | datetime | Нет (автогенерация) | Дата создания |
 | `updated_at` | datetime | Нет (автогенерация) | Дата обновления |
+
+**Примечание:** Адрес и координаты у партнёра отсутствуют — они задаются только у филиалов (таблица `partner_branches`, эндпоинты `/api/partner-admin/branches`).
+
+В ответах GET (список, по ID), POST (создание) и PUT (обновление) у каждого партнёра есть поле **`branches`** — массив филиалов. Элемент филиала: `id`, `partner_id`, `name`, `address`, `latitude`, `longitude`, `created_at`, `updated_at`.
 
 ### Получение списка партнеров
 
@@ -3286,8 +3291,7 @@ API для управления партнерами. Партнеры - это 
 **Query параметры:**
 - `page` (int, опционально) - номер страницы (по умолчанию 1)
 - `limit` (int, опционально) - количество на странице (по умолчанию 20, максимум 100)
-- `latitude` (float, опционально) - широта для поиска по радиусу
-- `longitude` (float, опционально) - долгота для поиска по радиусу
+- `latitude`, `longitude` (float, опционально) - при указании возвращаются партнёры, у которых есть хотя бы один филиал в заданном радиусе (координаты берутся из филиалов)
 - `radius` (int, опционально) - радиус поиска в метрах (по умолчанию 10000)
 
 **Ответ (200):**
@@ -3299,14 +3303,26 @@ API для управления партнерами. Партнеры - это 
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "ЭкоПартнер",
+        "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
         "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
-        "latitude": 56.4962847,
-        "longitude": 84.9802779,
-        "address": "г. Томск, ул. Ленина, д. 1",
         "activity": "Переработка пластика",
         "website_url": "https://ecopartner.ru",
+        "currency": "USD",
+        "exchange_rate_cents_per_coin": 50,
         "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
+        "updated_at": "2024-01-01T00:00:00.000Z",
+        "branches": [
+          {
+            "id": "uuid",
+            "partner_id": "550e8400-e29b-41d4-a716-446655440000",
+            "name": "Кафе Луна",
+            "address": "ул. Ленина, 1",
+            "latitude": 56.49,
+            "longitude": 84.98,
+            "created_at": "2024-01-01T00:00:00.000Z",
+            "updated_at": "2024-01-01T00:00:00.000Z"
+          }
+        ]
       }
     ],
     "pagination": {
@@ -3333,14 +3349,26 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
+      "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
       "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
-      "latitude": 56.4962847,
-      "longitude": 84.9802779,
-      "address": "г. Томск, ул. Ленина, д. 1",
       "activity": "Переработка пластика",
       "website_url": "https://ecopartner.ru",
+      "currency": "USD",
+      "exchange_rate_cents_per_coin": 50,
       "created_at": "2024-01-01T00:00:00.000Z",
-      "updated_at": "2024-01-01T00:00:00.000Z"
+      "updated_at": "2024-01-01T00:00:00.000Z",
+      "branches": [
+        {
+          "id": "uuid",
+          "partner_id": "550e8400-e29b-41d4-a716-446655440000",
+          "name": "Кафе Луна",
+          "address": "ул. Ленина, 1",
+          "latitude": 56.49,
+          "longitude": 84.98,
+          "created_at": "2024-01-01T00:00:00.000Z",
+          "updated_at": "2024-01-01T00:00:00.000Z"
+        }
+      ]
     }
   }
 }
@@ -3357,45 +3385,63 @@ API для управления партнерами. Партнеры - это 
 
 **Поддерживает два способа отправки:**
 
-1. **JSON с URL фотографий**
+1. **JSON с URL фотографий и лого**
 2. **multipart/form-data с файлами** (рекомендуется)
 
-**Способ 1: JSON с URL**
+**Поля при создании (обязательные):**
+- `name` (string) - название партнера
+- `admin_email` (string) - логин админа партнёра (email)
+- `admin_password` (string) - пароль (можно генерировать на фронте)
+- `currency` (string) - валюта скидки (код из справочника GET /api/references/currencies, например USD, RUB)
+- `exchange_rate_cents_per_coin` (int) - сколько центов (или младших единиц валюты) даёт 1 коин (целое ≥ 1, например 50)
+
+**Поля опционально:**
+- `logo_url` (string) или файл `logo` в multipart - логотип партнёра
+- `activity`, `website_url` - деятельность и URL сайта
+- `photo_urls` (array[string]) или файлы `photos` (максимум 10) - фотографии
+- `branches` (array) - филиалы при создании (адрес и координаты только у филиалов): `[{ "name": "Филиал 1", "address": "...", "latitude": 56.0, "longitude": 84.0 }]`
+
+**Способ 1: JSON**
 
 **Content-Type:** `application/json`
 
-**Тело запроса:**
+**Тело запроса (пример):**
 ```json
 {
   "name": "ЭкоПартнер",
-  "latitude": 56.4962847,
-  "longitude": 84.9802779,
-  "address": "г. Томск, ул. Ленина, д. 1",
-  "activity": "Переработка пластика",
+  "admin_email": "admin@ecopartner.ru",
+  "admin_password": "сгенерированный_пароль",
+  "currency": "RUB",
+  "exchange_rate_cents_per_coin": 50,
+  "logo_url": "https://example.com/logo.png",
   "website_url": "https://ecopartner.ru",
-  "photo_urls": ["https://example.com/photo1.jpg"]
+  "photo_urls": ["https://example.com/photo1.jpg"],
+  "branches": [
+    { "name": "Кафе Луна", "address": "ул. Ленина, 1", "latitude": 56.49, "longitude": 84.98 }
+  ]
 }
 ```
+
+Адрес и координаты задаются только у филиалов в `branches`; у партнёра полей `address`, `latitude`, `longitude` нет.
 
 **Способ 2: multipart/form-data с файлами**
 
 **Content-Type:** `multipart/form-data`
 
 **Поля формы:**
-- `name` (string, обязательное) - название партнера
-- `latitude` (float, опционально) - широта
-- `longitude` (float, опционально) - долгота
-- `address` (string, опционально) - адрес
-- `activity` (string, опционально) - деятельность
-- `website_url` (string, опционально) - URL сайта
-- `photos` (file[], опционально) - массив файлов для фото (максимум 10)
+- `name`, `admin_email`, `admin_password` (обязательно)
+- `currency` (string, обязательно), `exchange_rate_cents_per_coin` (number, обязательно)
+- `logo` (file, опционально) - один файл логотипа
+- `photos` (file[], опционально) - массив фото (максимум 10)
+- `website_url`, `activity` - опционально
+- `branches` - JSON-строка массива филиалов (адрес и координаты у каждого филиала): `[{ "name": "...", "address": "...", "latitude": ..., "longitude": ... }]`
 
 **Ограничения для файлов:**
 - Максимальный размер файла: 10MB
 - Разрешенные форматы: JPEG, PNG, GIF, WebP
-- Максимум 10 файлов
+- Максимум 10 фото, 1 лого
 
-**Ответ (201):**
+**Ответ (201):** В `data.partner` возвращается созданный партнёр со всеми полями, включая `currency`, `exchange_rate_cents_per_coin` и `branches` (массив филиалов).
 ```json
 {
   "success": true,
@@ -3404,21 +3450,24 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
+      "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
       "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
-      "latitude": 56.4962847,
-      "longitude": 84.9802779,
-      "address": "г. Томск, ул. Ленина, д. 1",
       "activity": "Переработка пластика",
       "website_url": "https://ecopartner.ru",
+      "currency": "RUB",
+      "exchange_rate_cents_per_coin": 50,
       "created_at": "2024-01-01T00:00:00.000Z",
-      "updated_at": "2024-01-01T00:00:00.000Z"
+      "updated_at": "2024-01-01T00:00:00.000Z",
+      "branches": [
+        { "id": "uuid", "partner_id": "...", "name": "Кафе Луна", "address": "ул. Ленина, 1", "latitude": 56.49, "longitude": 84.98, "created_at": "...", "updated_at": "..." }
+      ]
     }
   }
 }
 ```
 
 **Ошибки:**
-- `400` - Ошибка валидации
+- `400` - Ошибка валидации (в т.ч. если не переданы currency или exchange_rate_cents_per_coin)
 - `401` - Не авторизован
 - `403` - Нет прав администратора
 
@@ -3433,13 +3482,14 @@ API для управления партнерами. Партнеры - это 
 **Content-Type:** `multipart/form-data` или `application/json`
 
 **Поля (все опциональны, обновляются только переданные):**
-- `name` (string) - название партнера
-- `latitude` (float) - широта
-- `longitude` (float) - долгота
-- `address` (string) - адрес
-- `activity` (string) - деятельность
-- `website_url` (string) - URL сайта
-- `photo_urls` (array[string] или file[]) - фотографии
+- `name`, `activity`, `website_url`
+- `currency` (string) - валюта скидки (код из GET /api/references/currencies)
+- `exchange_rate_cents_per_coin` (int) - скидка в центах за 1 коин (≥ 1)
+- `logo_url` (string) или файл `logo` - логотип
+- `admin_email` (string) - логин админа партнёра
+- `admin_password` (string) - новый пароль (если передан и не пустой — хеш обновляется)
+- `photo_urls` (array[string]) или файлы `photos` - фотографии
+- `branches` (array) - при передаче полная замена списка филиалов (адрес и координаты только у филиалов): `[{ "name", "address?", "latitude?", "longitude?" }]`
 
 **Ответ (200):**
 ```json
@@ -3480,6 +3530,283 @@ API для управления партнерами. Партнеры - это 
 - `404` - Партнер не найден
 - `401` - Не авторизован
 - `403` - Нет прав администратора
+
+### QR для волонтёра (одноразовый токен для скидки у партнёра)
+
+**GET** `/partners/volunteer-qr`
+
+**Требует аутентификации пользователя (JWT волонтёра)**
+
+Волонтёр запрашивает одноразовый токен для отображения в QR. Токен действителен 2 минуты; после списания коинов у партнёра помечается использованным.
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "QR-токен создан",
+  "data": {
+    "token": "64-символьная_hex-строка",
+    "expiresAt": "2025-12-01T15:56:00.000Z"
+  }
+}
+```
+
+В QR кодируется значение `data.token`; приложение продавца сканирует QR и отправляет этот токен в `POST /api/partner-seller/scan-qr` и затем в `POST /api/partner-seller/redeem`.
+
+### История погашений коинов (волонтёр)
+
+**GET** `/partners/my-redemptions`
+
+**Требует аутентификации пользователя (JWT волонтёра)**
+
+**Query:** `page` (int, по умолчанию 1), `limit` (int, по умолчанию 20, макс. 100)
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "redemptions": [
+      {
+        "id": "uuid",
+        "partnerId": "uuid",
+        "partnerName": "Название партнёра",
+        "branchId": "uuid",
+        "branchName": "Название филиала",
+        "coinsSpent": 10,
+        "amountCents": 500,
+        "currency": "USD",
+        "createdAt": "2025-12-01T15:00:00.000Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 5, "totalPages": 1 }
+  }
+}
+```
+
+---
+
+## 🔐 Партнёры: вход и кабинеты (partner-auth, partner-admin, partner-seller)
+
+Отдельные эндпоинты для входа администратора партнёра и продавца, а также для кабинета админа партнёра и приложения продавца. Используются отдельные JWT с типом `partner_admin` или `partner_seller`.
+
+**Базовые пути:**
+- Вход: `/api/partner-auth`
+- Кабинет админа партнёра: `/api/partner-admin` (все запросы с JWT админа партнёра)
+- Приложение продавца: `/api/partner-seller` (все запросы с JWT продавца)
+
+Во всех запросах к `/api/partner-admin` и `/api/partner-seller` обязателен заголовок:
+```
+Authorization: Bearer <jwt_token>
+```
+
+---
+
+### Вход администратора партнёра
+
+**POST** `/partner-auth/admin/login`
+
+**Авторизация:** Не требуется (публичный эндпоинт входа)
+
+**Тело (JSON):**
+```json
+{
+  "email": "admin@partner.ru",
+  "password": "пароль"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Вход выполнен",
+  "data": {
+    "token": "jwt_токен",
+    "partner": {
+      "id": "uuid_партнёра",
+      "name": "Название партнёра",
+      "email": "admin@partner.ru"
+    }
+  }
+}
+```
+
+**Ошибки:** `400` — валидация; `401` — неверный email или пароль; `403` — пароль не задан.
+
+---
+
+### Вход продавца партнёра
+
+**POST** `/partner-auth/seller/login`
+
+**Тело (JSON):**
+```json
+{
+  "partner_id": "uuid_партнёра",
+  "login": "логин_продавца",
+  "password": "пароль"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Вход выполнен",
+  "data": {
+    "token": "jwt_токен",
+    "seller": {
+      "id": "uuid_продавца",
+      "partnerId": "uuid",
+      "partnerName": "Название партнёра",
+      "fullName": "ФИО",
+      "login": "логин",
+      "jobTitle": "Должность"
+    }
+  }
+}
+```
+
+---
+
+### Кабинет админа партнёра (partner-admin)
+
+Все эндпоинты ниже требуют JWT администратора партнёра (`Authorization: Bearer <token>`).
+
+#### Текущий партнёр и настройки
+
+**GET** `/partner-admin/me`
+
+**Ответ (200):** `data.partner`: `id`, `name`, `adminEmail`, `currency`, `exchangeRateCentsPerCoin`.
+
+---
+
+**PUT** `/partner-admin/settings`
+
+**Тело (JSON):** `currency` (string, опционально), `exchange_rate_cents_per_coin` (int, опционально).
+
+---
+
+**PUT** `/partner-admin/settings/password`
+
+**Тело (JSON):** `current_password`, `new_password` (не менее 6 символов).
+
+---
+
+#### Филиалы (добавление, изменение, удаление)
+
+**GET** `/partner-admin/branches` — список филиалов партнёра.
+
+**POST** `/partner-admin/branches` — добавить филиал.  
+**Тело:** `name` (обязательно), `address`, `latitude`, `longitude` (опционально).
+
+**GET** `/partner-admin/branches/:id` — филиал по ID.
+
+**PUT** `/partner-admin/branches/:id` — изменить филиал.  
+**Тело:** `name`, `address`, `latitude`, `longitude` (все опциональны).
+
+**DELETE** `/partner-admin/branches/:id` — удалить филиал.
+
+---
+
+#### Продавцы
+
+**GET** `/partner-admin/sellers` — список продавцов.
+
+**POST** `/partner-admin/sellers` — добавить продавца.  
+**Тело:** `full_name`, `login`, `password` (не менее 6 символов), `job_title` (опционально).
+
+**GET** `/partner-admin/sellers/:id` — продавец по ID.
+
+**PUT** `/partner-admin/sellers/:id` — изменить продавца (и/или пароль).  
+**Тело:** `full_name`, `login`, `password`, `job_title` (все опциональны; пароль — только при смене).
+
+**DELETE** `/partner-admin/sellers/:id` — удалить продавца.
+
+---
+
+#### История погашений коинов
+
+**GET** `/partner-admin/redemptions`
+
+**Query:** `page`, `limit` (по умолчанию 20).
+
+**Ответ (200):** `data.redemptions` — массив записей (дата, филиал, продавец, волонтёр, коины, сумма скидки, валюта), `data.pagination`.
+
+---
+
+### Приложение продавца (partner-seller)
+
+Все эндпоинты требуют JWT продавца партнёра.
+
+**GET** `/partner-seller/me` — профиль продавца и данные партнёра (валюта, курс).
+
+**GET** `/partner-seller/branches` — список филиалов для выбора при списании.
+
+---
+
+**POST** `/partner-seller/scan-qr`
+
+Проверка QR-токена волонтёра (токен из `GET /partners/volunteer-qr`).
+
+**Тело (JSON):**
+```json
+{
+  "qr_token": "64-символьная_строка_из_QR"
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "qrTokenId": "uuid",
+    "volunteer": {
+      "userId": "uuid",
+      "displayName": "Имя волонтёра",
+      "email": "email",
+      "jcoins": 100
+    }
+  }
+}
+```
+
+**Ошибки:** `400` — недействительный/использованный/истёкший токен.
+
+---
+
+**POST** `/partner-seller/redeem`
+
+Списание коинов у волонтёра. QR-токен после успешного списания помечается использованным.
+
+**Тело (JSON):**
+```json
+{
+  "qr_token": "токен_из_QR",
+  "branch_id": "uuid_филиала",
+  "coins_spent": 10
+}
+```
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Списано 10 коинов. Скидка: 5.00 USD",
+  "data": {
+    "redemption": {
+      "id": "uuid",
+      "coinsSpent": 10,
+      "amountCents": 500,
+      "currency": "USD"
+    }
+  }
+}
+```
+
+**Ошибки:** `400` — неверный/использованный QR, недостаточно коинов у волонтёра, неверный филиал; `404` — филиал не найден.
 
 ---
 
@@ -4084,6 +4411,69 @@ Future<void> deleteWasteType(String id) async {
 4. **Безопасность удаления:** При удалении типа отходов проверяется, не используется ли он в существующих заявках. Если используется - удаление запрещено.
 
 5. **Формат дат:** Все даты в формате ISO 8601: `2024-01-01T00:00:00.000Z`
+
+---
+
+## 📋 Справочники (References)
+
+Публичные справочники для выбора значений в формах (валюта, и т.д.). Авторизация не требуется.
+
+**Базовый путь:** `/api/references`
+
+### Справочник валют
+
+**GET** `/references/currencies`
+
+**Авторизация:** Не требуется
+
+Используется в админке при настройке партнёра: выбор валюты скидки за коины (`partners.currency`). В ответе — список валют с кодом и названием.
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "currencies": [
+      { "code": "USD", "name": "Доллар США" },
+      { "code": "CAD", "name": "Канадский доллар" },
+      { "code": "EUR", "name": "Евро" },
+      { "code": "GBP", "name": "Фунт стерлингов" },
+      { "code": "CHF", "name": "Швейцарский франк" },
+      { "code": "AUD", "name": "Австралийский доллар" },
+      { "code": "NZD", "name": "Новозеландский доллар" },
+      { "code": "JPY", "name": "Японская иена" },
+      { "code": "CNY", "name": "Китайский юань" },
+      { "code": "HKD", "name": "Гонконгский доллар" },
+      { "code": "SGD", "name": "Сингапурский доллар" },
+      { "code": "KRW", "name": "Южнокорейская вона" },
+      { "code": "INR", "name": "Индийская рупия" },
+      { "code": "RUB", "name": "Российский рубль" },
+      { "code": "UAH", "name": "Гривна" },
+      { "code": "BYN", "name": "Белорусский рубль" },
+      { "code": "KZT", "name": "Тенге" },
+      { "code": "TRY", "name": "Турецкая лира" },
+      { "code": "BRL", "name": "Бразильский реал" },
+      { "code": "MXN", "name": "Мексиканское песо" },
+      { "code": "ZAR", "name": "Южноафриканский ранд" },
+      { "code": "PLN", "name": "Польский злотый" },
+      { "code": "CZK", "name": "Чешская крона" },
+      { "code": "SEK", "name": "Шведская крона" },
+      { "code": "NOK", "name": "Норвежская крона" },
+      { "code": "DKK", "name": "Датская крона" },
+      { "code": "THB", "name": "Тайский бат" },
+      { "code": "IDR", "name": "Индонезийская рупия" },
+      { "code": "MYR", "name": "Малайзийский ринггит" },
+      { "code": "PHP", "name": "Филиппинское песо" },
+      { "code": "AED", "name": "Дирхам ОАЭ" },
+      { "code": "SAR", "name": "Саудовский риял" },
+      { "code": "ILS", "name": "Новый израильский шекель" },
+      { "code": "EGP", "name": "Египетский фунт" }
+    ]
+  }
+}
+```
+
+При сохранении партнёра в API передаётся поле `currency` со значением `code` (например, `"USD"`, `"RUB"`).
 
 ---
 

@@ -15,10 +15,14 @@ const requestRoutes = require('./routes/requests');
 const donationRoutes = require('./routes/donations');
 const participantRoutes = require('./routes/participants');
 const partnerRoutes = require('./routes/partners');
+const partnerAuthRoutes = require('./routes/partnerAuth');
+const partnerAdminRoutes = require('./routes/partnerAdmin');
+const partnerSellerRoutes = require('./routes/partnerSeller');
 const recyclingStationsRoutes = require('./routes/recyclingStations');
 const migrationRoutes = require('./routes/migration');
 const notificationRoutes = require('./routes/notifications');
 const wasteTypesRoutes = require('./routes/wasteTypes');
+const referencesRoutes = require('./routes/references');
 const cronRoutes = require('./routes/cron');
 const chatRoutes = require('./routes/chats');
 const stripeRoutes = require('./routes/stripe');
@@ -50,10 +54,14 @@ app.use('/requests', requestRoutes);
 app.use('/donations', donationRoutes);
 app.use('/participants', participantRoutes);
 app.use('/partners', partnerRoutes);
+app.use('/partner-auth', partnerAuthRoutes);
+app.use('/partner-admin', partnerAdminRoutes);
+app.use('/partner-seller', partnerSellerRoutes);
 app.use('/recycling-stations', recyclingStationsRoutes);
 app.use('/migration', migrationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/waste-types', wasteTypesRoutes);
+app.use('/references', referencesRoutes);
 app.use('/cron', cronRoutes);
 app.use('/chats', chatRoutes);
 app.use('/stripe', stripeRoutes);
@@ -121,10 +129,14 @@ app.get('/', (req, res) => {
       donations: '/api/donations',
       participants: '/api/participants',
       partners: '/api/partners',
+      partnerAuth: '/api/partner-auth',
+      partnerAdmin: '/api/partner-admin',
+      partnerSeller: '/api/partner-seller',
       recyclingStations: '/api/recycling-stations',
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
+      references: '/api/references',
       chats: '/api/chats',
       stripe: '/api/stripe',
       stripeAdmin: '/api/stripe-admin',
@@ -149,10 +161,14 @@ app.get('/info', (req, res) => {
       donations: '/api/donations',
       participants: '/api/participants',
       partners: '/api/partners',
+      partnerAuth: '/api/partner-auth',
+      partnerAdmin: '/api/partner-admin',
+      partnerSeller: '/api/partner-seller',
       recyclingStations: '/api/recycling-stations',
       migration: '/api/migration',
       notifications: '/api/notifications',
       wasteTypes: '/api/waste-types',
+      references: '/api/references',
       chats: '/api/chats',
       cron: '/api/cron',
       stripe: '/api/stripe',

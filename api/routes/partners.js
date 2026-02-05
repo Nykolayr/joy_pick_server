@@ -4,10 +4,92 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
-const { upload } = require('../middleware/upload');
+const { uploadPartnerWithLogo } = require('../middleware/upload');
+const { hashPassword } = require('../utils/password');
 const path = require('path');
+const crypto = require('crypto');
+
+const UPLOADS_BASE = process.env.BASE_URL || 'https://danilagames.ru';
 
 const router = express.Router();
+
+/**
+ * GET /api/partners/volunteer-qr
+ * Для волонтёра (JWT): создаёт одноразовый QR-токен для предъявления в филиале партнёра.
+ * Срок жизни токена — 2 минуты. После списания токен помечается использованным.
+ */
+router.get('/volunteer-qr', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 2 * 60 * 1000); // 2 минуты
+    const id = generateId();
+
+    await pool.execute(
+      'INSERT INTO volunteer_qr_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
+      [id, userId, token, expiresAt]
+    );
+
+    success(res, {
+      token,
+      expiresAt: expiresAt.toISOString()
+    }, 'QR-токен создан');
+  } catch (err) {
+    error(res, 'Ошибка при создании QR-токена', 500, err);
+  }
+});
+
+/**
+ * GET /api/partners/my-redemptions
+ * Для волонтёра (JWT): история погашений коинов у партнёров.
+ */
+router.get('/my-redemptions', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 20 } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    const [rows] = await pool.execute(
+      `SELECT r.id, r.partner_id, r.branch_id, r.coins_spent, r.amount_cents, r.currency, r.created_at,
+              p.name AS partner_name,
+              b.name AS branch_name
+       FROM partner_coin_redemptions r
+       LEFT JOIN partners p ON p.id = r.partner_id
+       LEFT JOIN partner_branches b ON b.id = r.branch_id
+       WHERE r.user_id = ?
+       ORDER BY r.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [userId, limitNum, offset]
+    );
+
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+      [userId]
+    );
+    const total = countResult[0].total;
+
+    const redemptions = rows.map((r) => ({
+      id: r.id,
+      partnerId: r.partner_id,
+      partnerName: r.partner_name,
+      branchId: r.branch_id,
+      branchName: r.branch_name,
+      coinsSpent: r.coins_spent,
+      amountCents: r.amount_cents,
+      currency: r.currency,
+      createdAt: r.created_at
+    }));
+
+    success(res, {
+      redemptions,
+      pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
+    });
+  } catch (err) {
+    error(res, 'Ошибка при получении истории погашений', 500, err);
+  }
+});
 
 /**
  * GET /api/partners
@@ -16,81 +98,89 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { page = 1, limit = 20, latitude, longitude, radius = 10000 } = req.query;
-    
-    // Валидация и преобразование параметров пагинации
+
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    let query = 'SELECT * FROM partners';
-    const conditions = [];
+    let query;
+    let countQuery;
     const params = [];
+    const lat = latitude != null && longitude != null ? parseFloat(latitude) : null;
+    const lng = longitude != null && latitude != null ? parseFloat(longitude) : null;
+    const rad = parseInt(radius) || 10000;
 
-    // Фильтр по радиусу
-    if (latitude && longitude) {
-      conditions.push(`
-        (6371000 * acos(
-          cos(radians(?)) * cos(radians(latitude)) *
-          cos(radians(longitude) - radians(?)) +
-          sin(radians(?)) * sin(radians(latitude))
+    // Адрес и координаты только у филиалов: фильтр по радиусу ищет партнёров, у которых есть филиал в радиусе
+    if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+      query = `
+        SELECT p.* FROM partners p
+        WHERE p.id IN (
+          SELECT b.partner_id FROM partner_branches b
+          WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL
+          AND (6371000 * acos(
+            LEAST(1, GREATEST(-1,
+              cos(radians(?)) * cos(radians(b.latitude)) * cos(radians(b.longitude) - radians(?)) +
+              sin(radians(?)) * sin(radians(b.latitude))
+            )))
+          )) <= ?
+        )
+        ORDER BY p.created_at DESC
+        LIMIT ${limitNum} OFFSET ${offset}
+      `;
+      params.push(lat, lng, lat, rad);
+      countQuery = `
+        SELECT COUNT(DISTINCT p.id) as total FROM partners p
+        INNER JOIN partner_branches b ON b.partner_id = p.id
+        WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL
+        AND (6371000 * acos(
+          LEAST(1, GREATEST(-1,
+            cos(radians(?)) * cos(radians(b.latitude)) * cos(radians(b.longitude) - radians(?)) +
+            sin(radians(?)) * sin(radians(b.latitude))
+          )))
         )) <= ?
-      `);
-      params.push(parseFloat(latitude), parseFloat(longitude), parseFloat(latitude), parseFloat(radius));
+      `;
+    } else {
+      query = `SELECT * FROM partners ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
+      countQuery = 'SELECT COUNT(*) as total FROM partners';
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
+    const [partners] = params.length ? await pool.execute(query, params) : await pool.execute(query);
+    const [countResult] = params.length
+      ? await pool.execute(countQuery, params.slice(0, 4))
+      : await pool.execute(countQuery);
+    const total = countResult[0].total;
 
-    query += ` ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
-
-    const [partners] = await pool.execute(query, params);
-
-    // Обработка JSON полей
     const processedPartners = partners.map(partner => {
       const result = { ...partner };
-      
-      // Парсим photo_urls
       if (result.photo_urls) {
         try {
-          result.photo_urls = typeof result.photo_urls === 'string' 
-            ? JSON.parse(result.photo_urls) 
-            : result.photo_urls;
+          result.photo_urls = typeof result.photo_urls === 'string' ? JSON.parse(result.photo_urls) : result.photo_urls;
         } catch (e) {
           result.photo_urls = [];
         }
       } else {
         result.photo_urls = [];
       }
-      
+      result.branches = [];
       return result;
     });
 
-    // Получение общего количества
-    let countQuery = 'SELECT COUNT(*) as total FROM partners';
-    const countParams = [];
-    const countConditions = [];
-    
-    if (conditions.length > 0) {
-      let paramIndex = 0;
-      for (let i = 0; i < conditions.length; i++) {
-        const condition = conditions[i];
-        if (!condition.includes('6371000')) {
-          countConditions.push(condition);
-          countParams.push(params[paramIndex]);
-          paramIndex++;
-        } else {
-          paramIndex += 4;
-        }
+    if (processedPartners.length > 0) {
+      const partnerIds = processedPartners.map(p => p.id);
+      const placeholders = partnerIds.map(() => '?').join(',');
+      const [branchRows] = await pool.execute(
+        `SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id IN (${placeholders}) ORDER BY name`,
+        partnerIds
+      );
+      const branchesByPartner = {};
+      for (const row of branchRows) {
+        if (!branchesByPartner[row.partner_id]) branchesByPartner[row.partner_id] = [];
+        branchesByPartner[row.partner_id].push(row);
       }
-      
-      if (countConditions.length > 0) {
-        countQuery += ' WHERE ' + countConditions.join(' AND ');
+      for (const p of processedPartners) {
+        p.branches = branchesByPartner[p.id] || [];
       }
     }
-    
-    const [countResult] = await pool.execute(countQuery, countParams);
-    const total = countResult[0].total;
 
     success(res, {
       partners: processedPartners,
@@ -124,19 +214,22 @@ router.get('/:id', async (req, res) => {
     }
 
     const partner = partners[0];
-    
-    // Парсим photo_urls
+
     if (partner.photo_urls) {
       try {
-        partner.photo_urls = typeof partner.photo_urls === 'string' 
-          ? JSON.parse(partner.photo_urls) 
-          : partner.photo_urls;
+        partner.photo_urls = typeof partner.photo_urls === 'string' ? JSON.parse(partner.photo_urls) : partner.photo_urls;
       } catch (e) {
         partner.photo_urls = [];
       }
     } else {
       partner.photo_urls = [];
     }
+
+    const [branchRows] = await pool.execute(
+      'SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id = ? ORDER BY name',
+      [id]
+    );
+    partner.branches = branchRows;
 
     success(res, { partner });
   } catch (err) {
@@ -146,93 +239,149 @@ router.get('/:id', async (req, res) => {
 
 /**
  * POST /api/partners
- * Создание партнера (только для админов)
- * Поддерживает multipart/form-data с файлами
+ * Создание партнера (только для админов).
+ * Поля: название, лого (файл или logo_url), логин (admin_email), пароль (генерируется на фронте),
+ * филиалы (массив { name, address?, latitude?, longitude? }), массив фото (photos/photo_urls), url сайта.
+ * Адрес и координаты только у филиалов, у партнёра этих полей нет.
  */
-router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
+router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
   body('name').notEmpty().withMessage('Название обязательно'),
-  body('latitude').optional().isFloat(),
-  body('longitude').optional().isFloat(),
-  body('address').optional().isString(),
+  body('admin_email').isEmail().withMessage('Логин (email) обязателен и должен быть email'),
+  body('admin_password').notEmpty().withMessage('Пароль обязателен (например сгенерированный)'),
   body('activity').optional().isString(),
-  body('website_url').optional().isURL()
+  body('website_url').optional().isURL(),
+  body('logo_url').optional().isString(),
+  body('currency').notEmpty().withMessage('Валюта обязательна (например USD, RUB)'),
+  body('exchange_rate_cents_per_coin').isInt({ min: 1 }).withMessage('Курс обязателен: сколько центов (или младших единиц валюты) даёт 1 коин'),
+  body('branches')
+    .optional()
+    .customSanitizer((val) => {
+      if (val == null) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') {
+        try {
+          const p = JSON.parse(val);
+          return Array.isArray(p) ? p : [];
+        } catch (e) {
+          return [];
+        }
+      }
+      return [];
+    }),
+  body('branches.*.name').optional().notEmpty(),
+  body('branches.*.address').optional().isString(),
+  body('branches.*.latitude').optional().isFloat(),
+  body('branches.*.longitude').optional().isFloat()
 ], async (req, res) => {
   try {
+    if (req.body && typeof req.body.photo_urls === 'string') {
+      try {
+        req.body.photo_urls = JSON.parse(req.body.photo_urls);
+      } catch (e) {
+        req.body.photo_urls = [];
+      }
+    }
+
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
       return error(res, 'Ошибка валидации', 400, validationErrors.array());
     }
 
-    // Обработка загруженных файлов
-    const uploadedPhotos = [];
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const fileUrl = `https://danilagames.ru/uploads/photos/${path.basename(file.path)}`;
-        uploadedPhotos.push(fileUrl);
-      }
-    }
-
-    // Парсим JSON данные (если отправлены как JSON)
     let bodyData = req.body;
     if (typeof req.body === 'string') {
       try {
         bodyData = JSON.parse(req.body);
-      } catch (e) {
-        // Если не JSON, используем как есть
+      } catch (e) {}
+    }
+
+    const uploadedPhotos = [];
+    if (req.files && req.files.photos && req.files.photos.length > 0) {
+      for (const file of req.files.photos) {
+        uploadedPhotos.push(`${UPLOADS_BASE}/uploads/photos/${path.basename(file.path)}`);
       }
+    }
+
+    let logoUrl = null;
+    if (req.files && req.files.logo && req.files.logo[0]) {
+      logoUrl = `${UPLOADS_BASE}/uploads/logos/${path.basename(req.files.logo[0].path)}`;
+    } else if (bodyData.logo_url) {
+      logoUrl = bodyData.logo_url;
     }
 
     const {
       name,
-      latitude,
-      longitude,
-      address,
+      admin_email,
+      admin_password,
       activity,
       website_url,
-      photo_urls = []
+      currency,
+      exchange_rate_cents_per_coin,
+      photo_urls = [],
+      branches = []
     } = bodyData;
 
-    // Объединяем загруженные файлы с URL из JSON (приоритет у загруженных файлов)
+    const adminEmailNorm = (admin_email || '').trim().toLowerCase();
+    const [existing] = await pool.execute('SELECT id FROM partners WHERE admin_email = ?', [adminEmailNorm]);
+    if (existing.length > 0) {
+      return error(res, 'Партнёр с таким логином (email) уже существует', 409);
+    }
+
     const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photo_urls) ? photo_urls : []);
-
     const partnerId = generateId();
+    const adminPasswordHash = await hashPassword(admin_password);
+    const currencyCode = (currency || '').trim().toUpperCase().slice(0, 10);
+    const rate = Math.max(1, parseInt(exchange_rate_cents_per_coin, 10) || 50);
 
-    // Создание партнера
     await pool.execute(
-      `INSERT INTO partners (id, name, photo_urls, latitude, longitude, address, activity, website_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      `INSERT INTO partners (id, name, logo_url, photo_urls, activity, website_url,
+        admin_email, admin_password_hash, currency, exchange_rate_cents_per_coin, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         partnerId,
         name,
+        logoUrl,
         finalPhotos.length > 0 ? JSON.stringify(finalPhotos) : null,
-        latitude || null,
-        longitude || null,
-        address || null,
         activity || null,
-        website_url || null
+        website_url || null,
+        adminEmailNorm,
+        adminPasswordHash,
+        currencyCode,
+        rate
       ]
     );
 
-    // Получение созданного партнера
-    const [partners] = await pool.execute(
-      'SELECT * FROM partners WHERE id = ?',
-      [partnerId]
-    );
+    const validBranches = Array.isArray(branches) ? branches.filter(b => b && b.name) : [];
+    for (const b of validBranches) {
+      const branchId = generateId();
+      await pool.execute(
+        'INSERT INTO partner_branches (id, partner_id, name, address, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          branchId,
+          partnerId,
+          b.name,
+          b.address || null,
+          b.latitude ?? null,
+          b.longitude ?? null
+        ]
+      );
+    }
 
+    const [partners] = await pool.execute('SELECT * FROM partners WHERE id = ?', [partnerId]);
     const partner = partners[0];
-    
-    // Парсим photo_urls
     if (partner.photo_urls) {
       try {
-        partner.photo_urls = typeof partner.photo_urls === 'string' 
-          ? JSON.parse(partner.photo_urls) 
-          : partner.photo_urls;
+        partner.photo_urls = typeof partner.photo_urls === 'string' ? JSON.parse(partner.photo_urls) : partner.photo_urls;
       } catch (e) {
         partner.photo_urls = [];
       }
     } else {
       partner.photo_urls = [];
     }
+    const [branchRows] = await pool.execute(
+      'SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id = ? ORDER BY name',
+      [partnerId]
+    );
+    partner.branches = branchRows;
 
     success(res, { partner }, 'Партнер создан', 201);
   } catch (err) {
@@ -242,81 +391,93 @@ router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
 
 /**
  * PUT /api/partners/:id
- * Обновление партнера (только для админов)
- * Поддерживает multipart/form-data с файлами
+ * Обновление партнера (только для админов).
+ * Можно обновить: название, лого, логин (admin_email), пароль (admin_password), филиалы (branches — полная замена),
+ * фото (photos/photo_urls), url сайта и остальные поля.
  */
-router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async (req, res) => {
+router.put('/:id', authenticate, requireAdmin, uploadPartnerWithLogo, async (req, res) => {
   try {
+    if (req.body && typeof req.body.branches === 'string') {
+      try {
+        req.body.branches = JSON.parse(req.body.branches);
+      } catch (e) {
+        req.body.branches = [];
+      }
+    }
+    if (req.body && typeof req.body.photo_urls === 'string') {
+      try {
+        req.body.photo_urls = JSON.parse(req.body.photo_urls);
+      } catch (e) {
+        req.body.photo_urls = [];
+      }
+    }
+
     const { id } = req.params;
 
-    // Проверка существования
     const [existing] = await pool.execute('SELECT * FROM partners WHERE id = ?', [id]);
     if (existing.length === 0) {
       return error(res, 'Партнер не найден', 404);
     }
 
-    // Обработка загруженных файлов
     const uploadedPhotos = [];
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const fileUrl = `https://danilagames.ru/uploads/photos/${path.basename(file.path)}`;
-        uploadedPhotos.push(fileUrl);
+    if (req.files && req.files.photos && req.files.photos.length > 0) {
+      for (const file of req.files.photos) {
+        uploadedPhotos.push(`${UPLOADS_BASE}/uploads/photos/${path.basename(file.path)}`);
       }
     }
 
-    // Парсим JSON данные
     let bodyData = req.body;
     if (typeof req.body === 'string') {
       try {
         bodyData = JSON.parse(req.body);
-      } catch (e) {
-        // Если не JSON, используем как есть
-      }
+      } catch (e) {}
+    }
+
+    let logoUrl = undefined;
+    if (req.files && req.files.logo && req.files.logo[0]) {
+      logoUrl = `${UPLOADS_BASE}/uploads/logos/${path.basename(req.files.logo[0].path)}`;
+    } else if (bodyData.logo_url !== undefined) {
+      logoUrl = bodyData.logo_url || null;
     }
 
     const {
       name,
-      latitude,
-      longitude,
-      address,
+      admin_email,
+      admin_password,
       activity,
       website_url,
-      photo_urls
+      currency,
+      exchange_rate_cents_per_coin,
+      photo_urls,
+      branches
     } = bodyData;
+
+    if (admin_email !== undefined) {
+      const adminEmailNorm = (admin_email || '').trim().toLowerCase();
+      const [dup] = await pool.execute('SELECT id FROM partners WHERE admin_email = ? AND id != ?', [adminEmailNorm, id]);
+      if (dup.length > 0) {
+        return error(res, 'Партнёр с таким логином (email) уже существует', 409);
+      }
+    }
 
     const updates = [];
     const params = [];
 
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
+    if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+    if (logoUrl !== undefined) { updates.push('logo_url = ?'); params.push(logoUrl); }
+    if (activity !== undefined) { updates.push('activity = ?'); params.push(activity); }
+    if (website_url !== undefined) { updates.push('website_url = ?'); params.push(website_url); }
+    if (currency !== undefined) { updates.push('currency = ?'); params.push((currency || '').trim().toUpperCase().slice(0, 10)); }
+    if (exchange_rate_cents_per_coin !== undefined) { updates.push('exchange_rate_cents_per_coin = ?'); params.push(Math.max(1, parseInt(exchange_rate_cents_per_coin, 10) || 50)); }
+    if (admin_email !== undefined) { updates.push('admin_email = ?'); params.push((admin_email || '').trim().toLowerCase()); }
+    // Пароль обновляем только если передан непустой строковый пароль; null, undefined или пустая строка — оставляем старый
+    if (typeof admin_password === 'string' && admin_password.trim() !== '') {
+      const adminPasswordHash = await hashPassword(admin_password);
+      updates.push('admin_password_hash = ?');
+      params.push(adminPasswordHash);
     }
-    if (latitude !== undefined) {
-      updates.push('latitude = ?');
-      params.push(latitude);
-    }
-    if (longitude !== undefined) {
-      updates.push('longitude = ?');
-      params.push(longitude);
-    }
-    if (address !== undefined) {
-      updates.push('address = ?');
-      params.push(address);
-    }
-    if (activity !== undefined) {
-      updates.push('activity = ?');
-      params.push(activity);
-    }
-    if (website_url !== undefined) {
-      updates.push('website_url = ?');
-      params.push(website_url);
-    }
-
-    // Обновление фотографий
     if (uploadedPhotos.length > 0 || photo_urls !== undefined) {
-      const finalPhotos = uploadedPhotos.length > 0 
-        ? uploadedPhotos 
-        : (Array.isArray(photo_urls) ? photo_urls : []);
+      const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photo_urls) ? photo_urls : []);
       updates.push('photo_urls = ?');
       params.push(finalPhotos.length > 0 ? JSON.stringify(finalPhotos) : null);
     }
@@ -327,26 +488,34 @@ router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async
       await pool.execute(`UPDATE partners SET ${updates.join(', ')} WHERE id = ?`, params);
     }
 
-    // Получение обновленного партнера
-    const [partners] = await pool.execute(
-      'SELECT * FROM partners WHERE id = ?',
-      [id]
-    );
+    if (branches !== undefined && Array.isArray(branches)) {
+      await pool.execute('DELETE FROM partner_branches WHERE partner_id = ?', [id]);
+      const validBranches = branches.filter(b => b && b.name);
+      for (const b of validBranches) {
+        const branchId = generateId();
+        await pool.execute(
+          'INSERT INTO partner_branches (id, partner_id, name, address, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?)',
+          [branchId, id, b.name, b.address || null, b.latitude ?? null, b.longitude ?? null]
+        );
+      }
+    }
 
+    const [partners] = await pool.execute('SELECT * FROM partners WHERE id = ?', [id]);
     const partner = partners[0];
-    
-    // Парсим photo_urls
     if (partner.photo_urls) {
       try {
-        partner.photo_urls = typeof partner.photo_urls === 'string' 
-          ? JSON.parse(partner.photo_urls) 
-          : partner.photo_urls;
+        partner.photo_urls = typeof partner.photo_urls === 'string' ? JSON.parse(partner.photo_urls) : partner.photo_urls;
       } catch (e) {
         partner.photo_urls = [];
       }
     } else {
       partner.photo_urls = [];
     }
+    const [branchRows] = await pool.execute(
+      'SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id = ? ORDER BY name',
+      [id]
+    );
+    partner.branches = branchRows;
 
     success(res, { partner }, 'Партнер обновлен');
   } catch (err) {
