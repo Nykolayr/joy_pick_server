@@ -14,27 +14,34 @@ router.use(authenticatePartnerAdmin);
 
 /**
  * GET /api/partner-admin/me
- * Текущий партнёр и настройки для админки.
+ * Текущий партнёр — те же данные, что и GET /api/partners/:id (включая branches, logo_url, photo_urls и т.д.), без admin_password_hash.
  */
 router.get('/me', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      'SELECT id, name, admin_email, currency, exchange_rate_cents_per_coin, created_at FROM partners WHERE id = ?',
+      'SELECT id, name, logo_url, photo_urls, activity, website_url, admin_email, currency, exchange_rate_cents_per_coin, created_at, updated_at FROM partners WHERE id = ?',
       [req.partnerId]
     );
     if (rows.length === 0) {
       return error(res, 'Партнёр не найден', 404);
     }
     const partner = rows[0];
-    success(res, {
-      partner: {
-        id: partner.id,
-        name: partner.name,
-        adminEmail: partner.admin_email,
-        currency: partner.currency,
-        exchangeRateCentsPerCoin: partner.exchange_rate_cents_per_coin
+    if (partner.photo_urls) {
+      try {
+        partner.photo_urls = typeof partner.photo_urls === 'string' ? JSON.parse(partner.photo_urls) : partner.photo_urls;
+      } catch (e) {
+        partner.photo_urls = [];
       }
-    });
+    } else {
+      partner.photo_urls = [];
+    }
+    const [branchRows] = await pool.execute(
+      'SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id = ? ORDER BY name',
+      [req.partnerId]
+    );
+    partner.branches = branchRows;
+
+    success(res, { partner });
   } catch (err) {
     error(res, 'Ошибка при получении данных партнёра', 500, err);
   }
