@@ -19,8 +19,8 @@ const router = express.Router();
  * Пользователь будет создан только после успешной верификации кода через /api/auth/verify-email
  */
 router.post('/register', [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('password').isLength({ min: 6 }).withMessage('Пароль должен быть не менее 6 символов'),
+  body('email').isEmail().withMessage('Invalid email'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('display_name').optional().isString(),
   body('first_name').optional().isString(),
   body('second_name').optional().isString(),
@@ -32,7 +32,7 @@ router.post('/register', [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const {
@@ -55,7 +55,7 @@ router.post('/register', [
     );
 
     if (existingUsers.length > 0) {
-      return error(res, 'Пользователь с таким email уже существует', 409);
+      return error(res, 'User with this email already exists', 409);
     }
 
     // Хеширование пароля (сохраним для создания пользователя после верификации)
@@ -76,8 +76,8 @@ router.post('/register', [
       );
 
       if (tables.length === 0) {
-        return error(res, 'Таблица email_verifications не существует', 500, {
-          details: 'Выполните миграцию: database/migrations/add_email_verification.sql и update_email_verification_for_registration.sql'
+        return error(res, 'Table email_verifications does not exist', 500, {
+          details: 'Run migration: database/migrations/add_email_verification.sql and update_email_verification_for_registration.sql'
         });
       }
 
@@ -90,8 +90,8 @@ router.post('/register', [
       );
 
       if (columns.length === 0) {
-        return error(res, 'Таблица email_verifications не обновлена', 500, {
-          details: 'Выполните миграцию: database/migrations/update_email_verification_for_registration.sql'
+        return error(res, 'Table email_verifications is not updated', 500, {
+          details: 'Run migration: database/migrations/update_email_verification_for_registration.sql'
         });
       }
 
@@ -130,8 +130,8 @@ router.post('/register', [
         // Если email не отправился, удаляем запись верификации
         await pool.execute('DELETE FROM email_verifications WHERE id = ?', [verificationId]);
         
-        const errorMessage = emailResult?.error || emailResult?.message || 'Неизвестная ошибка отправки email';
-        return error(res, 'Не удалось отправить код верификации на email', 500, {
+        const errorMessage = emailResult?.error || emailResult?.message || 'Unknown email sending error';
+        return error(res, 'Failed to send verification code to email', 500, {
           emailError: {
             message: errorMessage,
             code: emailResult?.code,
@@ -144,13 +144,13 @@ router.post('/register', [
 
       // Успешно - код отправлен
       success(res, {
-        message: 'Код верификации отправлен на email',
+        message: 'Verification code sent to email',
         email,
         verificationExpiresAt: expiresAt.toISOString()
-      }, 'Код верификации отправлен на email', 200);
+      }, 'Verification code sent to email', 200);
 
     } catch (verificationError) {
-      return error(res, 'Ошибка при создании кода верификации', 500, {
+      return error(res, 'Error creating verification code', 500, {
         message: verificationError.message,
         code: verificationError.code,
         sqlMessage: verificationError.sqlMessage
@@ -170,11 +170,11 @@ router.post('/register', [
 
     // Если это ошибка базы данных
     if (err.code && err.code.startsWith('ER_')) {
-      return error(res, `Ошибка базы данных: ${err.sqlMessage || err.message}`, 500, errorDetails);
+      return error(res, `Database error: ${err.sqlMessage || err.message}`, 500, errorDetails);
     }
 
     // Общая ошибка
-    return error(res, `Ошибка при регистрации пользователя: ${err.message}`, 500, errorDetails);
+    return error(res, `User registration error: ${err.message}`, 500, errorDetails);
   }
 });
 
@@ -183,13 +183,13 @@ router.post('/register', [
  * Вход пользователя
  */
 router.post('/login', [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('password').notEmpty().withMessage('Пароль обязателен')
+  body('email').isEmail().withMessage('Invalid email'),
+  body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { email, password } = req.body;
@@ -201,9 +201,9 @@ router.post('/login', [
     );
 
     if (users.length === 0) {
-      return error(res, 'Пользователь с таким email не найден', 401, {
+      return error(res, 'User with this email not found', 401, {
         errorCode: 'USER_NOT_FOUND',
-        suggestion: 'Проверьте правильность email или зарегистрируйтесь'
+        suggestion: 'Check your email or register'
       });
     }
 
@@ -217,11 +217,11 @@ router.post('/login', [
                           authType === 'github' ? 'GitHub' : 
                           'OAuth';
       
-      return error(res, `Этот аккаунт зарегистрирован через ${authTypeName} авторизацию`, 401, {
+      return error(res, `This account is registered via ${authTypeName}`, 401, {
         errorCode: 'OAUTH_ACCOUNT',
         authType: authType,
-        message: `Для входа используйте ${authTypeName} авторизацию через эндпоинт /api/auth/firebase`,
-        suggestion: `Используйте POST /api/auth/firebase с Firebase ID Token вместо email/password`
+        message: `Use ${authTypeName} sign-in via endpoint /api/auth/firebase`,
+        suggestion: `Use POST /api/auth/firebase with Firebase ID Token instead of email/password`
       });
     }
 
@@ -234,23 +234,23 @@ router.post('/login', [
       const errorDetails = {
         errorCode: 'INVALID_PASSWORD',
         checkedFormats: [passwordResult.format],
-        message: passwordResult.message || 'Неверный пароль',
+        message: passwordResult.message || 'Invalid password',
         checkedViaFirebase: passwordResult.checkedViaFirebase || false
       };
 
       // Если проверяли через Firebase Auth, добавляем информацию
       if (passwordResult.format === 'firebase_auth' || passwordResult.checkedViaFirebase) {
-        errorDetails.message = passwordResult.message || 'Пароль не прошел проверку через Firebase Auth';
-        errorDetails.suggestion = 'Пароль был проверен через Firebase Auth, но не совпал. Возможно, пароль был изменен в Firebase или аккаунт был удален';
+        errorDetails.message = passwordResult.message || 'Password did not pass Firebase Auth verification';
+        errorDetails.suggestion = 'Password was checked via Firebase Auth but did not match. Password may have been changed in Firebase or account removed';
         if (passwordResult.firebaseError) {
           errorDetails.firebaseError = passwordResult.firebaseError;
         }
       } else if (passwordResult.format === 'bcrypt') {
-        errorDetails.message = 'Пароль не прошел проверку через bcrypt';
-        errorDetails.suggestion = 'Проверьте правильность пароля. Если это старый пароль из Firebase, он будет проверен автоматически';
+        errorDetails.message = 'Password did not pass bcrypt verification';
+        errorDetails.suggestion = 'Check your password. If it is an old Firebase password, it will be verified automatically';
       }
 
-      return error(res, 'Неверный email или пароль', 401, errorDetails);
+      return error(res, 'Invalid email or password', 401, errorDetails);
     }
 
     // Если пароль верный, но нужно обновить хеш (старый формат из Firebase)
@@ -297,10 +297,183 @@ router.post('/login', [
     success(res, {
       user: userData[0],
       token
-    }, 'Вход выполнен успешно');
+    }, 'Login successful');
   } catch (err) {
-    console.error('Ошибка входа:', err);
-    error(res, 'Ошибка при входе', 500, err);
+    console.error('Login error:', err);
+    error(res, 'Login error', 500, err);
+  }
+});
+
+/**
+ * POST /api/auth/app-login
+ * Единый вход для приложения: волонтёр или продавец по логину и паролю.
+ * По логину определяем, есть ли запись в users (email = login) и/или в partner_sellers (login = login).
+ * Если одна роль — проверяем пароль и возвращаем данные для неё + role.
+ * Если логин и волонтёр и продавец — проверяем пароль у обоих; если подошёл одному — возвращаем его;
+ * если обоим — приоритет у продавца; если ни одному — ошибка «Неверный пароль».
+ * Тело: { login, password }. Для волонтёра «логин» = email в users.
+ */
+router.post('/app-login', [
+  body('login').notEmpty().withMessage('Login is required'),
+  body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Validation error', 400, validationErrors.array());
+    }
+
+    const loginTrim = (req.body.login || '').trim();
+    const { password } = req.body;
+
+    // Волонтёр: users по email (логин приложения для волонтёра = email)
+    const [users] = await pool.execute(
+      `SELECT id, email, password_hash, display_name, uid, admin, super_admin, auth_type
+       FROM users WHERE email = ?`,
+      [loginTrim]
+    );
+    const volunteer = users.length > 0 ? users[0] : null;
+    if (volunteer && !volunteer.password_hash) {
+      // OAuth-аккаунт, по паролю не входим
+      volunteer.password_hash = null;
+    }
+
+    // Продавцы по логину (может быть несколько записей у разных партнёров)
+    const [sellersRows] = await pool.execute(
+      `SELECT ps.id, ps.partner_id, ps.full_name, ps.login, ps.password_hash, ps.job_title, p.name AS partner_name
+       FROM partner_sellers ps
+       JOIN partners p ON p.id = ps.partner_id
+       WHERE ps.login = ?
+       ORDER BY ps.created_at ASC`,
+      [loginTrim]
+    );
+
+    const isVolunteer = !!volunteer;
+    const isSeller = sellersRows.length > 0;
+
+    if (!isVolunteer && !isSeller) {
+      return error(res, 'Invalid login or password', 401, { errorCode: 'INVALID_CREDENTIALS' });
+    }
+
+    // Одна роль
+    if (isVolunteer && !isSeller) {
+      if (!volunteer.password_hash) {
+        return error(res, 'This account uses social login. Use the corresponding sign-in button.', 401, { errorCode: 'OAUTH_ACCOUNT' });
+      }
+      const result = await verifyPassword(password, volunteer.password_hash, volunteer.email);
+      if (!result.valid) {
+        return error(res, 'Invalid password', 401, { errorCode: 'INVALID_PASSWORD' });
+      }
+      const token = generateToken({
+        userId: volunteer.id,
+        email: volunteer.email,
+        uid: volunteer.uid,
+        isAdmin: volunteer.admin || false,
+        isSuperAdmin: volunteer.super_admin || false
+      });
+      const [userData] = await pool.execute(
+        `SELECT id, email, display_name, photo_url, uid, phone_number, city,
+         first_name, second_name, country, gender, count_performed, count_orders,
+         jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+         admin, fcm_token, auth_type, latitude, longitude, created_time
+         FROM users WHERE id = ?`,
+        [volunteer.id]
+      );
+      return success(res, {
+        role: 'volunteer',
+        token,
+        user: userData[0]
+      }, 'Login successful');
+    }
+
+    if (isSeller && !isVolunteer) {
+      let seller = null;
+      for (const s of sellersRows) {
+        const result = await verifyPassword(password, s.password_hash);
+        if (result.valid) {
+          seller = s;
+          break;
+        }
+      }
+      if (!seller) {
+        return error(res, 'Invalid password', 401, { errorCode: 'INVALID_PASSWORD' });
+      }
+      const token = generateToken({
+        type: 'partner_seller',
+        partnerId: seller.partner_id,
+        sellerId: seller.id
+      });
+      return success(res, {
+        role: 'seller',
+        token,
+        seller: {
+          id: seller.id,
+          partnerId: seller.partner_id,
+          partnerName: seller.partner_name,
+          fullName: seller.full_name,
+          login: seller.login,
+          jobTitle: seller.job_title || null
+        }
+      }, 'Login successful');
+    }
+
+    // Оба: волонтёр и продавец с одним логином
+    let matchedSeller = null;
+    for (const s of sellersRows) {
+      const result = await verifyPassword(password, s.password_hash);
+      if (result.valid) {
+        matchedSeller = s;
+        break;
+      }
+    }
+    if (matchedSeller) {
+      const token = generateToken({
+        type: 'partner_seller',
+        partnerId: matchedSeller.partner_id,
+        sellerId: matchedSeller.id
+      });
+      return success(res, {
+        role: 'seller',
+        token,
+        seller: {
+          id: matchedSeller.id,
+          partnerId: matchedSeller.partner_id,
+          partnerName: matchedSeller.partner_name,
+          fullName: matchedSeller.full_name,
+          login: matchedSeller.login,
+          jobTitle: matchedSeller.job_title || null
+        }
+      }, 'Login successful');
+    }
+    if (volunteer.password_hash) {
+      const result = await verifyPassword(password, volunteer.password_hash, volunteer.email);
+      if (result.valid) {
+        const token = generateToken({
+          userId: volunteer.id,
+          email: volunteer.email,
+          uid: volunteer.uid,
+          isAdmin: volunteer.admin || false,
+          isSuperAdmin: volunteer.super_admin || false
+        });
+        const [userData] = await pool.execute(
+          `SELECT id, email, display_name, photo_url, uid, phone_number, city,
+           first_name, second_name, country, gender, count_performed, count_orders,
+           jcoins, coins_from_created, coins_from_participation, stripe_id, score,
+           admin, fcm_token, auth_type, latitude, longitude, created_time
+           FROM users WHERE id = ?`,
+          [volunteer.id]
+        );
+        return success(res, {
+          role: 'volunteer',
+          token,
+          user: userData[0]
+        }, 'Login successful');
+      }
+    }
+    return error(res, 'Invalid password', 401, { errorCode: 'INVALID_PASSWORD' });
+  } catch (err) {
+    console.error('app-login error:', err);
+    error(res, 'Login error', 500, err);
   }
 });
 
@@ -325,13 +498,13 @@ router.get('/me', authenticate, async (req, res) => {
     );
 
     if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     success(res, { user: users[0] });
   } catch (err) {
     console.error('Ошибка получения данных пользователя:', err);
-    error(res, 'Ошибка при получении данных пользователя', 500, err);
+    error(res, 'Error fetching user data', 500, err);
   }
 });
 
@@ -348,7 +521,7 @@ router.post('/refresh', authenticate, async (req, res) => {
     );
 
     if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     const user = users[0];
@@ -362,10 +535,10 @@ router.post('/refresh', authenticate, async (req, res) => {
       isSuperAdmin: user.super_admin || false
     });
 
-    success(res, { token }, 'Токен обновлен');
+    success(res, { token }, 'Token refreshed');
   } catch (err) {
     console.error('Ошибка обновления токена:', err);
-    error(res, 'Ошибка при обновлении токена', 500, err);
+    error(res, 'Error refreshing token', 500, err);
   }
 });
 
@@ -387,14 +560,14 @@ router.post('/refresh', authenticate, async (req, res) => {
  * - При последующих входах email может быть предоставлен и будет обновлен
  */
 router.post('/firebase', [
-  body('idToken').notEmpty().withMessage('Firebase ID Token обязателен'),
-  body('first_name').optional().isString().withMessage('Имя должно быть строкой'),
-  body('second_name').optional().isString().withMessage('Фамилия должна быть строкой')
+  body('idToken').notEmpty().withMessage('Firebase ID Token is required'),
+  body('first_name').optional().isString().withMessage('First name must be a string'),
+  body('second_name').optional().isString().withMessage('Second name must be a string')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { idToken, first_name: providedFirstName, second_name: providedSecondName } = req.body;
@@ -402,7 +575,7 @@ router.post('/firebase', [
     // Проверка Firebase токена
     const decodedToken = await verifyFirebaseToken(idToken);
     if (!decodedToken) {
-      return error(res, 'Недействительный Firebase токен', 401);
+      return error(res, 'Invalid Firebase token', 401);
     }
 
     const firebaseUid = decodedToken.uid;
@@ -649,10 +822,10 @@ router.post('/firebase', [
     success(res, {
       user: userData[0],
       token
-    }, 'Авторизация через Firebase выполнена успешно');
+    }, 'Firebase authentication successful');
   } catch (err) {
     console.error('Ошибка авторизации через Firebase:', err);
-    error(res, 'Ошибка при авторизации через Firebase', 500, err);
+    error(res, 'Firebase authentication error', 500, err);
   }
 });
 
@@ -662,14 +835,14 @@ router.post('/firebase', [
  * После успешной верификации создается пользователь и возвращается токен
  */
 router.post('/verify-email', [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('code').isLength({ min: 6, max: 6 }).withMessage('Код должен состоять из 6 цифр'),
-  body('code').matches(/^\d+$/).withMessage('Код должен содержать только цифры')
+  body('email').isEmail().withMessage('Invalid email'),
+  body('code').isLength({ min: 6, max: 6 }).withMessage('Code must be 6 digits'),
+  body('code').matches(/^\d+$/).withMessage('Code must contain only digits')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { email, code } = req.body;
@@ -684,7 +857,7 @@ router.post('/verify-email', [
     );
 
     if (verifications.length === 0) {
-      return error(res, 'Неверный код верификации', 400);
+      return error(res, 'Invalid verification code', 400);
     }
 
     const verification = verifications[0];
@@ -693,7 +866,7 @@ router.post('/verify-email', [
     const now = new Date();
     const expiresAt = new Date(verification.expires_at);
     if (now > expiresAt) {
-      return error(res, 'Код верификации истек. Запросите новый код.', 400);
+      return error(res, 'Verification code has expired. Request a new code.', 400);
     }
 
     // Проверяем, есть ли данные для создания пользователя (password_hash)
@@ -724,7 +897,7 @@ router.post('/verify-email', [
       return success(res, {
         user: users[0],
         verified: true
-      }, 'Email успешно подтвержден');
+      }, 'Email successfully verified');
     }
 
     // Это новая регистрация - создаем пользователя
@@ -735,7 +908,7 @@ router.post('/verify-email', [
     );
 
     if (existingUsers.length > 0) {
-      return error(res, 'Пользователь с таким email уже существует', 409);
+      return error(res, 'User with this email already exists', 409);
     }
 
     // Создаем пользователя из данных верификации
@@ -826,9 +999,9 @@ router.post('/verify-email', [
       user: users[0],
       token,
       verified: true
-    }, 'Email успешно подтвержден. Пользователь создан.');
+    }, 'Email successfully verified. User created.');
   } catch (err) {
-    return error(res, `Ошибка при верификации email: ${err.message}`, 500, {
+    return error(res, `Email verification error: ${err.message}`, 500, {
       message: err.message,
       code: err.code,
       sqlMessage: err.sqlMessage
@@ -841,12 +1014,12 @@ router.post('/verify-email', [
  * Повторная отправка кода верификации
  */
 router.post('/resend-verification', [
-  body('email').isEmail().withMessage('Некорректный email')
+  body('email').isEmail().withMessage('Invalid email')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { email } = req.body;
@@ -863,7 +1036,7 @@ router.post('/resend-verification', [
       
       // Проверка, не верифицирован ли уже email
       if (user.email_verified) {
-        return error(res, 'Email уже подтвержден', 400);
+        return error(res, 'Email already verified', 400);
       }
       
       userId = user.id;
@@ -909,20 +1082,20 @@ router.post('/resend-verification', [
       : emailResult === true;
     
     if (!emailSent) {
-      return error(res, 'Не удалось отправить код верификации', 500, {
-        error: emailResult?.error || emailResult?.message || 'Неизвестная ошибка',
+return error(res, 'Failed to send verification code', 500, {
+      error: emailResult?.error || emailResult?.message || 'Unknown error',
         code: emailResult?.code,
         details: emailResult?.details
       });
     }
 
     success(res, {
-      message: 'Код верификации отправлен на email',
+      message: 'Verification code sent to email',
       verificationExpiresAt: expiresAt.toISOString()
-    }, 'Код верификации отправлен');
+    }, 'Verification code sent');
   } catch (err) {
     console.error('Ошибка повторной отправки кода:', err);
-    error(res, 'Ошибка при отправке кода верификации', 500, err);
+    error(res, 'Error sending verification code', 500, err);
   }
 });
 
@@ -932,24 +1105,24 @@ router.post('/resend-verification', [
  * Требует аутентификации (только для админов или разработки)
  */
 router.post('/test-email', [
-  body('email').isEmail().withMessage('Некорректный email'),
+  body('email').isEmail().withMessage('Invalid email'),
   body('code').optional().isString()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { email, code = '123456' } = req.body;
 
     // Проверяем настройки SMTP
     const smtpConfig = {
-      host: process.env.SMTP_HOST || 'не указан',
-      port: process.env.SMTP_PORT || 'не указан',
-      user: process.env.SMTP_USER || 'не указан',
-      pass: process.env.SMTP_PASS ? 'указан (' + process.env.SMTP_PASS.length + ' символов)' : 'не указан',
-      from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'не указан'
+      host: process.env.SMTP_HOST || 'not set',
+      port: process.env.SMTP_PORT || 'not set',
+      user: process.env.SMTP_USER || 'not set',
+      pass: process.env.SMTP_PASS ? 'set (' + process.env.SMTP_PASS.length + ' chars)' : 'not set',
+      from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'not set'
     };
 
     // Пытаемся отправить тестовый email
@@ -957,7 +1130,7 @@ router.post('/test-email', [
 
     if (result.success) {
       return success(res, {
-        message: 'Тестовый email отправлен успешно',
+        message: 'Test email sent successfully',
         email,
         code,
         smtpConfig: {
@@ -968,9 +1141,9 @@ router.post('/test-email', [
           from: smtpConfig.from
         },
         result
-      }, 'Email отправлен');
+      }, 'Email sent');
     } else {
-      return error(res, 'Не удалось отправить email', 500, {
+      return error(res, 'Failed to send email', 500, {
         email,
         code,
         smtpConfig,
@@ -978,7 +1151,7 @@ router.post('/test-email', [
       });
     }
   } catch (err) {
-    return error(res, `Ошибка при отправке тестового email: ${err.message}`, 500, {
+    return error(res, `Error sending test email: ${err.message}`, 500, {
       message: err.message,
       stack: err.stack
     });

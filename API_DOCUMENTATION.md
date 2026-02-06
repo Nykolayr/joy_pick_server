@@ -518,6 +518,59 @@ if (registerResponse.statusCode == 200) {
 
 ---
 
+### Единый вход для приложения (волонтёр / продавец)
+
+**POST** `/auth/app-login`
+
+Один роут для входа в приложение по логину и паролю. Бэкенд по логину определяет: только волонтёр (users.email), только продавец (partner_sellers.login) или оба. При одной роли проверяется пароль и возвращаются данные этой роли и поле `role`. Если логин есть и у волонтёра и у продавца — проверяется пароль у обоих; если подошёл одному — возвращается он; если обоим — приоритет у продавца; если ни одному — ошибка «Неверный пароль». В ответе всегда есть `role: 'volunteer'` или `role: 'seller'` и соответствующие данные (user или seller) + token.
+
+**Тело (JSON):**
+```json
+{
+  "login": "логин_или_email",
+  "password": "пароль"
+}
+```
+
+Для волонтёра в качестве логина используется его **email** (как в users).
+
+**Ответ (200) — волонтёр:**
+```json
+{
+  "success": true,
+  "message": "Вход выполнен успешно",
+  "data": {
+    "role": "volunteer",
+    "token": "jwt_токен",
+    "user": { "id": "uuid", "email": "...", "display_name": "...", ... }
+  }
+}
+```
+
+**Ответ (200) — продавец:**
+```json
+{
+  "success": true,
+  "message": "Вход выполнен",
+  "data": {
+    "role": "seller",
+    "token": "jwt_токен",
+    "seller": {
+      "id": "uuid",
+      "partnerId": "uuid",
+      "partnerName": "Название партнёра",
+      "fullName": "ФИО",
+      "login": "логин",
+      "jobTitle": "Должность"
+    }
+  }
+}
+```
+
+**Ошибки:** `400` — валидация; `401` — неверный логин или пароль, или неверный пароль (в т.ч. когда логин найден у обеих ролей, но пароль ни к одной не подошёл); для OAuth-аккаунта — подсказка использовать вход через соцсети.
+
+---
+
 ### Верификация email
 
 **POST** `/auth/verify-email`
@@ -3588,10 +3641,11 @@ API для управления партнерами. Партнеры - это 
 
 ## 🔐 Партнёры: вход и кабинеты (partner-auth, partner-admin, partner-seller)
 
-Отдельные эндпоинты для входа администратора партнёра и продавца, а также для кабинета админа партнёра и приложения продавца. Используются отдельные JWT с типом `partner_admin` или `partner_seller`.
+Вход администратора партнёра — по `/api/partner-auth`. Вход продавца — через единый роут приложения `POST /api/auth/app-login` (логин + пароль, в ответе `role: 'seller'` и данные продавца). Кабинеты используют JWT с типом `partner_admin` или `partner_seller`.
 
 **Базовые пути:**
-- Вход: `/api/partner-auth`
+- Вход админа партнёра: `/api/partner-auth/admin/login`
+- Вход продавца: `POST /api/auth/app-login` (единый вход с волонтёром, см. раздел «Единый вход для приложения»)
 - Кабинет админа партнёра: `/api/partner-admin` (все запросы с JWT админа партнёра)
 - Приложение продавца: `/api/partner-seller` (все запросы с JWT продавца)
 
@@ -3638,35 +3692,7 @@ Authorization: Bearer <jwt_token>
 
 ### Вход продавца партнёра
 
-**POST** `/partner-auth/seller/login`
-
-**Тело (JSON):**
-```json
-{
-  "partner_id": "uuid_партнёра",
-  "login": "логин_продавца",
-  "password": "пароль"
-}
-```
-
-**Ответ (200):**
-```json
-{
-  "success": true,
-  "message": "Вход выполнен",
-  "data": {
-    "token": "jwt_токен",
-    "seller": {
-      "id": "uuid_продавца",
-      "partnerId": "uuid",
-      "partnerName": "Название партнёра",
-      "fullName": "ФИО",
-      "login": "логин",
-      "jobTitle": "Должность"
-    }
-  }
-}
-```
+Вход продавца выполняется через **единый роут приложения** `POST /api/auth/app-login` (тело: `login`, `password`). В ответе при совпадении с записью продавца: `role: 'seller'`, `token`, `seller` (id, partnerId, partnerName, fullName, login, jobTitle). Отдельный роут `/partner-auth/seller/login` удалён.
 
 ---
 
@@ -3678,7 +3704,7 @@ Authorization: Bearer <jwt_token>
 
 **GET** `/partner-admin/me`
 
-**Ответ (200):** `data.partner`: `id`, `name`, `adminEmail`, `currency`, `exchangeRateCentsPerCoin`.
+**Ответ (200):** полные данные партнёра в `data.partner` (как GET /api/partners/:id: id, name, logo_url, photo_urls, activity, website_url, admin_email, currency, exchange_rate_cents_per_coin, branches, created_at, updated_at). Поле `admin_password_hash` не возвращается.
 
 ---
 
@@ -3742,7 +3768,58 @@ Authorization: Bearer <jwt_token>
 
 **GET** `/partner-seller/me` — профиль продавца и данные партнёра (валюта, курс).
 
+**GET** `/partner-seller/partner`
+
+**Авторизация:** JWT продавца (`Authorization: Bearer <token>`).
+
+**Назначение:** отдаёт данные партнёра, к которому привязан продавец (тот же формат, что у GET /api/partners/:id). Партнёр определяется по JWT (`req.partnerId`), передавать id в URL не нужно.
+
+**Поля партнёра:** `id`, `name`, `logo_url`, `photo_urls`, `activity`, `website_url`, `admin_email`, `currency`, `exchange_rate_cents_per_coin`, `created_at`, `updated_at`, `branches` (массив филиалов с полями: `id`, `partner_id`, `name`, `address`, `latitude`, `longitude`, `created_at`, `updated_at`).
+
+**Не отдаётся:** `admin_password_hash`.
+
+---
+
 **GET** `/partner-seller/branches` — список филиалов для выбора при списании.
+
+---
+
+**GET** `/partner-seller/redemptions`
+
+**Авторизация:** JWT продавца (`Authorization: Bearer <token>`).
+
+**Назначение:** отдаёт все погашения (транзакции), где `seller_id` совпадает с текущим продавцом.
+
+**Query:** `page` (по умолчанию 1), `limit` (по умолчанию 20, макс. 100).
+
+**Ответ (200):** в `data`:
+- **redemptions** — массив: `id`, `partnerId`, `partnerName`, `branchId`, `branchName`, `sellerId`, `userId`, `userDisplayName`, `coinsSpent`, `amountCents`, `currency`, `createdAt`;
+- **pagination** — `page`, `limit`, `total`, `totalPages`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "redemptions": [
+      {
+        "id": "uuid",
+        "partnerId": "uuid",
+        "partnerName": "Название партнёра",
+        "branchId": "uuid",
+        "branchName": "Название филиала",
+        "sellerId": "uuid",
+        "userId": "uuid",
+        "userDisplayName": "Имя волонтёра",
+        "coinsSpent": 10,
+        "amountCents": 500,
+        "currency": "USD",
+        "createdAt": "2025-12-01T15:00:00.000Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 5, "totalPages": 1 }
+  }
+}
+```
 
 ---
 

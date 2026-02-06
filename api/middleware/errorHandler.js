@@ -6,7 +6,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.isJoi) {
     return res.status(400).json({
       success: false,
-      message: 'Ошибка валидации данных',
+      message: 'Data validation error',
       errors: err.details.map(detail => detail.message)
     });
   }
@@ -22,7 +22,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.code === 'ER_DUP_ENTRY') {
     const response = {
       success: false,
-      message: 'Запись с такими данными уже существует'
+      message: 'A record with such data already exists'
     };
     if (isDev || isMigration) {
       response.sqlMessage = err.sqlMessage;
@@ -34,7 +34,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.code === 'ER_NO_REFERENCED_ROW_2') {
     const response = {
       success: false,
-      message: 'Ссылка на несуществующую запись'
+      message: 'Reference to non-existent record'
     };
     if (isDev || isMigration) {
       response.sqlMessage = err.sqlMessage;
@@ -46,7 +46,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.code === 'ER_ROW_IS_REFERENCED_2') {
     const response = {
       success: false,
-      message: 'Невозможно удалить запись, так как на неё есть ссылки'
+      message: 'Cannot delete record: it is referenced by other records'
     };
     if (isDev || isMigration) {
       response.sqlMessage = err.sqlMessage;
@@ -59,7 +59,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.code && err.code.startsWith('ER_')) {
     const response = {
       success: false,
-      message: err.sqlMessage || 'Ошибка базы данных'
+      message: err.sqlMessage || 'Database error'
     };
     if (isDev || isMigration) {
       response.code = err.code;
@@ -73,21 +73,21 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
-      message: 'Недействительный токен'
+      message: 'Invalid token'
     });
   }
 
   if (err.name === 'TokenExpiredError') {
     return res.status(401).json({
       success: false,
-      message: 'Токен истёк'
+      message: 'Token expired'
     });
   }
 
   // Общая ошибка сервера
   const errorResponse = {
     success: false,
-    message: (isDev || isMigration) ? err.message : 'Внутренняя ошибка сервера',
+    message: (isDev || isMigration) ? err.message : 'Internal server error',
     timestamp: new Date().toISOString()
   };
 
@@ -110,7 +110,7 @@ const errorHandler = (err, req, res, next) => {
   } else {
     // В продакшене показываем только безопасную информацию
     errorResponse.errorDetails = {
-      message: 'Детали ошибки доступны только в режиме разработки'
+      message: 'Error details are only available in development mode'
     };
   }
 
@@ -122,7 +122,7 @@ const errorHandler = (err, req, res, next) => {
 const notFound = (req, res) => {
   res.status(404).json({
     success: false,
-    message: `Маршрут ${req.method} ${req.path} не найден`
+    message: `Route ${req.method} ${req.path} not found`
   });
 };
 

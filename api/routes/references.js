@@ -52,7 +52,7 @@ router.get('/currencies', (req, res) => {
   try {
     success(res, { currencies: CURRENCIES });
   } catch (err) {
-    error(res, 'Ошибка при получении справочника валют', 500, err);
+    error(res, 'Error fetching currencies reference', 500, err);
   }
 });
 

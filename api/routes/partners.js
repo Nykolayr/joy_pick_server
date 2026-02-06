@@ -20,7 +20,10 @@ const router = express.Router();
  */
 router.get('/volunteer-qr', authenticate, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId || req.user.id;
+    if (!userId) {
+      return error(res, 'Token is missing user identifier', 401);
+    }
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 2 * 60 * 1000); // 2 минуты
     const id = generateId();
@@ -33,9 +36,9 @@ router.get('/volunteer-qr', authenticate, async (req, res) => {
     success(res, {
       token,
       expiresAt: expiresAt.toISOString()
-    }, 'QR-токен создан');
+    }, 'QR token created');
   } catch (err) {
-    error(res, 'Ошибка при создании QR-токена', 500, err);
+    error(res, 'Error creating QR token', 500, err);
   }
 });
 
@@ -45,7 +48,10 @@ router.get('/volunteer-qr', authenticate, async (req, res) => {
  */
 router.get('/my-redemptions', authenticate, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId || req.user.id;
+    if (!userId) {
+      return error(res, 'Token is missing user identifier', 401);
+    }
     const { page = 1, limit = 20 } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
@@ -87,7 +93,7 @@ router.get('/my-redemptions', authenticate, async (req, res) => {
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении истории погашений', 500, err);
+    error(res, 'Error fetching redemption history', 500, err);
   }
 });
 
@@ -210,7 +216,7 @@ router.get('/:id', async (req, res) => {
     );
 
     if (partners.length === 0) {
-      return error(res, 'Партнер не найден', 404);
+      return error(res, 'Partner not found', 404);
     }
 
     const partner = partners[0];
@@ -233,7 +239,7 @@ router.get('/:id', async (req, res) => {
 
     success(res, { partner });
   } catch (err) {
-    error(res, 'Ошибка при получении партнера', 500, err);
+    error(res, 'Error fetching partner', 500, err);
   }
 });
 
@@ -245,14 +251,14 @@ router.get('/:id', async (req, res) => {
  * Адрес и координаты только у филиалов, у партнёра этих полей нет.
  */
 router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
-  body('name').notEmpty().withMessage('Название обязательно'),
-  body('admin_email').isEmail().withMessage('Логин (email) обязателен и должен быть email'),
-  body('admin_password').notEmpty().withMessage('Пароль обязателен (например сгенерированный)'),
+  body('name').notEmpty().withMessage('Name is required'),
+  body('admin_email').isEmail().withMessage('Login (email) is required and must be a valid email'),
+  body('admin_password').notEmpty().withMessage('Password is required (e.g. generated)'),
   body('activity').optional().isString(),
   body('website_url').optional().isURL(),
   body('logo_url').optional().isString(),
-  body('currency').notEmpty().withMessage('Валюта обязательна (например USD, RUB)'),
-  body('exchange_rate_cents_per_coin').isInt({ min: 1 }).withMessage('Курс обязателен: сколько центов (или младших единиц валюты) даёт 1 коин'),
+  body('currency').notEmpty().withMessage('Currency is required (e.g. USD, RUB)'),
+  body('exchange_rate_cents_per_coin').isInt({ min: 1 }).withMessage('Exchange rate is required: how many cents (or minor units) per 1 coin'),
   body('branches')
     .optional()
     .customSanitizer((val) => {
@@ -284,7 +290,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
 
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     let bodyData = req.body;
@@ -323,7 +329,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
     const adminEmailNorm = (admin_email || '').trim().toLowerCase();
     const [existing] = await pool.execute('SELECT id FROM partners WHERE admin_email = ?', [adminEmailNorm]);
     if (existing.length > 0) {
-      return error(res, 'Партнёр с таким логином (email) уже существует', 409);
+      return error(res, 'Partner with this login (email) already exists', 409);
     }
 
     const finalPhotos = uploadedPhotos.length > 0 ? uploadedPhotos : (Array.isArray(photo_urls) ? photo_urls : []);
@@ -383,9 +389,9 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
     );
     partner.branches = branchRows;
 
-    success(res, { partner }, 'Партнер создан', 201);
+    success(res, { partner }, 'Partner created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании партнера', 500, err);
+    error(res, 'Error creating partner', 500, err);
   }
 });
 
@@ -416,7 +422,7 @@ router.put('/:id', authenticate, requireAdmin, uploadPartnerWithLogo, async (req
 
     const [existing] = await pool.execute('SELECT * FROM partners WHERE id = ?', [id]);
     if (existing.length === 0) {
-      return error(res, 'Партнер не найден', 404);
+      return error(res, 'Partner not found', 404);
     }
 
     const uploadedPhotos = [];
@@ -456,7 +462,7 @@ router.put('/:id', authenticate, requireAdmin, uploadPartnerWithLogo, async (req
       const adminEmailNorm = (admin_email || '').trim().toLowerCase();
       const [dup] = await pool.execute('SELECT id FROM partners WHERE admin_email = ? AND id != ?', [adminEmailNorm, id]);
       if (dup.length > 0) {
-        return error(res, 'Партнёр с таким логином (email) уже существует', 409);
+        return error(res, 'Partner with this login (email) already exists', 409);
       }
     }
 
@@ -517,9 +523,9 @@ router.put('/:id', authenticate, requireAdmin, uploadPartnerWithLogo, async (req
     );
     partner.branches = branchRows;
 
-    success(res, { partner }, 'Партнер обновлен');
+    success(res, { partner }, 'Partner updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении партнера', 500, err);
+    error(res, 'Error updating partner', 500, err);
   }
 });
 
@@ -533,14 +539,14 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
 
     const [existing] = await pool.execute('SELECT id FROM partners WHERE id = ?', [id]);
     if (existing.length === 0) {
-      return error(res, 'Партнер не найден', 404);
+      return error(res, 'Partner not found', 404);
     }
 
     await pool.execute('DELETE FROM partners WHERE id = ?', [id]);
 
-    success(res, null, 'Партнер удален');
+    success(res, null, 'Partner deleted');
   } catch (err) {
-    error(res, 'Ошибка при удалении партнера', 500, err);
+    error(res, 'Error deleting partner', 500, err);
   }
 });
 

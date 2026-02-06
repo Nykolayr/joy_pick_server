@@ -23,7 +23,7 @@ router.get('/me', async (req, res) => {
       [req.sellerId, req.partnerId]
     );
     if (rows.length === 0) {
-      return error(res, 'Продавец не найден', 404);
+      return error(res, 'Seller not found', 404);
     }
     const s = rows[0];
     success(res, {
@@ -39,7 +39,42 @@ router.get('/me', async (req, res) => {
       }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении профиля', 500, err);
+    error(res, 'Error fetching profile', 500, err);
+  }
+});
+
+/**
+ * GET /api/partner-seller/partner
+ * Данные партнёра, к которому привязан продавец (аналогично GET /api/partners/:id, без admin_password_hash).
+ */
+router.get('/partner', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, name, logo_url, photo_urls, activity, website_url, admin_email, currency, exchange_rate_cents_per_coin, created_at, updated_at FROM partners WHERE id = ?',
+      [req.partnerId]
+    );
+    if (rows.length === 0) {
+      return error(res, 'Partner not found', 404);
+    }
+    const partner = rows[0];
+    if (partner.photo_urls) {
+      try {
+        partner.photo_urls = typeof partner.photo_urls === 'string' ? JSON.parse(partner.photo_urls) : partner.photo_urls;
+      } catch (e) {
+        partner.photo_urls = [];
+      }
+    } else {
+      partner.photo_urls = [];
+    }
+    const [branchRows] = await pool.execute(
+      'SELECT id, partner_id, name, address, latitude, longitude, created_at, updated_at FROM partner_branches WHERE partner_id = ? ORDER BY name',
+      [req.partnerId]
+    );
+    partner.branches = branchRows;
+
+    success(res, { partner });
+  } catch (err) {
+    error(res, 'Error fetching partner data', 500, err);
   }
 });
 
@@ -55,7 +90,7 @@ router.get('/branches', async (req, res) => {
     );
     success(res, { branches });
   } catch (err) {
-    error(res, 'Ошибка при получении филиалов', 500, err);
+    error(res, 'Error fetching branches', 500, err);
   }
 });
 
@@ -65,12 +100,12 @@ router.get('/branches', async (req, res) => {
  * Body: { qr_token }
  */
 router.post('/scan-qr', [
-  body('qr_token').notEmpty().withMessage('qr_token обязателен')
+  body('qr_token').notEmpty().withMessage('qr_token is required')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const { qr_token } = req.body;
 
@@ -80,14 +115,14 @@ router.post('/scan-qr', [
     );
 
     if (tokens.length === 0) {
-      return error(res, 'Недействительный или неизвестный QR-код', 400);
+      return error(res, 'Invalid or unknown QR code', 400);
     }
     const row = tokens[0];
     if (row.used_at) {
-      return error(res, 'Этот QR-код уже был использован', 400);
+      return error(res, 'This QR code has already been used', 400);
     }
     if (new Date() > new Date(row.expires_at)) {
-      return error(res, 'Срок действия QR-кода истёк. Попросите волонтёра обновить экран.', 400);
+      return error(res, 'QR code has expired. Ask the volunteer to refresh the screen.', 400);
     }
 
     const [users] = await pool.execute(
@@ -95,7 +130,7 @@ router.post('/scan-qr', [
       [row.user_id]
     );
     if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
     const u = users[0];
     const displayName = u.display_name || [u.first_name, u.second_name].filter(Boolean).join(' ') || u.email || u.id;
@@ -110,7 +145,7 @@ router.post('/scan-qr', [
       }
     });
   } catch (err) {
-    error(res, 'Ошибка при проверке QR-кода', 500, err);
+    error(res, 'Error verifying QR code', 500, err);
   }
 });
 
@@ -120,14 +155,14 @@ router.post('/scan-qr', [
  * Body: { qr_token, branch_id, coins_spent }
  */
 router.post('/redeem', [
-  body('qr_token').notEmpty().withMessage('qr_token обязателен'),
-  body('branch_id').notEmpty().withMessage('branch_id обязателен'),
-  body('coins_spent').isInt({ min: 1 }).withMessage('coins_spent должно быть положительным числом')
+  body('qr_token').notEmpty().withMessage('qr_token is required'),
+  body('branch_id').notEmpty().withMessage('branch_id is required'),
+  body('coins_spent').isInt({ min: 1 }).withMessage('coins_spent must be a positive number')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const { qr_token, branch_id, coins_spent } = req.body;
 
@@ -136,14 +171,14 @@ router.post('/redeem', [
       [qr_token.trim()]
     );
     if (tokens.length === 0) {
-      return error(res, 'Недействительный или неизвестный QR-код', 400);
+      return error(res, 'Invalid or unknown QR code', 400);
     }
     const tokenRow = tokens[0];
     if (tokenRow.used_at) {
-      return error(res, 'Этот QR-код уже был использован', 400);
+      return error(res, 'This QR code has already been used', 400);
     }
     if (new Date() > new Date(tokenRow.expires_at)) {
-      return error(res, 'Срок действия QR-кода истёк', 400);
+      return error(res, 'QR code has expired', 400);
     }
 
     const userId = tokenRow.user_id;
@@ -153,7 +188,7 @@ router.post('/redeem', [
       [branch_id, req.partnerId]
     );
     if (branch.length === 0) {
-      return error(res, 'Филиал не найден или не принадлежит вашему партнёру', 404);
+      return error(res, 'Branch not found or does not belong to your partner', 404);
     }
 
     const [partnerRow] = await pool.execute(
@@ -174,12 +209,12 @@ router.post('/redeem', [
       );
       if (userRows.length === 0) {
         await connection.rollback();
-        return error(res, 'Пользователь не найден', 404);
+        return error(res, 'User not found', 404);
       }
       const currentJcoins = Number(userRows[0].jcoins);
       if (currentJcoins < coins_spent) {
         await connection.rollback();
-        return error(res, `Недостаточно коинов у волонтёра. Доступно: ${currentJcoins}`, 400);
+        return error(res, `Insufficient coins for volunteer. Available: ${currentJcoins}`, 400);
       }
 
       await connection.execute(
@@ -208,7 +243,7 @@ router.post('/redeem', [
           amountCents: amount_cents,
           currency
         }
-      }, `Списано ${coins_spent} коинов. Скидка: ${(amount_cents / 100).toFixed(2)} ${currency}`);
+      }, `Redeemed ${coins_spent} coins. Discount: ${(amount_cents / 100).toFixed(2)} ${currency}`);
     } catch (e) {
       await connection.rollback();
       throw e;
@@ -216,7 +251,63 @@ router.post('/redeem', [
       connection.release();
     }
   } catch (err) {
-    error(res, 'Ошибка при списании коинов', 500, err);
+    error(res, 'Error redeeming coins', 500, err);
+  }
+});
+
+/**
+ * GET /api/partner-seller/redemptions
+ * Все транзакции (погашения), проведённые этим продавцом. По JWT продавца, с пагинацией.
+ */
+router.get('/redemptions', async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    const [rows] = await pool.execute(
+      `SELECT r.id, r.partner_id, r.branch_id, r.seller_id, r.user_id, r.coins_spent, r.amount_cents, r.currency, r.created_at,
+              b.name AS branch_name,
+              p.name AS partner_name,
+              u.display_name AS user_display_name, u.first_name AS user_first_name, u.second_name AS user_second_name, u.email AS user_email
+       FROM partner_coin_redemptions r
+       LEFT JOIN partner_branches b ON b.id = r.branch_id
+       LEFT JOIN partners p ON p.id = r.partner_id
+       LEFT JOIN users u ON u.id = r.user_id
+       WHERE r.seller_id = ?
+       ORDER BY r.created_at DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      [req.sellerId]
+    );
+
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM partner_coin_redemptions WHERE seller_id = ?',
+      [req.sellerId]
+    );
+    const total = countResult[0].total;
+
+    const redemptions = rows.map((r) => ({
+      id: r.id,
+      partnerId: r.partner_id,
+      partnerName: r.partner_name,
+      branchId: r.branch_id,
+      branchName: r.branch_name,
+      sellerId: r.seller_id,
+      userId: r.user_id,
+      userDisplayName: r.user_display_name || [r.user_first_name, r.user_second_name].filter(Boolean).join(' ') || r.user_email || r.user_id,
+      coinsSpent: r.coins_spent,
+      amountCents: r.amount_cents,
+      currency: r.currency,
+      createdAt: r.created_at
+    }));
+
+    success(res, {
+      redemptions,
+      pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
+    });
+  } catch (err) {
+    error(res, 'Error fetching seller transactions', 500, err);
   }
 });
 

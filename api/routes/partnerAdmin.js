@@ -23,7 +23,7 @@ router.get('/me', async (req, res) => {
       [req.partnerId]
     );
     if (rows.length === 0) {
-      return error(res, 'Партнёр не найден', 404);
+      return error(res, 'Partner not found', 404);
     }
     const partner = rows[0];
     if (partner.photo_urls) {
@@ -43,7 +43,7 @@ router.get('/me', async (req, res) => {
 
     success(res, { partner });
   } catch (err) {
-    error(res, 'Ошибка при получении данных партнёра', 500, err);
+    error(res, 'Error fetching partner data', 500, err);
   }
 });
 
@@ -58,7 +58,7 @@ router.put('/settings', [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const { currency, exchange_rate_cents_per_coin } = req.body;
     const updates = [];
@@ -72,13 +72,13 @@ router.put('/settings', [
       params.push(exchange_rate_cents_per_coin);
     }
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления', 400);
+      return error(res, 'No data to update', 400);
     }
     params.push(req.partnerId);
     await pool.execute(`UPDATE partners SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`, params);
-    success(res, null, 'Настройки обновлены');
+    success(res, null, 'Settings updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении настроек', 500, err);
+    error(res, 'Error updating settings', 500, err);
   }
 });
 
@@ -87,29 +87,29 @@ router.put('/settings', [
  * Смена пароля администратора партнёра.
  */
 router.put('/settings/password', [
-  body('current_password').notEmpty().withMessage('Текущий пароль обязателен'),
-  body('new_password').isLength({ min: 6 }).withMessage('Новый пароль не менее 6 символов')
+  body('current_password').notEmpty().withMessage('Current password is required'),
+  body('new_password').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const { current_password, new_password } = req.body;
     const [rows] = await pool.execute('SELECT admin_password_hash FROM partners WHERE id = ?', [req.partnerId]);
     if (rows.length === 0) {
-      return error(res, 'Партнёр не найден', 404);
+      return error(res, 'Partner not found', 404);
     }
     const { verifyPassword } = require('../utils/password');
     const result = await verifyPassword(current_password, rows[0].admin_password_hash || '');
     if (!result.valid) {
-      return error(res, 'Неверный текущий пароль', 401);
+      return error(res, 'Invalid current password', 401);
     }
     const newHash = await hashPassword(new_password);
     await pool.execute('UPDATE partners SET admin_password_hash = ?, updated_at = NOW() WHERE id = ?', [newHash, req.partnerId]);
-    success(res, null, 'Пароль изменён');
+    success(res, null, 'Password changed');
   } catch (err) {
-    error(res, 'Ошибка при смене пароля', 500, err);
+    error(res, 'Error changing password', 500, err);
   }
 });
 
@@ -126,7 +126,7 @@ router.get('/branches', async (req, res) => {
     );
     success(res, { branches });
   } catch (err) {
-    error(res, 'Ошибка при получении филиалов', 500, err);
+    error(res, 'Error fetching branches', 500, err);
   }
 });
 
@@ -134,7 +134,7 @@ router.get('/branches', async (req, res) => {
  * POST /api/partner-admin/branches
  */
 router.post('/branches', [
-  body('name').notEmpty().withMessage('Название филиала обязательно'),
+  body('name').notEmpty().withMessage('Branch name is required'),
   body('address').optional().isString(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat()
@@ -142,7 +142,7 @@ router.post('/branches', [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const id = generateId();
     const { name, address, latitude, longitude } = req.body;
@@ -151,9 +151,9 @@ router.post('/branches', [
       [id, req.partnerId, name, address || null, latitude ?? null, longitude ?? null]
     );
     const [rows] = await pool.execute('SELECT * FROM partner_branches WHERE id = ?', [id]);
-    success(res, { branch: rows[0] }, 'Филиал создан', 201);
+    success(res, { branch: rows[0] }, 'Branch created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании филиала', 500, err);
+    error(res, 'Error creating branch', 500, err);
   }
 });
 
@@ -166,10 +166,10 @@ router.get('/branches/:id', async (req, res) => {
       'SELECT * FROM partner_branches WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (rows.length === 0) return error(res, 'Филиал не найден', 404);
+    if (rows.length === 0) return error(res, 'Branch not found', 404);
     success(res, { branch: rows[0] });
   } catch (err) {
-    error(res, 'Ошибка при получении филиала', 500, err);
+    error(res, 'Error fetching branch', 500, err);
   }
 });
 
@@ -177,7 +177,7 @@ router.get('/branches/:id', async (req, res) => {
  * PUT /api/partner-admin/branches/:id
  */
 router.put('/branches/:id', [
-  body('name').optional().notEmpty().withMessage('Название не может быть пустым'),
+  body('name').optional().notEmpty().withMessage('Name cannot be empty'),
   body('address').optional().isString(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat()
@@ -185,13 +185,13 @@ router.put('/branches/:id', [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const [existing] = await pool.execute(
       'SELECT id FROM partner_branches WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (existing.length === 0) return error(res, 'Филиал не найден', 404);
+    if (existing.length === 0) return error(res, 'Branch not found', 404);
     const { name, address, latitude, longitude } = req.body;
     const updates = [];
     const params = [];
@@ -205,9 +205,9 @@ router.put('/branches/:id', [
       await pool.execute(`UPDATE partner_branches SET ${updates.join(', ')} WHERE id = ?`, params);
     }
     const [rows] = await pool.execute('SELECT * FROM partner_branches WHERE id = ?', [req.params.id]);
-    success(res, { branch: rows[0] }, 'Филиал обновлён');
+    success(res, { branch: rows[0] }, 'Branch updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении филиала', 500, err);
+    error(res, 'Error updating branch', 500, err);
   }
 });
 
@@ -220,10 +220,10 @@ router.delete('/branches/:id', async (req, res) => {
       'DELETE FROM partner_branches WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (result.affectedRows === 0) return error(res, 'Филиал не найден', 404);
-    success(res, null, 'Филиал удалён');
+    if (result.affectedRows === 0) return error(res, 'Branch not found', 404);
+    success(res, null, 'Branch deleted');
   } catch (err) {
-    error(res, 'Ошибка при удалении филиала', 500, err);
+    error(res, 'Error deleting branch', 500, err);
   }
 });
 
@@ -240,7 +240,7 @@ router.get('/sellers', async (req, res) => {
     );
     success(res, { sellers });
   } catch (err) {
-    error(res, 'Ошибка при получении продавцов', 500, err);
+    error(res, 'Error fetching sellers', 500, err);
   }
 });
 
@@ -248,15 +248,15 @@ router.get('/sellers', async (req, res) => {
  * POST /api/partner-admin/sellers
  */
 router.post('/sellers', [
-  body('full_name').notEmpty().withMessage('ФИО обязательно'),
-  body('login').notEmpty().withMessage('Логин обязателен'),
-  body('password').isLength({ min: 6 }).withMessage('Пароль не менее 6 символов'),
+  body('full_name').notEmpty().withMessage('Full name is required'),
+  body('login').notEmpty().withMessage('Login is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('job_title').optional().isString()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const { full_name, login, password, job_title } = req.body;
     const loginTrim = login.trim();
@@ -265,7 +265,7 @@ router.post('/sellers', [
       [req.partnerId, loginTrim]
     );
     if (existing.length > 0) {
-      return error(res, 'Продавец с таким логином уже существует', 409);
+      return error(res, 'Seller with this login already exists', 409);
     }
     const id = generateId();
     const passwordHash = await hashPassword(password);
@@ -277,9 +277,9 @@ router.post('/sellers', [
       'SELECT id, partner_id, full_name, login, job_title, created_at, updated_at FROM partner_sellers WHERE id = ?',
       [id]
     );
-    success(res, { seller: rows[0] }, 'Продавец создан', 201);
+    success(res, { seller: rows[0] }, 'Seller created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании продавца', 500, err);
+    error(res, 'Error creating seller', 500, err);
   }
 });
 
@@ -292,10 +292,10 @@ router.get('/sellers/:id', async (req, res) => {
       'SELECT id, partner_id, full_name, login, job_title, created_at, updated_at FROM partner_sellers WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (rows.length === 0) return error(res, 'Продавец не найден', 404);
+    if (rows.length === 0) return error(res, 'Seller not found', 404);
     success(res, { seller: rows[0] });
   } catch (err) {
-    error(res, 'Ошибка при получении продавца', 500, err);
+    error(res, 'Error fetching seller', 500, err);
   }
 });
 
@@ -304,24 +304,24 @@ router.get('/sellers/:id', async (req, res) => {
  * Можно обновить full_name, job_title, login; опционально новый password.
  */
 router.put('/sellers/:id', [
-  body('full_name').optional().notEmpty().withMessage('ФИО не может быть пустым'),
-  body('login').optional().notEmpty().withMessage('Логин не может быть пустым'),
+  body('full_name').optional().notEmpty().withMessage('Full name cannot be empty'),
+  body('login').optional().notEmpty().withMessage('Login cannot be empty'),
   body('password')
     .optional()
     .custom((val) => val === '' || val == null || (typeof val === 'string' && val.trim().length >= 6))
-    .withMessage('Пароль не менее 6 символов'),
+    .withMessage('Password must be at least 6 characters'),
   body('job_title').optional().isString()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
     const [existing] = await pool.execute(
       'SELECT id FROM partner_sellers WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (existing.length === 0) return error(res, 'Продавец не найден', 404);
+    if (existing.length === 0) return error(res, 'Seller not found', 404);
     const { full_name, login, password, job_title } = req.body;
     const updates = [];
     const params = [];
@@ -332,7 +332,7 @@ router.put('/sellers/:id', [
         'SELECT id FROM partner_sellers WHERE partner_id = ? AND login = ? AND id != ?',
         [req.partnerId, loginTrim, req.params.id]
       );
-      if (dup.length > 0) return error(res, 'Продавец с таким логином уже существует', 409);
+      if (dup.length > 0) return error(res, 'Seller with this login already exists', 409);
       updates.push('login = ?'); params.push(loginTrim);
     }
     // Пароль обновляем только если передан непустой строковый пароль; null, undefined или пустая строка — оставляем старый
@@ -350,9 +350,9 @@ router.put('/sellers/:id', [
       'SELECT id, partner_id, full_name, login, job_title, created_at, updated_at FROM partner_sellers WHERE id = ?',
       [req.params.id]
     );
-    success(res, { seller: rows[0] }, 'Продавец обновлён');
+    success(res, { seller: rows[0] }, 'Seller updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении продавца', 500, err);
+    error(res, 'Error updating seller', 500, err);
   }
 });
 
@@ -365,10 +365,10 @@ router.delete('/sellers/:id', async (req, res) => {
       'DELETE FROM partner_sellers WHERE id = ? AND partner_id = ?',
       [req.params.id, req.partnerId]
     );
-    if (result.affectedRows === 0) return error(res, 'Продавец не найден', 404);
-    success(res, null, 'Продавец удалён');
+    if (result.affectedRows === 0) return error(res, 'Seller not found', 404);
+    success(res, null, 'Seller deleted');
   } catch (err) {
-    error(res, 'Ошибка при удалении продавца', 500, err);
+    error(res, 'Error deleting seller', 500, err);
   }
 });
 
@@ -426,7 +426,7 @@ router.get('/redemptions', async (req, res) => {
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении истории погашений', 500, err);
+    error(res, 'Error fetching redemption history', 500, err);
   }
 });
 
