@@ -11,12 +11,15 @@ const crypto = require('crypto');
 
 const UPLOADS_BASE = process.env.BASE_URL || 'https://danilagames.ru';
 
+/** Срок действия QR-кода волонтёра в секундах (одно место для бэка и ответа фронту). */
+const VOLUNTEER_QR_VALID_SECONDS = 2 * 60; // 120 секунд = 2 минуты
+
 const router = express.Router();
 
 /**
  * GET /api/partners/volunteer-qr
  * Для волонтёра (JWT): создаёт одноразовый QR-токен для предъявления в филиале партнёра.
- * Срок жизни токена — 2 минуты. После списания токен помечается использованным.
+ * Срок жизни токена задаётся VOLUNTEER_QR_VALID_SECONDS. После списания токен помечается использованным.
  */
 router.get('/volunteer-qr', authenticate, async (req, res) => {
   try {
@@ -25,7 +28,7 @@ router.get('/volunteer-qr', authenticate, async (req, res) => {
       return error(res, 'Token is missing user identifier', 401);
     }
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 2 * 60 * 1000); // 2 минуты
+    const expiresAt = new Date(Date.now() + VOLUNTEER_QR_VALID_SECONDS * 1000);
     const id = generateId();
 
     await pool.execute(
@@ -35,7 +38,8 @@ router.get('/volunteer-qr', authenticate, async (req, res) => {
 
     success(res, {
       token,
-      expiresAt: expiresAt.toISOString()
+      expiresAt: expiresAt.toISOString(),
+      expiresInSeconds: VOLUNTEER_QR_VALID_SECONDS
     }, 'QR token created');
   } catch (err) {
     error(res, 'Error creating QR token', 500, err);

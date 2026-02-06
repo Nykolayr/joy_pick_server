@@ -169,7 +169,8 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `email_verified` | boolean | Нет | Статус верификации email (только чтение) |
 | `count_performed` | integer | Нет | Количество выполненных заявок (только чтение) |
 | `count_orders` | integer | Нет | Количество созданных заявок (только чтение) |
-| `jcoins` | integer | Нет | Количество Joycoins (только чтение, обновление через отдельный эндпоинт) |
+| `jcoins` | integer | Нет | Текущий баланс Joycoins (только чтение, обновление через отдельный эндпоинт) |
+| `jcoins_spent` | integer | Нет | Всего списано коинов у партнёров (сумма по погашениям, только чтение) |
 | `coins_from_created` | integer | Нет | Монеты за созданные заявки (только чтение) |
 | `coins_from_participation` | integer | Нет | Монеты за участие (только чтение) |
 | `stripe_id` | string | Нет | Stripe ID (только чтение) |
@@ -205,6 +206,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "count_performed": 5,
   "count_orders": 10,
   "jcoins": 150,
+  "jcoins_spent": 12,
   "coins_from_created": 50,
   "coins_from_participation": 100,
   "stripe_id": null,
@@ -492,6 +494,7 @@ if (registerResponse.statusCode == 200) {
       "count_performed": 0,
       "count_orders": 0,
       "jcoins": 0,
+      "jcoins_spent": 0,
       "coins_from_created": 0,
       "coins_from_participation": 0,
       "stripe_id": null,
@@ -690,7 +693,7 @@ if (registerResponse.statusCode == 200) {
 
 **Требует аутентификации**
 
-Возвращает текущего пользователя со всеми полями, включая актуальный статус Stripe. При каждом запросе, если у пользователя есть Stripe-аккаунт, сервер запрашивает текущий статус в Stripe API и обновляет кэш в таблице `users`, поэтому поля `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at` в ответе всегда соответствуют данным Stripe. Отдельный вызов `GET /api/stripe/account-status` для отображения статуса не нужен.
+Возвращает текущего пользователя со всеми полями модели User, включая `jcoins` (текущий баланс), `jcoins_spent` (всего списано коинов у партнёров), а также актуальный статус Stripe. При каждом запросе, если у пользователя есть Stripe-аккаунт, сервер запрашивает текущий статус в Stripe API и обновляет кэш в таблице `users`, поэтому поля `stripe_account_status`, `stripe_status_label`, `can_donate`, `can_receive_payouts`, `stripe_status_updated_at` в ответе всегда соответствуют данным Stripe. Отдельный вызов `GET /api/stripe/account-status` для отображения статуса не нужен.
 
 **Ответ (200):**
 ```json
@@ -1463,6 +1466,7 @@ Future<void> updateUserAvatar({
       "count_performed": 0,
       "count_orders": 0,
       "jcoins": 0,
+      "jcoins_spent": 0,
       "coins_from_created": 0,
       "coins_from_participation": 0,
       "stripe_id": "acct_xxx",
@@ -3590,16 +3594,17 @@ API для управления партнерами. Партнеры - это 
 
 **Требует аутентификации пользователя (JWT волонтёра)**
 
-Волонтёр запрашивает одноразовый токен для отображения в QR. Токен действителен 2 минуты; после списания коинов у партнёра помечается использованным.
+Волонтёр запрашивает одноразовый токен для отображения в QR. Срок действия токена в секундах задаётся на бэкенде в одном месте (`VOLUNTEER_QR_VALID_SECONDS` в `api/routes/partners.js`), по умолчанию 120 (2 минуты). В ответе передаётся `expiresInSeconds`, чтобы фронт мог использовать одно и то же число (таймер, подсказки). После списания коинов у партнёра токен помечается использованным.
 
 **Ответ (200):**
 ```json
 {
   "success": true,
-  "message": "QR-токен создан",
+  "message": "QR token created",
   "data": {
     "token": "64-символьная_hex-строка",
-    "expiresAt": "2025-12-01T15:56:00.000Z"
+    "expiresAt": "2025-12-01T15:56:00.000Z",
+    "expiresInSeconds": 120
   }
 }
 ```

@@ -293,9 +293,15 @@ router.post('/login', [
        FROM users WHERE id = ?`,
       [user.id]
     );
+    const u = userData[0];
+    const [sumRows] = await pool.execute(
+      'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+      [user.id]
+    );
+    u.jcoins_spent = Number(sumRows[0]?.total ?? 0);
 
     success(res, {
-      user: userData[0],
+      user: u,
       token
     }, 'Login successful');
   } catch (err) {
@@ -379,10 +385,16 @@ router.post('/app-login', [
          FROM users WHERE id = ?`,
         [volunteer.id]
       );
+      const u = userData[0];
+      const [sumRows1] = await pool.execute(
+        'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+        [volunteer.id]
+      );
+      u.jcoins_spent = Number(sumRows1[0]?.total ?? 0);
       return success(res, {
         role: 'volunteer',
         token,
-        user: userData[0]
+        user: u
       }, 'Login successful');
     }
 
@@ -463,10 +475,16 @@ router.post('/app-login', [
            FROM users WHERE id = ?`,
           [volunteer.id]
         );
+        const u2 = userData[0];
+        const [sumRows2] = await pool.execute(
+          'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+          [volunteer.id]
+        );
+        u2.jcoins_spent = Number(sumRows2[0]?.total ?? 0);
         return success(res, {
           role: 'volunteer',
           token,
-          user: userData[0]
+          user: u2
         }, 'Login successful');
       }
     }
@@ -501,7 +519,14 @@ router.get('/me', authenticate, async (req, res) => {
       return error(res, 'User not found', 404);
     }
 
-    success(res, { user: users[0] });
+    const user = users[0];
+    const [sumRows] = await pool.execute(
+      'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+      [userId]
+    );
+    user.jcoins_spent = Number(sumRows[0]?.total ?? 0);
+
+    success(res, { user });
   } catch (err) {
     console.error('Ошибка получения данных пользователя:', err);
     error(res, 'Error fetching user data', 500, err);
@@ -818,9 +843,15 @@ router.post('/firebase', [
        FROM users WHERE id = ?`,
       [userId]
     );
+    const uFirebase = userData[0];
+    const [sumRowsF] = await pool.execute(
+      'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+      [userId]
+    );
+    uFirebase.jcoins_spent = Number(sumRowsF[0]?.total ?? 0);
 
     success(res, {
-      user: userData[0],
+      user: uFirebase,
       token
     }, 'Firebase authentication successful');
   } catch (err) {

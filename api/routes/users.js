@@ -134,6 +134,11 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     const user = users[0];
+    const [sumRows] = await pool.execute(
+      'SELECT COALESCE(SUM(coins_spent), 0) AS total FROM partner_coin_redemptions WHERE user_id = ?',
+      [id]
+    );
+    user.jcoins_spent = Number(sumRows[0]?.total ?? 0);
 
     // Парсим social_links из JSON если это строка
     if (user.social_links) {

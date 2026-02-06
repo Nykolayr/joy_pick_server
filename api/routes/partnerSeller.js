@@ -217,10 +217,15 @@ router.post('/redeem', [
         return error(res, `Insufficient coins for volunteer. Available: ${currentJcoins}`, 400);
       }
 
-      await connection.execute(
-        'UPDATE users SET jcoins = COALESCE(jcoins, 0) - ?, updated_at = NOW() WHERE id = ?',
-        [coins_spent, userId]
+      const newJcoins = currentJcoins - coins_spent;
+      const [updateResult] = await connection.execute(
+        'UPDATE users SET jcoins = ?, updated_at = NOW() WHERE id = ?',
+        [newJcoins, userId]
       );
+      if (updateResult.affectedRows !== 1) {
+        await connection.rollback();
+        return error(res, 'Failed to update volunteer balance', 500);
+      }
 
       const redemptionId = generateId();
       await connection.execute(
@@ -241,7 +246,8 @@ router.post('/redeem', [
           id: redemptionId,
           coinsSpent: coins_spent,
           amountCents: amount_cents,
-          currency
+          currency,
+          volunteerNewBalance: newJcoins
         }
       }, `Redeemed ${coins_spent} coins. Discount: ${(amount_cents / 100).toFixed(2)} ${currency}`);
     } catch (e) {
