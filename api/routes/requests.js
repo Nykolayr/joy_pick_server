@@ -1048,6 +1048,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     let speedCleanupEarnedCoin = false;
 
     if (status !== undefined && status !== null && status !== '') {
+      const statusNormalized = typeof status === 'string' ? status.trim().toLowerCase() : String(status).toLowerCase();
       // Получаем текущие данные заявки перед обновлением
       const [currentRequest] = await pool.execute(
         'SELECT category, status, created_by, joined_user_id, start_date, end_date FROM requests WHERE id = ?',
@@ -1059,22 +1060,23 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         oldStatus = currentRequest[0].status;
         requestCreatedBy = currentRequest[0].created_by;
         requestJoinedUserId = currentRequest[0].joined_user_id;
+        const categoryNormalized = requestCategory ? String(requestCategory).trim().toLowerCase() : '';
 
         // Проверяем изменение статуса на pending (отправка на рассмотрение)
         // КРИТИЧЕСКИ ВАЖНО: Для event и wasteLocation изменение статуса на pending разрешено ТОЛЬКО через /close-by-creator
-        if (status === 'pending' && oldStatus !== 'pending') {
-          if (requestCategory === 'event' || requestCategory === 'wasteLocation') {
+        if (statusNormalized === 'pending' && oldStatus !== 'pending') {
+          if (categoryNormalized === 'event' || categoryNormalized === 'wastelocation') { // wasteLocation в БД
             return error(res, 'Для заявок типа event и wasteLocation используйте POST /api/requests/:requestId/close-by-creator для закрытия заявки', 400);
           }
           statusChangedToPending = true;
         }
 
         // Проверяем изменение статуса на approved (одобрение)
-        if (status === 'approved' && oldStatus !== 'approved') {
+        if (statusNormalized === 'approved' && oldStatus !== 'approved') {
           statusChangedToApproved = true;
           
           // Для speedCleanup проверяем разницу между start_date и end_date
-          if (requestCategory === 'speedCleanup') {
+          if (categoryNormalized === 'speedcleanup') {
             const startDate = currentRequest[0].start_date;
             const endDate = currentRequest[0].end_date;
             if (startDate && endDate) {
@@ -1087,13 +1089,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         }
 
         // Проверяем изменение статуса на rejected (отклонение)
-        if (status === 'rejected' && oldStatus !== 'rejected') {
+        if (statusNormalized === 'rejected' && oldStatus !== 'rejected') {
           statusChangedToRejected = true;
         }
       }
 
       updates.push('status = ?');
-      params.push(status);
+      params.push(statusNormalized);
     }
     if (priority !== undefined && priority !== null && priority !== '') {
       updates.push('priority = ?');
@@ -1270,22 +1272,25 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
-    // 2. Обработка одобрения заявки (approved)
+    // 2. Обработка одобрения заявки (approved) — коины начисляются сразу
     let wasteTransferResult = null;
     if (statusChangedToApproved) {
+      const cat = (requestCategory || '').toString().trim().toLowerCase();
       try {
-        if (requestCategory === 'wasteLocation') {
-          // Для waste: начислить коины, перевести деньги исполнителю, отправить пуши, статус -> archived
+        if (cat === 'wastelocation') {
+          // Для waste: начислить коины создателю, исполнителю, донатерам; перевести деньги; статус -> archived
           wasteTransferResult = await handleWasteApproval(id, requestCreatedBy);
-        } else if (requestCategory === 'event') {
-          // Для event: начислить коины (только реальным участникам), перевести деньги заказчику, отправить пуши, статус -> archived
+        } else if (cat === 'event') {
+          // Для event: начислить коины создателю, approved-участникам, донатерам; перевести деньги; статус -> archived
           await handleEventApproval(id, requestCreatedBy);
-        } else if (requestCategory === 'speedCleanup') {
-          // Для speedCleanup: начислить коин создателю (если >= 20 минут), отправить пуш, статус остается approved
+        } else if (cat === 'speedcleanup') {
+          // Для speedCleanup: начислить коин создателю (если >= 20 минут), пуш, статус остается approved
           await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
+        } else {
+          console.warn(`[requests] Approval: unknown category "${requestCategory}" for request ${id}, coins not awarded`);
         }
-      } catch (error) {
-        // Игнорируем ошибки обработки одобрения заявки
+      } catch (err) {
+        console.error('[requests] Approval handler error (coins may not have been awarded):', err);
       }
     }
 

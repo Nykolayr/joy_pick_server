@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 require('dotenv').config();
 
@@ -46,6 +48,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Логирование запросов убрано - все ошибки возвращаются в API ответе
+
+// Соглашения — отдача HTML (доступно по /api/terms-of-service и /api/privacy-policy)
+const legalDir = path.join(__dirname, '..', 'legal');
+app.get('/terms-of-service', (req, res) => {
+  fs.readFile(path.join(legalDir, 'terms-of-service.html'), 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading page');
+    res.type('html').send(data);
+  });
+});
+app.get('/privacy-policy', (req, res) => {
+  fs.readFile(path.join(legalDir, 'privacy-policy.html'), 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading page');
+    res.type('html').send(data);
+  });
+});
 
 // API маршруты
 app.use('/auth', authRoutes);

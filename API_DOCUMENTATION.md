@@ -11,6 +11,19 @@ https://danilagames.ru/api
 http://localhost:3000/api
 ```
 
+### Страницы соглашений (HTML по запросу)
+
+Отдаются статичным HTML для открытия в WebView или браузере из приложения. Рекомендуется использовать пути под `/api` (гарантированно обрабатываются сервером):
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/terms-of-service` | Terms of Service — полная страница HTML |
+| GET | `/api/privacy-policy` | Privacy Policy — полная страница HTML |
+
+**URL:** `https://danilagames.ru/api/terms-of-service`, `https://danilagames.ru/api/privacy-policy`. Ответ: `Content-Type: text/html`, тело — HTML. Ссылки внутри страниц ведут на `/api/terms-of-service` и `/api/privacy-policy`.
+
+---
+
 ## Аутентификация
 
 Все защищенные эндпоинты требуют заголовок `Authorization`:
@@ -3876,19 +3889,22 @@ Authorization: Bearer <jwt_token>
 ```json
 {
   "success": true,
-  "message": "Списано 10 коинов. Скидка: 5.00 USD",
+  "message": "Redeemed 10 coins. Discount: 5.00 USD",
   "data": {
     "redemption": {
       "id": "uuid",
       "coinsSpent": 10,
       "amountCents": 500,
-      "currency": "USD"
+      "currency": "USD",
+      "volunteerNewBalance": 90
     }
   }
 }
 ```
 
-**Ошибки:** `400` — неверный/использованный QR, недостаточно коинов у волонтёра, неверный филиал; `404` — филиал не найден.
+В `redemption.volunteerNewBalance` — баланс коинов волонтёра после списания (для проверки на клиенте).
+
+**Ошибки:** `400` — неверный/использованный/истёкший QR, недостаточно коинов у волонтёра, неверный филиал; `404` — филиал не найден; `500` — ошибка обновления баланса.
 
 ---
 

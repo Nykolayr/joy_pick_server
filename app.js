@@ -4,6 +4,7 @@ process.env.PASSENGER_NODEJS = '/home/a/autogie1/danilagames.ru/node-v18.19.0-li
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const cron = require('node-cron');
 const { Server } = require('socket.io');
 require('dotenv').config();
@@ -64,6 +65,23 @@ app.use('/api', apiApp);
 // Stripe callback (до статических файлов, чтобы не перехватывалось)
 const stripeCallbackRoutes = require('./api/routes/stripeCallback');
 app.use('/stripeCallback', stripeCallbackRoutes);
+
+// Соглашения — статичная отдача HTML по запросу (файлы в legal/)
+const legalDir = path.join(__dirname, 'legal');
+app.get('/terms-of-service', (req, res) => {
+  const file = path.join(legalDir, 'terms-of-service.html');
+  fs.readFile(file, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading page');
+    res.type('html').send(data);
+  });
+});
+app.get('/privacy-policy', (req, res) => {
+  const file = path.join(legalDir, 'privacy-policy.html');
+  fs.readFile(file, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading page');
+    res.type('html').send(data);
+  });
+});
 
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
