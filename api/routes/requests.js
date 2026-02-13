@@ -905,7 +905,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     // Проверка прав доступа
     const [existingRequests] = await pool.execute(
-      'SELECT created_by FROM requests WHERE id = ?',
+      'SELECT created_by, joined_user_id FROM requests WHERE id = ?',
       [id]
     );
 
@@ -913,8 +913,14 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       return error(res, 'Заявка не найдена', 404);
     }
 
-    // Только создатель или админ может обновлять
-    if (existingRequests[0].created_by !== userId && !req.user.isAdmin) {
+    const createdBy = existingRequests[0].created_by;
+    const joinedUserId = existingRequests[0].joined_user_id || null;
+    const isCreator = createdBy && String(createdBy) === String(userId);
+    const isExecutor = joinedUserId && String(joinedUserId) === String(userId);
+    const isAdmin = req.user.isAdmin;
+
+    // Создатель, исполнитель (joined_user_id) или админ может обновлять заявку
+    if (!isCreator && !isExecutor && !isAdmin) {
       return error(res, 'Доступ запрещен', 403);
     }
 
@@ -2134,8 +2140,8 @@ async function handleWasteApproval(requestId, creatorId) {
            JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id
            WHERE d.request_id = ? AND pi.status = 'succeeded'
            LIMIT 1`,
-          [requestId]
-        );
+    [requestId]
+  );
         if (paymentIntentsFromDb.length > 0) {
           sourcePaymentIntentId = paymentIntentsFromDb[0].payment_intent_id;
         }
