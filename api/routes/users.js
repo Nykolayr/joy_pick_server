@@ -224,13 +224,13 @@ router.put('/:id', authenticate, (req, res, next) => {
       finalPhotoUrl = getFileUrlFromPath(req.file.path);
     }
 
-    // Парсим JSON данные (если отправлены как JSON)
-    let bodyData = req.body;
+    // Парсим JSON данные (если отправлены как JSON). Для JSON-only запросов req.body уже заполнен express.json().
+    let bodyData = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     if (typeof req.body === 'string') {
       try {
         bodyData = JSON.parse(req.body);
       } catch (e) {
-        // Если не JSON, используем как есть
+        bodyData = {};
       }
     }
 
@@ -250,8 +250,10 @@ router.put('/:id', authenticate, (req, res, next) => {
       super_admin,
       about,
       social_links,
-      lang
+      lang: langFromBody
     } = bodyData;
+    // Явно берём lang из bodyData или req.body (на случай если клиент шлёт только { lang } и body парсится по-разному)
+    const lang = langFromBody !== undefined ? langFromBody : (req.body && req.body.lang);
 
     // Используем загруженный файл, если есть, иначе используем photo_url из JSON
     const photoUrlToUse = finalPhotoUrl || photo_url;
@@ -337,6 +339,16 @@ router.put('/:id', authenticate, (req, res, next) => {
       params.push(lang && String(lang).trim() ? String(lang).trim() : null);
     }
 
+    // Если ни одного поля не собрано — пробуем взять lang напрямую из req.body (клиент мог отправить только { lang })
+    if (updates.length === 0 && req.body && req.body.lang !== undefined) {
+      const rawLang = req.body.lang;
+      const langVal = rawLang != null && String(rawLang).trim() ? String(rawLang).trim() : null;
+      if (langVal === null || langVal.length <= 10) {
+        updates.push('lang = ?');
+        params.push(langVal);
+      }
+    }
+
     // Обработка admin и super_admin (только для суперадминов)
     if (req.user.isSuperAdmin) {
       // Нельзя снять права суперадмина у самого себя
@@ -371,7 +383,7 @@ router.put('/:id', authenticate, (req, res, next) => {
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления', 400);
+      return error(res, 'Нет данных для обновления. Отправьте JSON (Content-Type: application/json), например { "lang": "en" }.', 400);
     }
 
     updates.push('updated_at = NOW()');
