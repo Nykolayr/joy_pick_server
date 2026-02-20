@@ -289,7 +289,7 @@ router.post('/login', [
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, fcm_token, auth_type, latitude, longitude, created_time, lang
        FROM users WHERE id = ?`,
       [user.id]
     );
@@ -381,7 +381,7 @@ router.post('/app-login', [
         `SELECT id, email, display_name, photo_url, uid, phone_number, city,
          first_name, second_name, country, gender, count_performed, count_orders,
          jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-         admin, fcm_token, auth_type, latitude, longitude, created_time
+         admin, fcm_token, auth_type, latitude, longitude, created_time, lang
          FROM users WHERE id = ?`,
         [volunteer.id]
       );
@@ -471,7 +471,7 @@ router.post('/app-login', [
           `SELECT id, email, display_name, photo_url, uid, phone_number, city,
            first_name, second_name, country, gender, count_performed, count_orders,
            jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-           admin, fcm_token, auth_type, latitude, longitude, created_time
+           admin, fcm_token, auth_type, latitude, longitude, created_time, lang
            FROM users WHERE id = ?`,
           [volunteer.id]
         );
@@ -509,7 +509,7 @@ router.get('/me', authenticate, async (req, res) => {
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
+       admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time, lang,
        stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
       [userId]
@@ -839,7 +839,7 @@ router.post('/firebase', [
       `SELECT id, email, display_name, photo_url, uid, phone_number, city,
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
-       admin, fcm_token, auth_type, latitude, longitude, created_time
+       admin, fcm_token, auth_type, latitude, longitude, created_time, lang
        FROM users WHERE id = ?`,
       [userId]
     );
@@ -1016,7 +1016,7 @@ router.post('/verify-email', [
     });
 
     // Получение созданного пользователя
-    let selectFields = 'id, email, display_name, uid, created_time';
+    let selectFields = 'id, email, display_name, uid, created_time, lang';
     if (hasEmailVerified) {
       selectFields += ', email_verified';
     }

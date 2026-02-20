@@ -27,7 +27,7 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links
+       about, social_links, lang
        FROM users
     `;
     const params = [];
@@ -82,7 +82,7 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links
+       about, social_links, lang
        FROM users
     `;
     const params = [];
@@ -123,7 +123,7 @@ router.get('/:id', authenticate, async (req, res) => {
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links,
+       about, social_links, lang,
        stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
       [id]
@@ -195,7 +195,8 @@ router.put('/:id', authenticate, uploadUserAvatar, [
   body('admin').optional().isBoolean(),
   body('super_admin').optional().isBoolean(),
   body('about').optional().isString(),
-  body('social_links').optional().isArray()
+  body('social_links').optional().isArray(),
+  body('lang').optional().isString().isLength({ max: 10 })
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -241,7 +242,8 @@ router.put('/:id', authenticate, uploadUserAvatar, [
       admin,
       super_admin,
       about,
-      social_links
+      social_links,
+      lang
     } = bodyData;
 
     // Используем загруженный файл, если есть, иначе используем photo_url из JSON
@@ -323,6 +325,10 @@ router.put('/:id', authenticate, uploadUserAvatar, [
         return error(res, 'social_links должен быть массивом', 400);
       }
     }
+    if (lang !== undefined) {
+      updates.push('lang = ?');
+      params.push(lang && String(lang).trim() ? String(lang).trim() : null);
+    }
 
     // Обработка admin и super_admin (только для суперадминов)
     if (req.user.isSuperAdmin) {
@@ -377,7 +383,7 @@ router.put('/:id', authenticate, uploadUserAvatar, [
        first_name, second_name, country, gender, count_performed, count_orders,
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
-       about, social_links,
+       about, social_links, lang,
        stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
        FROM users WHERE id = ?`,
       [id]
