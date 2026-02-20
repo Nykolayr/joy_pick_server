@@ -178,9 +178,16 @@ router.get('/:id', authenticate, async (req, res) => {
  * Поддерживает загрузку аватара через multipart/form-data:
  * - photo: файл аватара пользователя
  * 
- * Также поддерживает отправку photoUrl через JSON (для обратной совместимости)
+ * Также поддерживает отправку photoUrl через JSON (для обратной совместимости).
+ * Multer подключаем только для multipart, чтобы при JSON (например только { lang }) req.body не терялся.
  */
-router.put('/:id', authenticate, uploadUserAvatar, [
+router.put('/:id', authenticate, (req, res, next) => {
+  const isMultipart = req.is('multipart/form-data');
+  if (isMultipart) {
+    return uploadUserAvatar(req, res, next);
+  }
+  next();
+}, [
   body('display_name').optional().isString(),
   body('first_name').optional().isString(),
   body('second_name').optional().isString(),
