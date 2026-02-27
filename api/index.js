@@ -30,6 +30,7 @@ const chatRoutes = require('./routes/chats');
 const stripeRoutes = require('./routes/stripe');
 const paymentRoutes = require('./routes/payments');
 const newsRoutes = require('./routes/news');
+const uploadRoutes = require('./routes/upload');
 
 const app = express();
 
@@ -95,6 +96,7 @@ app.use('/stripe', stripeRoutes);
 app.use('/stripe-admin', require('./routes/stripeAdmin'));
 app.use('/payments', paymentRoutes);
 app.use('/news', newsRoutes);
+app.use('/upload', uploadRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {
