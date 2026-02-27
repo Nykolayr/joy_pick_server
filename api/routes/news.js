@@ -20,13 +20,13 @@ router.get('/', optionalAuthenticate, async (req, res) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
+    // LIMIT/OFFSET — числа в запросе (mysql2 не поддерживает плейсхолдеры для них), значения уже провалидированы
     const [rows] = await pool.execute(
-      `SELECT n.id, n.title, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n
        ORDER BY n.published_at DESC
-       LIMIT ? OFFSET ?`,
-      [limitNum, offset]
+       LIMIT ${limitNum} OFFSET ${offset}`
     );
 
     const userId = req.user && req.user.userId;
@@ -70,6 +70,7 @@ router.get('/', optionalAuthenticate, async (req, res) => {
  */
 router.post('/', authenticate, requireAdmin, [
   body('title').trim().notEmpty().withMessage('Заголовок обязателен'),
+  body('short_description').optional({ values: 'null' }).trim().isLength({ max: 500 }),
   body('text').trim().notEmpty().withMessage('Текст обязателен'),
   body('image_url').optional({ values: 'null' }).trim(),
   body('published_at').trim().notEmpty().withMessage('Дата публикации обязательна')
@@ -80,7 +81,7 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, val.array()[0].msg || 'Ошибка валидации', 400, val.array());
     }
 
-    const { title, text, image_url, published_at } = req.body;
+    const { title, short_description, text, image_url, published_at } = req.body;
     const id = generateId();
     let imageUrl = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
     if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
@@ -91,14 +92,15 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, 'Некорректная дата публикации', 400);
     }
 
+    const shortDesc = short_description != null && String(short_description).trim() ? String(short_description).trim().slice(0, 500) : null;
     await pool.execute(
-      `INSERT INTO news (id, title, text, image_url, published_at, view_count)
-       VALUES (?, ?, ?, ?, ?, 0)`,
-      [id, title.trim(), text.trim(), imageUrl, publishedAt.toISOString().slice(0, 19).replace('T', ' ')]
+      `INSERT INTO news (id, title, short_description, text, image_url, published_at, view_count)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [id, title.trim(), shortDesc, text.trim(), imageUrl, publishedAt.toISOString().slice(0, 19).replace('T', ' ')]
     );
 
     const [created] = await pool.execute(
-      'SELECT id, title, text, image_url, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
+      'SELECT id, title, short_description, text, image_url, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
       [id]
     );
 
@@ -200,7 +202,7 @@ router.get('/:id', optionalAuthenticate, [
     const skipView = req.query.skip_view === '1' && req.user && req.user.isAdmin;
 
     const [rows] = await pool.execute(
-      `SELECT n.id, n.title, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
@@ -243,6 +245,7 @@ router.get('/:id', optionalAuthenticate, [
 router.put('/:id', authenticate, requireAdmin, [
   param('id').isUUID(),
   body('title').optional().trim().notEmpty(),
+  body('short_description').optional({ values: 'null' }).trim().isLength({ max: 500 }),
   body('text').optional().trim().notEmpty(),
   body('image_url').optional({ values: 'null' }).trim(),
   body('published_at').optional().trim()
@@ -254,7 +257,7 @@ router.put('/:id', authenticate, requireAdmin, [
     }
 
     const { id } = req.params;
-    const { title, text, image_url, published_at } = req.body;
+    const { title, short_description, text, image_url, published_at } = req.body;
 
     const [existing] = await pool.execute('SELECT id FROM news WHERE id = ?', [id]);
     if (existing.length === 0) {
@@ -267,6 +270,11 @@ router.put('/:id', authenticate, requireAdmin, [
     if (title !== undefined) {
       updates.push('title = ?');
       params.push(title.trim());
+    }
+    if (short_description !== undefined) {
+      const v = short_description != null && String(short_description).trim() ? String(short_description).trim().slice(0, 500) : null;
+      updates.push('short_description = ?');
+      params.push(v);
     }
     if (text !== undefined) {
       updates.push('text = ?');
@@ -302,7 +310,7 @@ router.put('/:id', authenticate, requireAdmin, [
     );
 
     const [updated] = await pool.execute(
-      `SELECT n.id, n.title, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
