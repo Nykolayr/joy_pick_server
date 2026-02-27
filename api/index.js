@@ -65,6 +65,15 @@ app.get('/privacy-policy', (req, res) => {
   });
 });
 
+// Корень API (как у recycling-stations — без admin в пути)
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Joy Pick API. News: GET/POST /news, PUT/DELETE /news/:id (admin).',
+    endpoints: { news: '/news', auth: '/auth', users: '/users', requests: '/requests', recyclingStations: '/recycling-stations' }
+  });
+});
+
 // API маршруты
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);

@@ -122,7 +122,10 @@ const errorHandler = (err, req, res, next) => {
 const notFound = (req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.path} not found`
+    message: `Route ${req.method} ${req.path} not found`,
+    path: req.path,
+    originalUrl: req.originalUrl || req.url,
+    baseUrl: req.baseUrl || ''
   });
 };
 
