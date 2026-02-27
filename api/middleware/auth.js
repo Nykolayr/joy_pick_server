@@ -28,6 +28,22 @@ function authenticate(req, res, next) {
 }
 
 /**
+ * Опциональная аутентификация: если токен передан и валиден — заполняет req.user, иначе просто next().
+ * Не возвращает 401 при отсутствии токена.
+ */
+function optionalAuthenticate(req, res, next) {
+  const token = extractToken(req.headers.authorization);
+  if (!token) {
+    return next();
+  }
+  const decoded = verifyToken(token);
+  if (decoded) {
+    req.user = decoded;
+  }
+  next();
+}
+
+/**
  * Middleware для проверки прав администратора
  */
 function requireAdmin(req, res, next) {
@@ -56,6 +72,7 @@ function requireSuperAdmin(req, res, next) {
 
 module.exports = {
   authenticate,
+  optionalAuthenticate,
   requireAdmin,
   requireSuperAdmin
 };

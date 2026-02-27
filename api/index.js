@@ -29,6 +29,7 @@ const cronRoutes = require('./routes/cron');
 const chatRoutes = require('./routes/chats');
 const stripeRoutes = require('./routes/stripe');
 const paymentRoutes = require('./routes/payments');
+const newsRoutes = require('./routes/news');
 
 const app = express();
 
@@ -84,6 +85,7 @@ app.use('/chats', chatRoutes);
 app.use('/stripe', stripeRoutes);
 app.use('/stripe-admin', require('./routes/stripeAdmin'));
 app.use('/payments', paymentRoutes);
+app.use('/news', newsRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {
@@ -158,6 +160,7 @@ app.get('/', (req, res) => {
       stripe: '/api/stripe',
       stripeAdmin: '/api/stripe-admin',
       payments: '/api/payments',
+      news: '/api/news',
       info: '/api/info',
       health: '/api/health'
     }
@@ -191,6 +194,7 @@ app.get('/info', (req, res) => {
       stripe: '/api/stripe',
       stripeAdmin: '/api/stripe-admin',
       payments: '/api/payments',
+      news: '/api/news',
       info: '/api/info',
       health: '/api/health',
       healthDb: '/api/health/db'
