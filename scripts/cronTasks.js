@@ -451,8 +451,9 @@ async function notifyInactiveWasteRequests() {
  * Waste: new без присоединения — снимаем через сутки после истечения expires_at (7 дней или 7+7 после продления).
  * Waste: inProgress 2 суток без выполнения — архивируем.
  * Speed/Event: 8 дней с создания без одобрения модератором — отклоняем (rejected).
+ * @param {Object} [options] - skipSpeedEventReject: true при вызове из GET /api/requests, чтобы не выполнять тяжёлый блок (Stripe, handleRequestRejection) и не давать 502.
  */
-async function deleteInactiveRequests() {
+async function deleteInactiveRequests(options = {}) {
   try {
     // 1. Waste new, никто не присоединился: expires_at + 1 день прошло → мягкое снятие (archived)
     const [wasteNewToArchive] = await pool.execute(
@@ -554,40 +555,42 @@ async function deleteInactiveRequests() {
       }
     }
 
-    // Speed/Event: отклонение без одобрения (рефанды, пуши, status=rejected)
-    const { handleRequestRejection } = require('../api/routes/requests');
-    for (const request of speedEventToReject) {
-      try {
-        await handleRequestRejection(
-          request.id,
-          request.category,
-          request.created_by,
-          'Не одобрена в течение 7 дней',
-          'Заявка снята: не одобрена модератором в течение 7 дней.'
-        );
-        await logCronAction(
-          'deleteInactiveRequests',
-          request.id,
-          request.category,
-          `Авто-отклонение заявки ${request.id} (8 дней без одобрения)`,
-          'completed',
-          { reason: 'not_approved_in_time' }
-        );
-        processed++;
-      } catch (error) {
-        errors++;
-        await logCronAction(
-          'deleteInactiveRequests',
-          request.id,
-          request.category,
-          `Ошибка авто-отклонения ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
-          'error',
-          { error: error.message }
-        );
+    // Speed/Event: отклонение без одобрения (рефанды, пуши, status=rejected). Пропускаем при вызове из списка заявок (skipSpeedEventReject), чтобы не таймаутить и не давать 502.
+    if (!options.skipSpeedEventReject) {
+      const { handleRequestRejection } = require('../api/routes/requests');
+      for (const request of speedEventToReject) {
+        try {
+          await handleRequestRejection(
+            request.id,
+            request.category,
+            request.created_by,
+            'Не одобрена в течение 7 дней',
+            'Заявка снята: не одобрена модератором в течение 7 дней.'
+          );
+          await logCronAction(
+            'deleteInactiveRequests',
+            request.id,
+            request.category,
+            `Авто-отклонение заявки ${request.id} (8 дней без одобрения)`,
+            'completed',
+            { reason: 'not_approved_in_time' }
+          );
+          processed++;
+        } catch (error) {
+          errors++;
+          await logCronAction(
+            'deleteInactiveRequests',
+            request.id,
+            request.category,
+            `Ошибка авто-отклонения ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+            'error',
+            { error: error.message }
+          );
+        }
       }
     }
 
-    return { processed, errors, total: requestsToArchive.length + speedEventToReject.length };
+    return { processed, errors, total: requestsToArchive.length + (options.skipSpeedEventReject ? 0 : speedEventToReject.length) };
   } catch (error) {
     throw error;
   }

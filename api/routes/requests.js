@@ -125,8 +125,8 @@ function processRequestListItem(request) {
  */
 router.get('/', async (req, res) => {
   try {
-    await deleteInactiveRequests();
-    await checkEventAfterStartDate();
+    await deleteInactiveRequests({ skipSpeedEventReject: true });
+    // checkEventAfterStartDate не вызываем из списка: Stripe refunds и удаление чатов — тяжёлые, только в кроне
   } catch (cleanupErr) {
     // не прерываем запрос при ошибке очистки
   }
@@ -225,29 +225,25 @@ router.get('/', async (req, res) => {
     const countParams = [];
     const countConditions = [];
     
-    // Строим условия для COUNT запроса, исключая условие радиуса
+    // Строим условия для COUNT запроса. Условия без '?' (например r.status != 'rejected') не добавляют параметр.
     if (conditions.length > 0) {
       let paramIndex = 0;
       for (let i = 0; i < conditions.length; i++) {
         const condition = conditions[i];
-        // Пропускаем условие радиуса (оно содержит '6371000')
         if (!condition.includes('6371000')) {
           countConditions.push(condition);
-          // Добавляем соответствующий параметр
-          countParams.push(params[paramIndex]);
-          paramIndex++;
+          if (condition.includes('?')) {
+            countParams.push(params[paramIndex]);
+            paramIndex++;
+          }
         } else {
-          // Условие радиуса использует 4 параметра (latitude, longitude, latitude, radius)
-          // Пропускаем их все
           paramIndex += 4;
         }
       }
-      
       if (countConditions.length > 0) {
         countQuery += ' WHERE ' + countConditions.join(' AND ');
       }
     }
-    
     const [countResult] = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
@@ -277,8 +273,7 @@ router.get('/my', authenticate, async (req, res) => {
   }
 
   try {
-    await deleteInactiveRequests();
-    await checkEventAfterStartDate();
+    await deleteInactiveRequests({ skipSpeedEventReject: true });
   } catch (cleanupErr) {
     // не прерываем запрос
   }
