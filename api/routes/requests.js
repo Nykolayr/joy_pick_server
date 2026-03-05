@@ -124,13 +124,11 @@ function processRequestListItem(request) {
  * Получение списка заявок с фильтрацией
  */
 router.get('/', async (req, res) => {
-  // Перед возвратом списка - проверяем и удаляем просроченные заявки
-  // Используем ту же логику, что и в крон-задачах
   try {
-    await deleteInactiveRequests(); // Удаляет waste/speedCleanup через 2 суток
-    await checkEventAfterStartDate(); // Удаляет event через 48 часов после start_date
+    await deleteInactiveRequests();
+    await checkEventAfterStartDate();
   } catch (cleanupErr) {
-    // Не прерываем запрос, если очистка не удалась
+    // не прерываем запрос при ошибке очистки
   }
 
   try {
@@ -169,8 +167,10 @@ router.get('/', async (req, res) => {
     if (status) {
       conditions.push('r.status = ?');
       params.push(status);
+    } else {
+      // По умолчанию отклонённые модератором не показываем в списке
+      conditions.push("r.status != 'rejected'");
     }
-    // Без параметра status отдаём заявки с любым статусом (включая archived и ожидающие оплаты)
 
     if (city) {
       conditions.push('r.city = ?');
@@ -636,10 +636,9 @@ router.post('/', authenticate, uploadRequestPhotos, [
       registeredParticipants = JSON.stringify([userId]);
     }
 
-    // TODO: После проверки вернуть на 7 дней (сейчас 1 день для тестирования)
-    // Для waste заявок устанавливаем expires_at = created_at + 1 день (для проверки, потом вернуть на 7 дней)
+    // Для waste: 7 дней на присоединение; после истечения — уведомление о продлении на 7 дней или снятие через сутки
     const expiresAt = category === 'wasteLocation' 
-      ? new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
       : null;
 
     // Для event заявок инициализируем пустой массив приватных чатов
@@ -1278,20 +1277,16 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
-    // 2. Обработка одобрения заявки (approved) — коины начисляются сразу
+    // 2. Обработка одобрения заявки (approved)
+    // Waste: деньги и коины — сразу. Speed/Event: только статус approved; деньги и коины — через 7 дней (крон processPayoutAfter7Days)
     let wasteTransferResult = null;
     if (statusChangedToApproved) {
       const cat = (requestCategory || '').toString().trim().toLowerCase();
       try {
         if (cat === 'wastelocation') {
-          // Для waste: начислить коины создателю, исполнителю, донатерам; перевести деньги; статус -> archived
           wasteTransferResult = await handleWasteApproval(id, requestCreatedBy);
-        } else if (cat === 'event') {
-          // Для event: начислить коины создателю, approved-участникам, донатерам; перевести деньги; статус -> archived
-          await handleEventApproval(id, requestCreatedBy);
-        } else if (cat === 'speedcleanup') {
-          // Для speedCleanup: начислить коин создателю (если >= 20 минут), пуш, статус остается approved
-          await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
+        } else if (cat === 'event' || cat === 'speedcleanup') {
+          // Не вызываем handleEventApproval / handleSpeedCleanupApproval — выплаты и коины после 7 дней (крон)
         } else {
           console.warn(`[requests] Approval: unknown category "${requestCategory}" for request ${id}, coins not awarded`);
         }
@@ -2592,13 +2587,12 @@ router.post('/:id/extend', authenticate, async (req, res) => {
       return error(res, 'Заявка уже истекла и не может быть продлена', 400);
     }
 
-    // TODO: После проверки вернуть на 7 дней (сейчас 1 день для тестирования)
-    // Продлеваем заявку: expires_at += 1 день (для проверки, потом вернуть на 7 дней), extended_count = 1
+    // Продлеваем заявку на 7 дней (один раз), extended_count = 1
     const currentExpiresAt = request.expires_at 
       ? new Date(request.expires_at)
-      : new Date(Date.now() + 1 * 24 * 60 * 60 * 1000);
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     
-    const newExpiresAt = new Date(currentExpiresAt.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const newExpiresAt = new Date(currentExpiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
     const newExpiresAtString = newExpiresAt.toISOString().slice(0, 19).replace('T', ' ');
 
     await pool.execute(
@@ -3070,3 +3064,6 @@ router.post('/create-with-payment', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.handleRequestRejection = handleRequestRejection;
+module.exports.handleEventApproval = handleEventApproval;
+module.exports.handleSpeedCleanupApproval = handleSpeedCleanupApproval;

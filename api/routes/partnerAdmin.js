@@ -53,7 +53,7 @@ router.get('/me', async (req, res) => {
  */
 router.put('/settings', [
   body('currency').optional().isString().isLength({ max: 10 }),
-  body('exchange_rate_cents_per_coin').optional().isInt({ min: 1 })
+  body('exchange_rate_cents_per_coin').optional().isInt({ min: 0 })
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);

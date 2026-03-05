@@ -22,7 +22,8 @@ const {
   sendRequestRejectedNotification,
   sendEventTimeNotification,
   sendTransferAvailableToUserNotification,
-  sendTransferCheckFailedToSuperAdmins
+  sendTransferCheckFailedToSuperAdmins,
+  getSuperAdminIds
 } = require('../api/services/pushNotification');
 const { generateId } = require('../api/utils/uuid');
 const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
@@ -55,19 +56,17 @@ async function logCronAction(actionType, requestId, requestCategory, actionDescr
 }
 
 /**
- * Автоматический перевод speedCleanup заявок в completed через 24 часа после end_date
- * Начисление коинов и отправка push-уведомлений донатерам
+ * Автоматический перевод speedCleanup в completed и начисление коинов донатерам — через 7 дней с создания
+ * (деньги и коины для speed/event отсылаем не при одобрении, а когда одобрено и прошло 7 дней)
  */
 async function autoCompleteSpeedCleanup() {
   try {
-    // Находим все speedCleanup заявки со статусом approved, где прошло 24 часа с момента одобрения (updated_at)
     const [requests] = await pool.execute(
       `SELECT id, updated_at, created_by 
        FROM requests 
        WHERE category = 'speedCleanup' 
          AND status = 'approved' 
-         AND updated_at IS NOT NULL 
-         AND updated_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
     );
 
     if (requests.length === 0) {
@@ -354,24 +353,21 @@ async function checkExpiredWasteJoins() {
 }
 
 /**
- * Уведомление о скором удалении неактивных waste заявок
- * TODO: После проверки вернуть комментарий "через 7 дней" (сейчас 1 день для тестирования)
+ * Уведомление о скором снятии неактивных waste заявок (никто не присоединился за 7 дней).
+ * extended_count=0: «можно продлить на 7 дней, иначе через сутки снимем». extended_count=1: «через сутки снимем».
  */
 async function notifyInactiveWasteRequests() {
   try {
-    // TODO: После проверки изменить комментарий на "заявке исполнилось 7 дней" (сейчас 1 день для тестирования)
-    // Находим все waste заявки со статусом new, где заявке исполнилось 1 день (expires_at <= NOW())
-    // expires_at = created_at + 1 день, поэтому когда expires_at <= NOW(), заявке исполнилось 1 день
-    // Пуш отправляется когда заявке исполнилось 1 день, и через сутки заявка будет удалена
+    // Waste: new, никто не присоединился, expires_at истёк не более суток назад (окно 24ч для продления)
     const [requests] = await pool.execute(
       `SELECT id, created_by, expires_at, extended_count
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'new' 
+         AND joined_user_id IS NULL
          AND expires_at IS NOT NULL
          AND expires_at <= NOW()
-         AND expires_at > DATE_SUB(NOW(), INTERVAL 1 DAY)
-         AND extended_count = 0`
+         AND expires_at > DATE_SUB(NOW(), INTERVAL 1 DAY)`
     );
 
     if (requests.length === 0) {
@@ -385,38 +381,42 @@ async function notifyInactiveWasteRequests() {
 
     for (const request of requests) {
       try {
-        // Проверяем, было ли уже отправлено уведомление для этой заявки
+        const extCount = Number(request.extended_count) || 0;
         const [existingActions] = await pool.execute(
-          `SELECT id FROM cron_actions 
+          `SELECT id, metadata FROM cron_actions 
            WHERE action_type = 'notifyInactiveWasteRequests' 
              AND request_id = ? 
-             AND status = 'completed'
-           LIMIT 1`,
+             AND status = 'completed'`,
           [request.id]
         );
+        const alreadySentForThisWindow = existingActions.some(a => {
+          if (!a.metadata) return extCount === 0;
+          try {
+            const m = typeof a.metadata === 'string' ? JSON.parse(a.metadata) : a.metadata;
+            return (m.extended_count || 0) === extCount;
+          } catch (_) { return false; }
+        });
+        if (alreadySentForThisWindow) continue;
 
-        // Если уведомление уже было отправлено, пропускаем
-        if (existingActions.length > 0) {
-          continue;
-        }
+        const rejectionMessage = extCount === 0
+          ? 'Заявке 7 дней, никто не присоединился. Можно продлить на 7 дней. Если не продлите в течение суток — заявка будет снята.'
+          : 'Заявка будет снята через сутки (продление уже использовано).';
 
-        // Отправляем пуш создателю о том, что заявка будет удалена через сутки
-        // И что он может продлить ее еще на неделю
         await sendRequestRejectedNotification({
           userIds: [request.created_by],
           requestId: request.id,
           messageType: 'creator',
-          rejectionMessage: 'Your request will be deleted in 24 hours. You can extend it for another week by opening the request.',
+          rejectionMessage,
           requestCategory: 'wasteLocation',
         });
 
-        // Записываем действие
         await logCronAction(
           'notifyInactiveWasteRequests',
           request.id,
           'wasteLocation',
-          `Уведомление создателю заявки ${request.id} о скором удалении (через 24 часа)`,
-          'completed'
+          `Уведомление создателю о продлении/снятии заявки ${request.id} (extended_count=${extCount})`,
+          'completed',
+          { extended_count: extCount }
         );
         
         processed++;
@@ -447,28 +447,26 @@ async function notifyInactiveWasteRequests() {
 }
 
 /**
- * Архивирование неактивных waste и speedCleanup заявок
- * Архивирует заявки типа wasteLocation и speedCleanup:
- * 1. Со статусом 'new', если прошло 2 суток с момента создания и никто не взялся за исполнение
- * 2. Со статусом 'inProgress', если прошло 2 суток с момента присоединения и заявка не выполнена
- * 3. Со статусом 'inProgress' для speedCleanup БЕЗ join_date - удаляем через 2 суток с момента создания
+ * Архивирование/снятие неактивных заявок.
+ * Waste: new без присоединения — снимаем через сутки после истечения expires_at (7 дней или 7+7 после продления).
+ * Waste: inProgress 2 суток без выполнения — архивируем.
+ * Speed/Event: 8 дней с создания без одобрения модератором — отклоняем (rejected).
  */
 async function deleteInactiveRequests() {
   try {
-    // 1. Находим все waste/speedCleanup заявки со статусом new, где прошло 2 суток с момента создания
-    // и никто не взялся за исполнение (joined_user_id IS NULL)
-    const [newRequests] = await pool.execute(
+    // 1. Waste new, никто не присоединился: expires_at + 1 день прошло → мягкое снятие (archived)
+    const [wasteNewToArchive] = await pool.execute(
       `SELECT id, created_by, category
        FROM requests 
-       WHERE category IN ('wasteLocation', 'speedCleanup')
+       WHERE category = 'wasteLocation'
          AND status = 'new' 
          AND joined_user_id IS NULL
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
+         AND expires_at IS NOT NULL
+         AND expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)`
     );
 
-    // 2. Находим все waste заявки со статусом inProgress, где прошло 2 суток с момента присоединения
-    // и заявка не выполнена (статус все еще inProgress, а не completed или approved)
-    const [inProgressRequests] = await pool.execute(
+    // 2. Waste inProgress: 2 суток с присоединения без выполнения → архивируем
+    const [inProgressWaste] = await pool.execute(
       `SELECT id, created_by, category, joined_user_id
        FROM requests 
        WHERE category = 'wasteLocation'
@@ -478,59 +476,41 @@ async function deleteInactiveRequests() {
          AND join_date <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
     );
 
-    // 3. Находим все speedCleanup заявки со статусом inProgress БЕЗ join_date
-    // (созданные более 2 суток назад и не завершенные)
-    const [speedCleanupInProgress] = await pool.execute(
-      `SELECT id, created_by, category, joined_user_id
+    // 3. Speed/Event: 8 дней с создания, не одобрены и не отклонены → отклоняем (закрытие без одобрения)
+    const [speedEventToReject] = await pool.execute(
+      `SELECT id, created_by, category, name
        FROM requests 
-       WHERE category = 'speedCleanup'
-         AND status = 'inProgress' 
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)`
+       WHERE category IN ('speedCleanup', 'event')
+         AND status IN ('new', 'inProgress', 'pending')
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 8 DAY)`
     );
 
-    // Объединяем все списки
-    const requests = [...newRequests, ...inProgressRequests, ...speedCleanupInProgress];
-
-    if (requests.length === 0) {
-      return { processed: 0, errors: 0 };
-    }
-
-    if (requests.length === 0) {
-      return { processed: 0, errors: 0 };
-    }
-
+    const requestsToArchive = [...wasteNewToArchive, ...inProgressWaste];
     let processed = 0;
     let errors = 0;
 
-    for (const request of requests) {
+    const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
+
+    for (const request of requestsToArchive) {
       try {
-        // Получаем донатеров
         const [donations] = await pool.execute(
           'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
           [request.id]
         );
-
-        // TODO: Возврат денег создателю и донатерам через платежную систему
-
-        // Определяем тип архивирования для сообщения
-        const isInProgress = request.joined_user_id !== null && request.joined_user_id !== undefined;
-        const archiveReason = isInProgress 
+        const isInProgress = request.joined_user_id != null;
+        const archiveReason = isInProgress
           ? '2 суток без выполнения после присоединения'
-          : '2 суток без присоединения';
+          : 'Срок истёк (7 дней без присоединения или не продлено в течение суток)';
 
-        // Отправляем пуши создателю
-        const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
         await sendRequestRejectedNotification({
           userIds: [request.created_by],
           requestId: request.id,
           messageType: 'creator',
-          rejectionMessage: isInProgress 
+          rejectionMessage: isInProgress
             ? 'Your request was archived because it was not completed on time'
-            : 'Your request was archived due to inactivity',
-          requestCategory: 'wasteLocation',
+            : 'Заявка снята: никто не присоединился в срок или не продлена.',
+          requestCategory: request.category || 'wasteLocation',
         });
-
-        // Отправляем пуш исполнителю, если заявка была взята
         if (isInProgress) {
           await sendRequestRejectedNotification({
             userIds: [request.joined_user_id],
@@ -540,8 +520,6 @@ async function deleteInactiveRequests() {
             requestCategory: 'wasteLocation',
           });
         }
-
-        // Отправляем пуши донатерам
         const donorUserIds = donations.map(d => d.user_id).filter(Boolean);
         if (donorUserIds.length > 0) {
           await sendRequestRejectedNotification({
@@ -549,49 +527,207 @@ async function deleteInactiveRequests() {
             requestId: request.id,
             messageType: 'donor',
             rejectionMessage: 'Request you donated to was archived',
-            requestCategory: 'wasteLocation',
+            requestCategory: request.category || 'wasteLocation',
           });
         }
 
-        // Архивируем заявку (переводим в статус archived)
         await pool.execute('UPDATE requests SET status = ? WHERE id = ?', ['archived', request.id]);
-        
-        // Записываем действие
         await logCronAction(
           'deleteInactiveRequests',
           request.id,
           request.category || 'wasteLocation',
-          `Архивирование неактивной заявки ${request.id} (${archiveReason})`,
+          `Архивирование заявки ${request.id} (${archiveReason})`,
           'completed',
-          { 
-            donorCount: donations.length,
-            wasInProgress: isInProgress,
-            joinedUserId: request.joined_user_id || null
-          }
+          { donorCount: donations.length, wasInProgress: isInProgress }
         );
-        
         processed++;
       } catch (error) {
         errors++;
-        // Записываем ошибку в лог с подробной информацией
         await logCronAction(
           'deleteInactiveRequests',
           request.id,
           request.category || 'wasteLocation',
-          `Ошибка при архивировании неактивной заявки ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          `Ошибка архивирования ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
           'error',
-          {
-            error: error.message || 'Неизвестная ошибка',
-            errorName: error.name || 'Error',
-            errorStack: error.stack,
-            requestId: request.id
-          }
+          { error: error.message }
+        );
+      }
+    }
+
+    // Speed/Event: отклонение без одобрения (рефанды, пуши, status=rejected)
+    const { handleRequestRejection } = require('../api/routes/requests');
+    for (const request of speedEventToReject) {
+      try {
+        await handleRequestRejection(
+          request.id,
+          request.category,
+          request.created_by,
+          'Не одобрена в течение 7 дней',
+          'Заявка снята: не одобрена модератором в течение 7 дней.'
+        );
+        await logCronAction(
+          'deleteInactiveRequests',
+          request.id,
+          request.category,
+          `Авто-отклонение заявки ${request.id} (8 дней без одобрения)`,
+          'completed',
+          { reason: 'not_approved_in_time' }
+        );
+        processed++;
+      } catch (error) {
+        errors++;
+        await logCronAction(
+          'deleteInactiveRequests',
+          request.id,
+          request.category,
+          `Ошибка авто-отклонения ${request.id}: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          { error: error.message }
+        );
+      }
+    }
+
+    return { processed, errors, total: requestsToArchive.length + speedEventToReject.length };
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Уведомление суперадминов: speed/event 7 дней с создания, заявка не одобрена — «нужно закрыть».
+ * Вызывается каждый запуск крона; по каждой заявке шлём пуш один раз (по логу cron_actions).
+ */
+async function notifySuperadminsRequestNotClosed() {
+  try {
+    const [requests] = await pool.execute(
+      `SELECT id, name, category, created_by, created_at
+       FROM requests 
+       WHERE category IN ('speedCleanup', 'event')
+         AND status IN ('new', 'inProgress', 'pending')
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
+         AND created_at > DATE_SUB(NOW(), INTERVAL 8 DAY)`
+    );
+    if (requests.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    const superAdminIds = await getSuperAdminIds();
+    if (superAdminIds.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    let processed = 0;
+    let errors = 0;
+    const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
+
+    for (const request of requests) {
+      try {
+        const [existing] = await pool.execute(
+          `SELECT id FROM cron_actions 
+           WHERE action_type = 'notifySuperadminsRequestNotClosed' AND request_id = ? AND status = 'completed' LIMIT 1`,
+          [request.id]
+        );
+        if (existing.length > 0) continue;
+
+        await sendRequestRejectedNotification({
+          userIds: superAdminIds,
+          requestId: request.id,
+          messageType: 'creator',
+          rejectionMessage: `Заявка «${(request.name || '').slice(0, 50)}» не закрыта. 7 дней с создания — нужно одобрить или отклонить в админке.`,
+          requestCategory: request.category,
+        });
+
+        await logCronAction(
+          'notifySuperadminsRequestNotClosed',
+          request.id,
+          request.category,
+          `Уведомление суперадминам: заявка ${request.id} не закрыта`,
+          'completed'
+        );
+        processed++;
+      } catch (error) {
+        errors++;
+        await logCronAction(
+          'notifySuperadminsRequestNotClosed',
+          request.id,
+          request.category,
+          `Ошибка уведомления суперадминам: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          { error: error.message }
         );
       }
     }
 
     return { processed, errors, total: requests.length };
+  } catch (error) {
+    throw error;
+  }
+}
 
+/**
+ * Выплаты и коины для speedCleanup/event: не при одобрении, а когда одобрено и прошло 7 дней с создания.
+ */
+async function processPayoutAfter7Days() {
+  try {
+    const [requests] = await pool.execute(
+      `SELECT id, category, created_by, start_date, end_date
+       FROM requests 
+       WHERE category IN ('speedCleanup', 'event')
+         AND status = 'approved'
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
+    );
+    if (requests.length === 0) {
+      return { processed: 0, errors: 0 };
+    }
+
+    const { handleEventApproval, handleSpeedCleanupApproval } = require('../api/routes/requests');
+    let processed = 0;
+    let errors = 0;
+
+    for (const request of requests) {
+      try {
+        const [existing] = await pool.execute(
+          `SELECT id FROM cron_actions 
+           WHERE action_type = 'processPayoutAfter7Days' AND request_id = ? AND status = 'completed' LIMIT 1`,
+          [request.id]
+        );
+        if (existing.length > 0) continue;
+
+        if (request.category === 'event') {
+          await handleEventApproval(request.id, request.created_by);
+        } else if (request.category === 'speedCleanup') {
+          let earnedCoin = false;
+          if (request.start_date && request.end_date) {
+            const start = new Date(request.start_date);
+            const end = new Date(request.end_date);
+            const diffMinutes = (end - start) / (1000 * 60);
+            earnedCoin = diffMinutes >= 20;
+          }
+          await handleSpeedCleanupApproval(request.id, request.created_by, earnedCoin);
+        }
+
+        await logCronAction(
+          'processPayoutAfter7Days',
+          request.id,
+          request.category,
+          `Выплаты и коины после 7 дней для заявки ${request.id}`,
+          'completed'
+        );
+        processed++;
+      } catch (error) {
+        errors++;
+        await logCronAction(
+          'processPayoutAfter7Days',
+          request.id,
+          request.category,
+          `Ошибка выплат после 7 дней: ${error.message || 'Неизвестная ошибка'}`,
+          'error',
+          { error: error.message }
+        );
+      }
+    }
+
+    return { processed, errors, total: requests.length };
   } catch (error) {
     throw error;
   }
@@ -1217,6 +1353,7 @@ async function runAllCronTasks() {
   const results = {};
 
   try {
+    results.processPayoutAfter7Days = await processPayoutAfter7Days();
     results.autoCompleteSpeedCleanup = await autoCompleteSpeedCleanup();
     results.checkWasteReminders = await checkWasteReminders();
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
@@ -1224,6 +1361,7 @@ async function runAllCronTasks() {
     results.checkEventAfterStartDate = await checkEventAfterStartDate();
     results.checkTransferPayoutAvailability = await checkTransferPayoutAvailability();
     results.notifyInactiveWasteRequests = await notifyInactiveWasteRequests();
+    results.notifySuperadminsRequestNotClosed = await notifySuperadminsRequestNotClosed();
     results.cleanupUnpaidRequests = await cleanupUnpaidRequests();
 
     const currentHour = new Date().getHours();
@@ -1329,6 +1467,8 @@ module.exports = {
   checkExpiredWasteJoins,
   checkTransferPayoutAvailability,
   notifyInactiveWasteRequests,
+  notifySuperadminsRequestNotClosed,
+  processPayoutAfter7Days,
   deleteInactiveRequests,
   checkEventTimes,
   checkEventAfterStartDate,

@@ -262,7 +262,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
   body('website_url').optional().isURL(),
   body('logo_url').optional().isString(),
   body('currency').notEmpty().withMessage('Currency is required (e.g. USD, RUB)'),
-  body('exchange_rate_cents_per_coin').isInt({ min: 1 }).withMessage('Exchange rate is required: how many cents (or minor units) per 1 coin'),
+  body('exchange_rate_cents_per_coin').isInt({ min: 0 }).withMessage('Exchange rate: how many cents (or minor units) per 1 coin (0 = бесплатно за коины)'),
   body('branches')
     .optional()
     .customSanitizer((val) => {
@@ -340,7 +340,8 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
     const partnerId = generateId();
     const adminPasswordHash = await hashPassword(admin_password);
     const currencyCode = (currency || '').trim().toUpperCase().slice(0, 10);
-    const rate = Math.max(1, parseInt(exchange_rate_cents_per_coin, 10) || 50);
+    const rateRaw = parseInt(exchange_rate_cents_per_coin, 10);
+    const rate = (rateRaw >= 0 && !isNaN(rateRaw)) ? rateRaw : 50;
 
     await pool.execute(
       `INSERT INTO partners (id, name, logo_url, photo_urls, activity, website_url,
@@ -478,7 +479,11 @@ router.put('/:id', authenticate, requireAdmin, uploadPartnerWithLogo, async (req
     if (activity !== undefined) { updates.push('activity = ?'); params.push(activity); }
     if (website_url !== undefined) { updates.push('website_url = ?'); params.push(website_url); }
     if (currency !== undefined) { updates.push('currency = ?'); params.push((currency || '').trim().toUpperCase().slice(0, 10)); }
-    if (exchange_rate_cents_per_coin !== undefined) { updates.push('exchange_rate_cents_per_coin = ?'); params.push(Math.max(1, parseInt(exchange_rate_cents_per_coin, 10) || 50)); }
+    if (exchange_rate_cents_per_coin !== undefined) {
+      const v = parseInt(exchange_rate_cents_per_coin, 10);
+      updates.push('exchange_rate_cents_per_coin = ?');
+      params.push((!isNaN(v) && v >= 0) ? v : 50);
+    }
     if (admin_email !== undefined) { updates.push('admin_email = ?'); params.push((admin_email || '').trim().toLowerCase()); }
     // Пароль обновляем только если передан непустой строковый пароль; null, undefined или пустая строка — оставляем старый
     if (typeof admin_password === 'string' && admin_password.trim() !== '') {

@@ -297,43 +297,35 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
       }
     }
 
-    // 4. WasteLocation: уведомление о скором удалении и удаление
-    // 4.1. Уведомление о скором удалении (когда заявке исполнилось 1 день)
-    // expires_at = created_at + 1 день (время когда заявке исполнится 1 день)
-    // Пуш отправляется когда expires_at <= NOW() (заявке уже исполнилось 1 день)
+    // 4. WasteLocation: уведомление о продлении/снятии и снятие (мягкое)
+    // 4.1. Уведомление: 7 дней без присоединения (expires_at истёк), в течение суток — пуш «продлить или снимем»
     const [wasteForNotification] = await pool.execute(
       `SELECT id, name, expires_at, created_at, category, extended_count
        FROM requests 
        WHERE category = 'wasteLocation'
          AND status = 'new' 
+         AND joined_user_id IS NULL
          AND expires_at IS NOT NULL
          AND expires_at <= NOW()
          AND expires_at > DATE_SUB(NOW(), INTERVAL 1 DAY)
-         AND extended_count = 0
        ORDER BY expires_at ASC
        LIMIT 10`
     );
 
     for (const request of wasteForNotification) {
       const expiresAt = new Date(request.expires_at);
-      const now = new Date();
-      
-      // Время отправки пуша = когда заявке исполнилось 1 день = expires_at
-      // Показываем что пуш должен быть отправлен сейчас (expires_at уже прошло)
       scheduledActions.push({
         action_type: 'notifyInactiveWasteRequests',
         request_id: request.id,
         request_category: request.category,
         request_name: request.name,
-        action_description: `Уведомление создателю заявки "${request.name}" о скором удалении (через 24 часа после создания)`,
+        action_description: `Уведомление создателю заявки "${request.name}" о продлении на 7 дней или снятии через сутки`,
         scheduled_at: expiresAt.toISOString(),
-        time_until: 0 // уже должно быть отправлено
+        time_until: 0
       });
     }
 
-    // 4.2. Архивирование неактивных waste заявок (через 1 день после пуша)
-    // expires_at = created_at + 1 день (время отправки пуша)
-    // Архивирование происходит через 1 день после пуша, то есть когда expires_at + 1 день <= NOW()
+    // 4.2. Снятие waste (archived): expires_at + 1 день прошло — снимаем
     const [wasteForDeletion] = await pool.execute(
       `SELECT id, name, expires_at, category
        FROM requests 
