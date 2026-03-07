@@ -56,16 +56,15 @@ async function logCronAction(actionType, requestId, requestCategory, actionDescr
 }
 
 /**
- * Автоматический перевод speedCleanup в completed и начисление коинов донатерам — через 7 дней с создания
- * (деньги и коины для speed/event отсылаем не при одобрении, а когда одобрено и прошло 7 дней)
+ * Автоматический перевод speedCleanup в completed через 7 дней с создания.
+ * Перед переводом: выплата только по донатам после одобрения (payoutSpeedCleanupNewDonationsBeforeArchive).
+ * Первая выплата — при одобрении (в requests.js).
  */
 async function autoCompleteSpeedCleanup() {
   try {
     const [requests] = await pool.execute(
-      `SELECT id, updated_at, created_by 
-       FROM requests 
-       WHERE category = 'speedCleanup' 
-         AND status = 'approved' 
+      `SELECT id, created_by FROM requests 
+       WHERE category = 'speedCleanup' AND status = 'approved' 
          AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
     );
 
@@ -73,15 +72,15 @@ async function autoCompleteSpeedCleanup() {
       return { processed: 0, errors: 0 };
     }
 
+    const { payoutSpeedCleanupNewDonationsBeforeArchive } = require('../api/routes/requests');
     let processed = 0;
     let errors = 0;
 
     for (const request of requests) {
       try {
         const requestId = request.id;
-        const approvedDate = new Date(request.updated_at);
-        const now = new Date();
-        const diffHours = (now - approvedDate) / (1000 * 60 * 60);
+        // Сначала выплата по донатам после одобрения (деньги создателю, коины только новым донатерам)
+        await payoutSpeedCleanupNewDonationsBeforeArchive(requestId);
 
         // Перевод в completed
         await pool.execute(
@@ -89,49 +88,6 @@ async function autoCompleteSpeedCleanup() {
           ['completed', requestId]
         );
 
-        // Получаем донатеров и суммы донатов
-        const [donations] = await pool.execute(
-          'SELECT DISTINCT user_id, amount FROM donations WHERE request_id = ?',
-          [requestId]
-        );
-
-        const donorUserIds = [];
-        let totalDonationsAmount = 0;
-
-        if (donations.length > 0) {
-          const coinsToAward = 1;
-
-          for (const donation of donations) {
-            try {
-              // Начисляем коины донатерам (по 1 коину каждому, кроме создателя)
-              if (donation.user_id && donation.user_id !== request.created_by) {
-                await pool.execute(
-                  'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
-                  [coinsToAward, coinsToAward, donation.user_id]
-                );
-                donorUserIds.push(donation.user_id);
-              }
-              
-              // Суммируем донаты
-              if (donation.amount) {
-                totalDonationsAmount += parseFloat(donation.amount) || 0;
-              }
-            } catch (donationError) {
-              // Ошибка обработки донатера
-            }
-          }
-        }
-
-        // TODO: Перевести все донаты (за вычетом комиссии) исполнителю (created_by) через платежную систему
-        // Пока только логируем сумму
-        if (totalDonationsAmount > 0 && request.created_by) {
-          // Здесь должен быть код перевода денег исполнителю через платежную систему
-          // const commission = totalDonationsAmount * 0.1; // 10% комиссия (пример)
-          // const amountToTransfer = totalDonationsAmount - commission;
-          // await transferMoneyToUser(request.created_by, amountToTransfer);
-        }
-
-        // Отправляем push-уведомление исполнителю (created_by) о получении донатов
         if (request.created_by) {
           try {
             await sendSpeedCleanupNotification({
@@ -139,37 +95,27 @@ async function autoCompleteSpeedCleanup() {
               messageType: 'executor',
               requestId: requestId,
             });
-          } catch (pushError) {
-            // Ошибка отправки push-уведомления исполнителю
-          }
+          } catch (pushError) {}
         }
 
-        // Записываем действие для каждой обработанной заявки
         await logCronAction(
           'autoCompleteSpeedCleanup',
           requestId,
           'speedCleanup',
-          `Автоматическое завершение заявки ${requestId} через 24 часа после одобрения`,
+          `Заявка ${requestId} переведена в completed (7 дней с создания)`,
           'completed',
-          { donorCount: donorUserIds.length, coinsAwarded: coinsToAward }
+          {}
         );
-
         processed++;
       } catch (requestError) {
         errors++;
-        // Записываем ошибку в лог с подробной информацией
         await logCronAction(
           'autoCompleteSpeedCleanup',
           request.id,
           'speedCleanup',
-          `Ошибка при обработке заявки ${request.id}: ${requestError.message || 'Неизвестная ошибка'}`,
+          `Ошибка при завершении заявки ${request.id}: ${requestError.message || 'Неизвестная ошибка'}`,
           'error',
-          {
-            error: requestError.message || 'Неизвестная ошибка',
-            errorName: requestError.name || 'Error',
-            errorStack: requestError.stack,
-            requestId: request.id
-          }
+          { error: requestError.message, requestId: request.id }
         );
       }
     }
@@ -1356,7 +1302,7 @@ async function runAllCronTasks() {
   const results = {};
 
   try {
-    results.processPayoutAfter7Days = await processPayoutAfter7Days();
+    // Первая выплата — при одобрении (requests.js). Перед архивом — только новые донаты (в autoCompleteSpeedCleanup).
     results.autoCompleteSpeedCleanup = await autoCompleteSpeedCleanup();
     results.checkWasteReminders = await checkWasteReminders();
     results.checkExpiredWasteJoins = await checkExpiredWasteJoins();
@@ -1471,7 +1417,6 @@ module.exports = {
   checkTransferPayoutAvailability,
   notifyInactiveWasteRequests,
   notifySuperadminsRequestNotClosed,
-  processPayoutAfter7Days,
   deleteInactiveRequests,
   checkEventTimes,
   checkEventAfterStartDate,

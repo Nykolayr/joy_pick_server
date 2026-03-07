@@ -1096,6 +1096,9 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
       updates.push('status = ?');
       params.push(statusNormalized);
+      if (statusNormalized === 'approved') {
+        updates.push('approved_at = NOW()');
+      }
     }
     if (priority !== undefined && priority !== null && priority !== '') {
       updates.push('priority = ?');
@@ -1272,16 +1275,17 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
-    // 2. Обработка одобрения заявки (approved)
-    // Waste: деньги и коины — сразу. Speed/Event: только статус approved; деньги и коины — через 7 дней (крон processPayoutAfter7Days)
+    // 2. Обработка одобрения заявки (approved): первая выплата — коины и распределение донатов сразу
     let wasteTransferResult = null;
     if (statusChangedToApproved) {
       const cat = (requestCategory || '').toString().trim().toLowerCase();
       try {
         if (cat === 'wastelocation') {
           wasteTransferResult = await handleWasteApproval(id, requestCreatedBy);
-        } else if (cat === 'event' || cat === 'speedcleanup') {
-          // Не вызываем handleEventApproval / handleSpeedCleanupApproval — выплаты и коины после 7 дней (крон)
+        } else if (cat === 'event') {
+          await handleEventApproval(id, requestCreatedBy);
+        } else if (cat === 'speedcleanup') {
+          await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
         } else {
           console.warn(`[requests] Approval: unknown category "${requestCategory}" for request ${id}, coins not awarded`);
         }
@@ -2423,27 +2427,194 @@ async function handleEventApproval(requestId, creatorId) {
 }
 
 /**
- * Обработка одобрения заявки типа speedCleanup
+ * Обработка одобрения заявки типа speedCleanup: распределение донатов создателю + коины создателю и донатерам.
  */
 async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
-  // 1. Начисляем коин создателю только если >= 20 минут
+  const coinsToAward = 1;
+  const { removeFailedDonationsFromRequest } = require('../utils/donationTransferHelpers');
+  await removeFailedDonationsFromRequest(requestId).catch(() => {});
+
+  const [donations] = await pool.execute(
+    'SELECT id, user_id, amount, payment_intent_id FROM donations WHERE request_id = ?',
+    [requestId]
+  );
+
+  // 1. Коины создателю (если earnedCoin)
   if (earnedCoin && creatorId) {
-    const coinsToAward = 1;
     await pool.execute(
       'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_created = COALESCE(coins_from_created, 0) + ?, updated_at = NOW() WHERE id = ?',
       [coinsToAward, coinsToAward, creatorId]
     );
   }
 
-  // 2. Отправляем push-уведомление создателю
-  if (creatorId) {
-    sendSpeedCleanupNotification({
-      userIds: [creatorId],
-      earnedCoin: earnedCoin,
-    }).catch(() => {});
+  // 2. Коины донатерам (по 1 каждому, кроме создателя)
+  const donorUserIds = [];
+  for (const d of donations) {
+    if (d.user_id && d.user_id !== creatorId) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, d.user_id]
+      );
+      donorUserIds.push(d.user_id);
+    }
   }
 
-  // 3. Статус остается approved (не меняем на completed)
+  // 3. Деньги: вся сумма донатов (за вычетом комиссий) — создателю
+  const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+  const totalAmountCents = Math.round(totalDonations * 100);
+  const platformFeeCents = Math.round(totalAmountCents * 0.07);
+  const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
+  const netTransferCents = totalAmountCents - platformFeeCents - stripeFeeCents;
+
+  if (creatorId && netTransferCents > 0) {
+    const [accRows] = await pool.execute('SELECT account_id FROM stripe_accounts WHERE user_id = ?', [creatorId]);
+    if (accRows.length > 0) {
+      let sourcePaymentIntentId = null;
+      const [piFromDb] = await pool.execute(
+        `SELECT payment_intent_id FROM donations d JOIN payment_intents pi ON d.payment_intent_id = pi.payment_intent_id WHERE d.request_id = ? AND pi.status = 'succeeded' LIMIT 1`,
+        [requestId]
+      );
+      if (piFromDb.length > 0) sourcePaymentIntentId = piFromDb[0].payment_intent_id;
+      if (!sourcePaymentIntentId) {
+        const [donWithPi] = await pool.execute('SELECT payment_intent_id FROM donations WHERE request_id = ? AND payment_intent_id IS NOT NULL', [requestId]);
+        for (const row of donWithPi) {
+          try {
+            const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+            if (pi.status === 'succeeded') {
+              sourcePaymentIntentId = pi.id;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+      let sourceTransactionId = null;
+      if (sourcePaymentIntentId) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(sourcePaymentIntentId, { expand: ['latest_charge'] });
+          sourceTransactionId = pi.latest_charge?.id || (typeof pi.latest_charge === 'string' ? pi.latest_charge : null);
+        } catch (_) {}
+      }
+      if (sourcePaymentIntentId) {
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: netTransferCents,
+            currency: 'usd',
+            destination: accRows[0].account_id,
+            source_transaction: sourceTransactionId || undefined,
+            metadata: { request_id: requestId, performer_user_id: creatorId }
+          });
+          const transferId = generateId();
+          await pool.execute(
+            `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [transferId, transfer.id, requestId, creatorId, netTransferCents, platformFeeCents, stripeFeeCents, 'usd', 'pending', sourcePaymentIntentId]
+          );
+          insertTransferPayoutCheck(transferId, creatorId, netTransferCents).catch(() => {});
+        } catch (transferErr) {}
+      }
+    }
+  }
+
+  if (creatorId) {
+    sendSpeedCleanupNotification({ userIds: [creatorId], earnedCoin: earnedCoin }).catch(() => {});
+  }
+  if (donorUserIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: donorUserIds, requestId, messageType: 'donor', requestCategory: 'speedCleanup' }).catch(() => {});
+  }
+}
+
+/**
+ * Перед переводом speedCleanup в completed: выплата только по донатам после одобрения (деньги — создателю, коины — только новым донатерам).
+ * Вызывается из крона в autoCompleteSpeedCleanup. Идемпотентно по cron_actions.
+ */
+async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
+  const [reqRows] = await pool.execute(
+    'SELECT id, created_by, approved_at FROM requests WHERE id = ? AND category = ? AND status = ?',
+    [requestId, 'speedCleanup', 'approved']
+  );
+  if (reqRows.length === 0 || !reqRows[0].approved_at) return { done: false };
+  const creatorId = reqRows[0].created_by;
+  const approvedAt = reqRows[0].approved_at;
+
+  const [alreadyDone] = await pool.execute(
+    `SELECT id FROM cron_actions WHERE action_type = 'payoutSpeedCleanupBeforeArchive' AND request_id = ? AND status = 'completed' LIMIT 1`,
+    [requestId]
+  );
+  if (alreadyDone.length > 0) return { done: true, skipped: true };
+
+  const [donations] = await pool.execute(
+    'SELECT id, user_id, amount, payment_intent_id, created_at FROM donations WHERE request_id = ? AND created_at > ?',
+    [requestId, approvedAt]
+  );
+  if (donations.length === 0) return { done: true, paid: 0 };
+
+  const coinsToAward = 1;
+  for (const d of donations) {
+    if (d.user_id && d.user_id !== creatorId) {
+      await pool.execute(
+        'UPDATE users SET jcoins = COALESCE(jcoins, 0) + ?, coins_from_participation = COALESCE(coins_from_participation, 0) + ?, updated_at = NOW() WHERE id = ?',
+        [coinsToAward, coinsToAward, d.user_id]
+      );
+    }
+  }
+
+  const totalDonations = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+  const totalAmountCents = Math.round(totalDonations * 100);
+  const platformFeeCents = Math.round(totalAmountCents * 0.07);
+  const stripeFeeCents = Math.round(totalAmountCents * 0.029) + (donations.length * 30);
+  const netTransferCents = totalAmountCents - platformFeeCents - stripeFeeCents;
+
+  if (creatorId && netTransferCents > 0) {
+    const [accRows] = await pool.execute('SELECT account_id FROM stripe_accounts WHERE user_id = ?', [creatorId]);
+    if (accRows.length > 0) {
+      let sourcePaymentIntentId = null;
+      for (const d of donations) {
+        if (!d.payment_intent_id) continue;
+        try {
+          const pi = await stripe.paymentIntents.retrieve(d.payment_intent_id);
+          if (pi.status === 'succeeded') {
+            sourcePaymentIntentId = pi.id;
+            break;
+          }
+        } catch (_) {}
+      }
+      let sourceTransactionId = null;
+      if (sourcePaymentIntentId) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(sourcePaymentIntentId, { expand: ['latest_charge'] });
+          sourceTransactionId = pi.latest_charge?.id || (typeof pi.latest_charge === 'string' ? pi.latest_charge : null);
+        } catch (_) {}
+      }
+      if (sourcePaymentIntentId) {
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: netTransferCents,
+            currency: 'usd',
+            destination: accRows[0].account_id,
+            source_transaction: sourceTransactionId || undefined,
+            metadata: { request_id: requestId, performer_user_id: creatorId }
+          });
+          const transferId = generateId();
+          await pool.execute(
+            `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [transferId, transfer.id, requestId, creatorId, netTransferCents, platformFeeCents, stripeFeeCents, 'usd', 'pending', sourcePaymentIntentId]
+          );
+          insertTransferPayoutCheck(transferId, creatorId, netTransferCents).catch(() => {});
+        } catch (_) {}
+      }
+    }
+  }
+
+  await pool.execute(
+    `INSERT INTO cron_actions (id, action_type, request_id, request_category, action_description, status, executed_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+    [generateId(), 'payoutSpeedCleanupBeforeArchive', requestId, 'speedCleanup', `Выплата донатов после одобрения (${donations.length} шт.) перед архивом`, 'completed']
+  );
+  const donorIds = donations.map(d => d.user_id).filter(Boolean);
+  if (donorIds.length > 0) {
+    sendRequestApprovedNotification({ userIds: donorIds, requestId, messageType: 'donor', requestCategory: 'speedCleanup' }).catch(() => {});
+  }
+  return { done: true, paid: donations.length };
 }
 
 /**
@@ -3062,3 +3233,4 @@ module.exports = router;
 module.exports.handleRequestRejection = handleRequestRejection;
 module.exports.handleEventApproval = handleEventApproval;
 module.exports.handleSpeedCleanupApproval = handleSpeedCleanupApproval;
+module.exports.payoutSpeedCleanupNewDonationsBeforeArchive = payoutSpeedCleanupNewDonationsBeforeArchive;
