@@ -133,6 +133,23 @@ router.post('/', authenticate, [
     const { requestId, amount, paymentIntentId } = req.body;
     const userId = req.user.userId;
 
+    // Идемпотентность: донат мог быть уже создан webhook'ом payment_intent.succeeded
+    const [existingByPi] = await pool.execute(
+      'SELECT id, request_id, user_id, amount, payment_intent_id, created_at FROM donations WHERE payment_intent_id = ?',
+      [paymentIntentId]
+    );
+    if (existingByPi.length > 0) {
+      const [donations] = await pool.execute(
+        `SELECT d.*, u.display_name as user_name, u.email as user_email, r.name as request_name
+         FROM donations d
+         LEFT JOIN users u ON d.user_id = u.id
+         LEFT JOIN requests r ON d.request_id = r.id
+         WHERE d.id = ?`,
+        [existingByPi[0].id]
+      );
+      return success(res, { donation: normalizeDatesInObject(donations[0]) }, 'Donation created', 201);
+    }
+
     // Проверка существования заявки
     const [requests] = await pool.execute(
       'SELECT id, name, category, created_by, total_contributed FROM requests WHERE id = ?',

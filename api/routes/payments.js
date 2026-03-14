@@ -108,7 +108,8 @@ router.post('/create-donation', authenticate, [
       });
     }
 
-    // Сохраняем PaymentIntent в базу данных
+    // Сохраняем только PaymentIntent в БД. Донат создаётся в webhook payment_intent.succeeded после успешной оплаты.
+    // Так при отмене оплаты не остаётся «призрачного» доната и заявка не показывается как платная.
     const id = generateId();
     await pool.execute(
       `INSERT INTO payment_intents (id, payment_intent_id, user_id, request_id, amount_cents, currency, status, type, metadata)
@@ -128,14 +129,6 @@ router.post('/create-donation', authenticate, [
           request_category: request_category || requests[0].category || 'unknown'
         })
       ]
-    );
-
-    // Сохраняем донат в таблицу donations (amount в долларах)
-    const donationId = generateId();
-    await pool.execute(
-      `INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [donationId, request_id, user_id, parseFloat(amount), paymentIntent.id]
     );
 
     return success(res, {

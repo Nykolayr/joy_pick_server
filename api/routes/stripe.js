@@ -555,6 +555,8 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     [paymentIntent.id]
   );
 
+  const piData = paymentIntents.length > 0 ? paymentIntents[0] : null;
+
   if (paymentIntents.length > 0) {
     await pool.execute(
       'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
@@ -580,8 +582,55 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     );
   }
 
-  // ВАЖНО: Теперь все платежи идут через донаты (type === 'donation')
-  // Для донатов статус заявки не меняется при успешной оплате
+  // Для донатов: создаём запись в donations и обновляем total_contributed только после успешной оплаты.
+  // До этого донат не создаётся (create-donation только создаёт PaymentIntent), поэтому при отмене заявка не «платная».
+  const isDonation = (piData && piData.type === 'donation') || (paymentIntent.metadata && paymentIntent.metadata.type === 'donation');
+  const requestId = (piData && piData.request_id) || (paymentIntent.metadata && paymentIntent.metadata.request_id);
+  const userId = (piData && piData.user_id) || (paymentIntent.metadata && paymentIntent.metadata.user_id);
+
+  if (isDonation && requestId && userId) {
+    const [existingDonation] = await pool.execute(
+      'SELECT id FROM donations WHERE payment_intent_id = ?',
+      [paymentIntent.id]
+    );
+    if (existingDonation.length === 0) {
+      const amountDollars = (paymentIntent.amount || 0) / 100;
+      const donationId = generateId();
+      await pool.execute(
+        'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+        [donationId, requestId, userId, amountDollars, paymentIntent.id]
+      );
+      const [reqRows] = await pool.execute(
+        'SELECT total_contributed, created_by, name, category FROM requests WHERE id = ?',
+        [requestId]
+      );
+      if (reqRows.length > 0) {
+        const currentTotal = parseFloat(reqRows[0].total_contributed || 0);
+        await pool.execute(
+          'UPDATE requests SET total_contributed = ?, updated_at = NOW() WHERE id = ?',
+          [currentTotal + amountDollars, requestId]
+        );
+        const createdBy = reqRows[0].created_by;
+        try {
+          const { addUserToGroupChatByRequest } = require('../utils/chatHelpers');
+          await addUserToGroupChatByRequest(requestId, userId);
+        } catch (chatErr) {
+          console.error('Webhook: add donor to group chat failed:', chatErr.message);
+        }
+        if (createdBy && createdBy !== userId) {
+          const { sendDonationNotification } = require('../services/pushNotification');
+          sendDonationNotification({
+            requestId,
+            requestName: reqRows[0].name || 'Request',
+            requestCategory: reqRows[0].category || 'unknown',
+            creatorId: createdBy,
+            donorId: userId,
+            amount: amountDollars,
+          }).catch(err => console.error('Webhook: donation notification failed:', err.message));
+        }
+      }
+    }
+  }
 }
 
 /**
