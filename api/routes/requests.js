@@ -257,7 +257,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении списка заявок', 500, err);
+    error(res, 'Error fetching requests list', 500, err);
   }
 });
 
@@ -351,7 +351,7 @@ router.get('/:id', async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
@@ -511,7 +511,7 @@ router.get('/:id', async (req, res) => {
 
     success(res, { request: normalizedRequest });
   } catch (err) {
-    error(res, 'Ошибка при получении заявки', 500, err);
+    error(res, 'Error fetching request', 500, err);
   }
 });
 
@@ -526,8 +526,8 @@ router.get('/:id', async (req, res) => {
  * Также поддерживает отправку URL через JSON (для обратной совместимости)
  */
 router.post('/', authenticate, uploadRequestPhotos, [
-  body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Некорректная категория'),
-  body('name').notEmpty().withMessage('Название обязательно'),
+  body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Invalid category'),
+  body('name').notEmpty().withMessage('Name is required'),
   body('description').optional().isString(),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
@@ -536,7 +536,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     // Обработка загруженных файлов (только файлы, URL не принимаем)
@@ -714,7 +714,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
     } catch (chatErr) {
       // Если не удалось создать чат, удаляем заявку и возвращаем ошибку
       await pool.execute('DELETE FROM requests WHERE id = ?', [requestId]);
-      return error(res, 'Ошибка при создании группового чата', 500, chatErr);
+      return error(res, 'Error creating group chat', 500, chatErr);
     }
 
     // Инициализация participant_completions для создателя event заявки
@@ -725,7 +725,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         await initializeParticipantCompletion(requestId, userId, true); // true = isCreator
       } catch (completionErr) {
         // Передаем детали ошибки в ответ API
-        return error(res, 'Ошибка инициализации participant_completion для создателя', 500, completionErr);
+        return error(res, 'Error initializing participant_completion for creator', 500, completionErr);
       }
     }
 
@@ -833,7 +833,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     success(res, { 
       request: normalizedRequest
-    }, 'Заявка создана', 201);
+    }, 'Request created', 201);
   } catch (err) {
     // Добавляем диагностическую информацию в ответ
     const diagnosticInfo = {
@@ -904,7 +904,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     );
 
     if (existingRequests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const createdBy = existingRequests[0].created_by;
@@ -915,7 +915,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     // Создатель, исполнитель (joined_user_id) или админ может обновлять заявку
     if (!isCreator && !isExecutor && !isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
+      return error(res, 'Access denied', 403);
     }
 
     // Парсим данные из multipart/form-data
@@ -1066,7 +1066,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         // КРИТИЧЕСКИ ВАЖНО: Для event и wasteLocation изменение статуса на pending разрешено ТОЛЬКО через /close-by-creator
         if (statusNormalized === 'pending' && oldStatus !== 'pending') {
           if (categoryNormalized === 'event' || categoryNormalized === 'wastelocation') { // wasteLocation в БД
-            return error(res, 'Для заявок типа event и wasteLocation используйте POST /api/requests/:requestId/close-by-creator для закрытия заявки', 400);
+            return error(res, 'For event and wasteLocation use POST /api/requests/:requestId/close-by-creator to close the request', 400);
           }
           statusChangedToPending = true;
         }
@@ -1149,7 +1149,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     if (actual_participants !== undefined && Array.isArray(actual_participants)) {
       for (const participantId of actual_participants) {
         if (participantId && !participantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          return error(res, `actual_participants содержит невалидный ID: ${participantId}. Все ID должны быть UUID из базы данных (поле id из таблицы users).`, 400);
+          return error(res, `actual_participants contains invalid ID: ${participantId}. All IDs must be UUIDs from the database (users.id).`, 400);
         }
       }
     }
@@ -1167,7 +1167,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       // Валидация: joined_user_id должен быть UUID из БД (поле id) или null
       // НЕ принимаем Firebase UID - только UUID из базы данных
       if (normalizedJoinedUserId !== null && !normalizedJoinedUserId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        return error(res, 'joined_user_id должен быть UUID из базы данных (поле id из таблицы users). Firebase UID не поддерживается. Используйте id пользователя из БД.', 400);
+        return error(res, 'joined_user_id must be a UUID from the database (users.id). Firebase UID is not supported. Use DB user id.', 400);
       }
       
       // Проверка существования пользователя в БД (если не null)
@@ -1178,7 +1178,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         );
         
         if (users.length === 0) {
-          return error(res, 'Пользователь с указанным ID не найден в базе данных', 404);
+          return error(res, 'User with given ID not found in database', 404);
         }
       }
       
@@ -1227,7 +1227,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления', 400);
+      return error(res, 'No data to update', 400);
     }
 
     updates.push('updated_at = NOW()');
@@ -1411,9 +1411,9 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     if (wasteTransferResult) {
       responseData.transfer_result = wasteTransferResult;
     }
-    success(res, responseData, 'Заявка обновлена');
+    success(res, responseData, 'Request updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении заявки', 500, err);
+    error(res, 'Error updating request', 500, err);
   }
 });
 
@@ -1433,12 +1433,12 @@ router.delete('/:id', authenticate, async (req, res) => {
     );
 
     if (existingRequests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     // Только создатель или админ может удалять
     if (existingRequests[0].created_by !== userId && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
+      return error(res, 'Access denied', 403);
     }
 
     // Получаем все PaymentIntent для заявки (только донаты)
@@ -1544,15 +1544,15 @@ router.delete('/:id', authenticate, async (req, res) => {
       }
       
       const message = refundedPaymentIntents.length > 0 
-        ? 'Заявка удалена, деньги возвращены на карты'
-        : 'Заявка удалена, замороженные средства возвращены';
+        ? 'Request deleted, funds returned to cards'
+        : 'Request deleted, frozen funds returned';
       
       success(res, response, message);
     } else {
-      success(res, null, 'Заявка удалена');
+      success(res, null, 'Request deleted');
     }
   } catch (err) {
-    error(res, 'Ошибка при удалении заявки', 500, err);
+    error(res, 'Error deleting request', 500, err);
   }
 });
 
@@ -1572,14 +1572,14 @@ router.post('/:id/join', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     // Проверка типа заявки
     if (request.category !== 'wasteLocation') {
-      return error(res, 'К этому типу заявки нельзя присоединиться', 400);
+      return error(res, 'Cannot join this request type', 400);
     }
 
     // Проверка статуса заявки
@@ -1589,7 +1589,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
       [id]
     );
     if (currentRequest.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
     
     const requestStatus = currentRequest[0].status;
@@ -1618,7 +1618,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
       const oneDayLater = new Date(joinDate.getTime() + 24 * 60 * 60 * 1000);
 
       if (now < oneDayLater) {
-        return error(res, 'К заявке уже присоединился другой пользователь', 409);
+        return error(res, 'Another user has already joined this request', 409);
       }
     }
 
@@ -1634,7 +1634,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
       await initializeParticipantCompletion(id, userId);
     } catch (completionErr) {
       // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+      return error(res, 'Error initializing participant_completion', 500, completionErr);
     }
 
     // Добавление присоединившегося в групповой чат заявки (СИНХРОННО - важно для корректной работы)
@@ -1643,7 +1643,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
       await addUserToGroupChatByRequest(id, userId);
     } catch (chatErr) {
       // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
+      return error(res, 'Error adding to group chat', 500, chatErr);
     }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
@@ -1659,9 +1659,9 @@ router.post('/:id/join', authenticate, async (req, res) => {
       });
     }
 
-    success(res, null, 'Вы присоединились к заявке');
+    success(res, null, 'You have joined the request');
   } catch (err) {
-    error(res, 'Ошибка при присоединении к заявке', 500, err);
+    error(res, 'Error joining request', 500, err);
   }
 });
 
@@ -1672,7 +1672,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
  * Для закрытия event и waste заявок используйте POST /api/requests/:requestId/close-by-creator
  */
 router.put('/:id/close-event', authenticate, uploadRequestPhotos, async (req, res) => {
-  return error(res, 'Этот эндпоинт отключен. Используйте POST /api/requests/:requestId/close-by-creator для закрытия заявок типа event и wasteLocation', 410);
+  return error(res, 'This endpoint is disabled. Use POST /api/requests/:requestId/close-by-creator for event and wasteLocation', 410);
 });
 
 /**
@@ -1691,18 +1691,18 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     if (request.category !== 'event') {
-      return error(res, 'Это не событие', 400);
+      return error(res, 'This is not an event', 400);
     }
 
     // Проверка, не является ли пользователь создателем
     if (request.created_by === userId) {
-      return error(res, 'Вы уже являетесь создателем события', 409);
+      return error(res, 'You are already the event creator', 409);
     }
 
     // Получаем текущий список зарегистрированных участников
@@ -1747,7 +1747,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
         await initializeParticipantCompletion(id, userId);
       } catch (completionErr) {
         // Передаем детали ошибки в ответ API
-        return error(res, 'Ошибка инициализации participant_completion', 500, completionErr);
+        return error(res, 'Error initializing participant_completion', 500, completionErr);
       }
     }
 
@@ -1758,7 +1758,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       await addUserToGroupChatByRequest(id, userId);
     } catch (chatErr) {
       // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка добавления в групповой чат', 500, chatErr);
+      return error(res, 'Error adding to group chat', 500, chatErr);
     }
 
     // КРИТИЧЕСКИ ВАЖНО: Создаем приватный чат между участником и создателем
@@ -1883,8 +1883,8 @@ router.post('/:id/participate', authenticate, async (req, res) => {
                 if (altChats.length > 0) {
                   privateChatId = altChats[0].id;
                 } else {
-                  return error(res, 'Не удалось создать приватный чат', 500, {
-                    errorMessage: 'Чат уже существует, но не удалось его найти',
+                  return error(res, 'Failed to create private chat', 500, {
+                    errorMessage: 'Chat already exists but could not be found',
                     errorCode: insertErr.code,
                     requestId: id,
                     userId: userId,
@@ -1918,7 +1918,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
       );
     } catch (privateChatErr) {
       // Передаем детали ошибки в ответ API
-      return error(res, 'Ошибка создания приватного чата', 500, privateChatErr);
+      return error(res, 'Error creating private chat', 500, privateChatErr);
     }
 
     // Отправка push-уведомления создателю заявки (асинхронно)
@@ -1937,11 +1937,11 @@ router.post('/:id/participate', authenticate, async (req, res) => {
 
     // Возвращаем успешный ответ (даже если пользователь уже был участником)
     const message = isAlreadyParticipant 
-      ? 'Вы уже участвуете в этом событии' 
-      : 'Вы присоединились к событию';
+      ? 'You are already participating in this event' 
+      : 'You have joined the event';
     success(res, null, message);
   } catch (err) {
-    error(res, 'Ошибка при участии в событии', 500, err);
+    error(res, 'Error joining event', 500, err);
   }
 });
 
@@ -1961,18 +1961,18 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     if (request.category !== 'event') {
-      return error(res, 'Это не событие', 400);
+      return error(res, 'This is not an event', 400);
     }
 
     // КРИТИЧЕСКИ ВАЖНО: Создатель не может отменить участие (он всегда остается участником)
     if (request.created_by === userId) {
-      return error(res, 'Создатель события не может отменить участие', 400);
+      return error(res, 'Event creator cannot cancel participation', 400);
     }
 
     // Получаем текущий список участников
@@ -2037,9 +2037,9 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
       // Не прерываем выполнение, просто игнорируем ошибку
     }
 
-    success(res, null, 'Участие отменено');
+    success(res, null, 'Participation cancelled');
   } catch (err) {
-    error(res, 'Ошибка при отмене участия', 500, err);
+    error(res, 'Error cancelling participation', 500, err);
   }
 });
 
@@ -2608,7 +2608,7 @@ async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
 
   await pool.execute(
     `INSERT INTO cron_actions (id, action_type, request_id, request_category, action_description, status, executed_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-    [generateId(), 'payoutSpeedCleanupBeforeArchive', requestId, 'speedCleanup', `Выплата донатов после одобрения (${donations.length} шт.) перед архивом`, 'completed']
+    [generateId(), 'payoutSpeedCleanupBeforeArchive', requestId, 'speedCleanup', `Payout of post-approval donations (${donations.length}) before archive`, 'completed']
   );
   const donorIds = donations.map(d => d.user_id).filter(Boolean);
   if (donorIds.length > 0) {
@@ -2723,34 +2723,34 @@ router.post('/:id/extend', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     // Проверяем, что это waste заявка
     if (request.category !== 'wasteLocation') {
-      return error(res, 'Продление доступно только для заявок типа wasteLocation', 400);
+      return error(res, 'Extension available only for wasteLocation requests', 400);
     }
 
     // Проверяем, что заявка в статусе new
     if (request.status !== 'new') {
-      return error(res, 'Продление доступно только для заявок со статусом new', 400);
+      return error(res, 'Extension available only for requests with status new', 400);
     }
 
     // Проверяем, что пользователь - создатель заявки
     if (request.created_by !== userId) {
-      return error(res, 'Только создатель заявки может продлить ее', 403);
+      return error(res, 'Only the request creator can extend it', 403);
     }
 
     // Проверяем, что заявка еще не была продлена
     if (request.extended_count >= 1) {
-      return error(res, 'Заявка уже была продлена. Максимум одно продление.', 400);
+      return error(res, 'Request was already extended. Maximum one extension.', 400);
     }
 
     // Проверяем, что заявка еще не истекла
     if (request.expires_at && new Date(request.expires_at) <= new Date()) {
-      return error(res, 'Заявка уже истекла и не может быть продлена', 400);
+      return error(res, 'Request has already expired and cannot be extended', 400);
     }
 
     // Продлеваем заявку на 7 дней (один раз), extended_count = 1
@@ -2852,7 +2852,7 @@ router.post('/:id/extend', authenticate, async (req, res) => {
 
     success(res, normalizedRequest, 200);
   } catch (err) {
-    error(res, 'Ошибка при продлении заявки', 500, err);
+    error(res, 'Error extending request', 500, err);
   }
 });
 
@@ -2872,19 +2872,19 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     // Проверка типа заявки
     if (request.category !== 'event' && request.category !== 'wasteLocation') {
-      return error(res, 'Этот тип заявки не поддерживает закрытие работы участником', 400);
+      return error(res, 'This request type does not support closing by participant', 400);
     }
 
     // Проверка статуса заявки
     if (request.status !== 'inProgress') {
-      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+      return error(res, 'Request must be in status inProgress', 400);
     }
 
     // Проверка, что пользователь является участником
@@ -2906,7 +2906,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     }
 
     if (!isParticipant) {
-      return error(res, 'Вы не являетесь участником этой заявки', 403);
+      return error(res, 'You are not a participant of this request', 403);
     }
 
     // Для event: проверка, что событие началось
@@ -2914,7 +2914,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
       const startDate = new Date(request.start_date);
       const now = new Date();
       if (startDate > now) {
-        return error(res, 'Событие еще не началось', 400);
+        return error(res, 'Event has not started yet', 400);
       }
     }
 
@@ -2926,11 +2926,11 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
 
     // Валидация
     if (uploadedPhotosAfter.length === 0) {
-      return error(res, 'Необходимо загрузить минимум одно фото', 400);
+      return error(res, 'At least one photo is required', 400);
     }
 
     if (isNaN(completionLatitude) || isNaN(completionLongitude)) {
-      return error(res, 'Необходимо указать координаты', 400);
+      return error(res, 'Coordinates are required', 400);
     }
 
     // Сохраняем фото и получаем URL
@@ -3006,11 +3006,11 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     }
 
     const successMessage = request.category === 'wasteLocation' 
-      ? 'Заявка закрыта и отправлена на модерацию' 
-      : 'Работа закрыта, ожидает одобрения';
+      ? 'Request closed and sent for moderation' 
+      : 'Work closed, awaiting approval';
     success(res, { request: normalizeDatesInObject(updatedRequest) }, successMessage);
   } catch (err) {
-    error(res, 'Ошибка при закрытии работы', 500, err);
+    error(res, 'Error closing work', 500, err);
   }
 });
 
@@ -3026,11 +3026,11 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
 
     // Валидация action
     if (!action || (action !== 'approve' && action !== 'reject')) {
-      return error(res, 'Необходимо указать action: approve или reject', 400);
+      return error(res, 'Must specify action: approve or reject', 400);
     }
 
     if (action === 'reject' && !rejection_reason) {
-      return error(res, 'При отклонении необходимо указать rejection_reason', 400);
+      return error(res, 'rejection_reason is required when rejecting', 400);
     }
 
     // Получаем заявку
@@ -3040,19 +3040,19 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     // Для wasteLocation: одобрение/отклонение недоступно
     if (request.category === 'wasteLocation') {
-      return error(res, 'Для заявок типа wasteLocation одобрение/отклонение недоступно', 403);
+      return error(res, 'Approve/reject not available for wasteLocation requests', 403);
     }
 
     // Проверка прав доступа (только создатель может одобрять/отклонять)
     if (request.created_by !== currentUserId && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен. Только создатель заявки может одобрять/отклонять закрытие работы', 403);
+      return error(res, 'Access denied. Only request creator can approve/reject work closure', 403);
     }
 
     // Получаем participant_completions
@@ -3060,12 +3060,12 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
     const completions = await getParticipantCompletions(requestId);
 
     if (!completions[userId]) {
-      return error(res, 'Участник не найден в participant_completions', 404);
+      return error(res, 'Participant not found in participant_completions', 404);
     }
 
     // Проверка статуса (должен быть pending)
     if (completions[userId].status !== 'pending') {
-      return error(res, 'Статус участника должен быть pending', 400);
+      return error(res, 'Participant status must be pending', 400);
     }
 
     // Обновляем статус
@@ -3119,9 +3119,9 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
       updatedRequest.participant_completions = {};
     }
 
-    success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'approve' ? 'Закрытие работы одобрено' : 'Закрытие работы отклонено');
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'approve' ? 'Work closure approved' : 'Work closure rejected');
   } catch (err) {
-    error(res, 'Ошибка при одобрении/отклонении закрытия работы', 500, err);
+    error(res, 'Error approving/rejecting work closure', 500, err);
   }
 });
 
@@ -3142,30 +3142,30 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
 
     // Для wasteLocation: создатель не может закрывать заявку
     if (request.category === 'wasteLocation') {
-      return error(res, 'Для заявок типа wasteLocation создатель не может закрывать заявку', 403);
+      return error(res, 'Creator cannot close wasteLocation requests', 403);
     }
 
     // Проверка типа заявки
     if (request.category !== 'event') {
-      return error(res, 'Этот тип заявки не поддерживает закрытие создателем', 400);
+      return error(res, 'This request type does not support closing by creator', 400);
     }
 
     // Проверка прав доступа (только создатель может закрыть для event)
     // СТРОГАЯ ПРОВЕРКА: только создатель, админ не может закрывать заявку для этих типов
     if (request.created_by !== userId) {
-      return error(res, 'Только создатель заявки может закрыть заявку', 403);
+      return error(res, 'Only the request creator can close the request', 403);
     }
 
     // Проверка статуса
     if (request.status !== 'inProgress') {
-      return error(res, 'Заявка должна быть в статусе inProgress', 400);
+      return error(res, 'Request must be in status inProgress', 400);
     }
 
     // Обновляем статус заявки на pending
@@ -3206,9 +3206,9 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
       updatedRequest.participant_completions = {};
     }
 
-    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Заявка закрыта и отправлена на рассмотрение');
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
   } catch (err) {
-    error(res, 'Ошибка при закрытии заявки', 500, err);
+    error(res, 'Error closing request', 500, err);
   }
 });
 
@@ -3220,11 +3220,11 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
  *            затем POST /api/donations для создания доната от создателя.
  */
 router.post('/create-with-payment', authenticate, async (req, res) => {
-  return error(res, 'Этот endpoint удален. Теперь все платежи идут через донаты. Используйте POST /api/requests для создания заявки, затем POST /api/donations для создания доната от создателя.', 410, {
+  return error(res, 'This endpoint is removed. All payments go through donations. Use POST /api/requests to create a request, then POST /api/donations to create a donation from creator.', 410, {
     deprecated: true,
     newApproach: {
-      step1: 'POST /api/requests - создать заявку',
-      step2: 'POST /api/donations - создать донат от создателя (можно сразу после создания заявки)'
+      step1: 'POST /api/requests - create request',
+      step2: 'POST /api/donations - create donation from creator (can be right after creating request)'
     }
   });
 });

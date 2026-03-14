@@ -81,15 +81,15 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
       lastRunInfo: lastRunInfo,
       fileExists: fileExists,
       message: isRunning 
-        ? 'Cron задачи работают нормально' 
+        ? 'Cron tasks are running normally' 
         : status === 'warning'
-        ? 'Cron задачи давно не запускались (проверьте настройки cron)'
+        ? 'Cron tasks have not run for a while (check cron settings)'
         : status === 'stopped'
-        ? 'Cron задачи не запускались более 24 часов (проверьте настройки cron)'
-        : 'Cron задачи еще не запускались'
+        ? 'Cron tasks have not run for over 24 hours (check cron settings)'
+        : 'Cron tasks have not run yet'
     });
   } catch (err) {
-    return error(res, 'Ошибка при проверке статуса cron', 500, err);
+    return error(res, 'Error checking cron status', 500, err);
   }
 });
 
@@ -104,7 +104,7 @@ router.post('/run', authenticate, requireAdmin, async (req, res) => {
     const results = await runAllCronTasks();
     
     return success(res, {
-      message: 'Cron задачи выполнены',
+      message: 'Cron tasks completed',
       results: results
     });
   } catch (err) {
@@ -128,7 +128,7 @@ router.post('/run', authenticate, requireAdmin, async (req, res) => {
     }
     
     // ВСЕГДА передаем полный объект ошибки с деталями
-    return error(res, `Ошибка при запуске cron задач: ${err.message || 'Неизвестная ошибка'}`, 500, err);
+    return error(res, `Error running cron tasks: ${err.message || 'Unknown error'}`, 500, err);
   }
 });
 
@@ -368,7 +368,7 @@ router.get('/actions', authenticate, requireAdmin, async (req, res) => {
       total_scheduled: topScheduled.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении действий cron', 500, err);
+    return error(res, 'Error fetching cron actions', 500, err);
   }
 });
 

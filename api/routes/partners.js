@@ -202,7 +202,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении списка партнеров', 500, err);
+    error(res, 'Error fetching partners list', 500, err);
   }
 });
 
@@ -262,7 +262,7 @@ router.post('/', authenticate, requireAdmin, uploadPartnerWithLogo, [
   body('website_url').optional().isURL(),
   body('logo_url').optional().isString(),
   body('currency').notEmpty().withMessage('Currency is required (e.g. USD, RUB)'),
-  body('exchange_rate_cents_per_coin').isInt({ min: 0 }).withMessage('Exchange rate: how many cents (or minor units) per 1 coin (0 = бесплатно за коины)'),
+  body('exchange_rate_cents_per_coin').isInt({ min: 0 }).withMessage('Exchange rate: how many cents (or minor units) per 1 coin (0 = free for coins)'),
   body('branches')
     .optional()
     .customSanitizer((val) => {

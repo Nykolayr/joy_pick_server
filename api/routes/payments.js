@@ -21,7 +21,7 @@ router.post('/create-donation', authenticate, [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, errors.array());
+      return error(res, 'Validation error', 400, errors.array());
     }
 
     const { request_id, user_id, amount, request_category } = req.body;
@@ -82,7 +82,7 @@ router.post('/create-donation', authenticate, [
 
       // КРИТИЧЕСКИ ВАЖНО: Проверяем что Stripe вернул корректный ответ
       if (!paymentIntent) {
-        throw new Error('Stripe вернул пустой ответ (null или undefined)');
+        throw new Error('Stripe returned empty response (null or undefined)');
       }
 
       if (!paymentIntent.id) {
@@ -90,12 +90,12 @@ router.post('/create-donation', authenticate, [
       }
 
       if (!paymentIntent.client_secret) {
-        throw new Error('Stripe не вернул client_secret в ответе. PaymentIntent ID: ' + paymentIntent.id);
+        throw new Error('Stripe did not return client_secret in response. PaymentIntent ID: ' + paymentIntent.id);
       }
 
     } catch (stripeErr) {
       return error(res, 'Error creating PaymentIntent for donation', 500, {
-        errorMessage: stripeErr.message || 'Неизвестная ошибка',
+        errorMessage: stripeErr.message || 'Unknown error',
         errorType: stripeErr.type || 'StripeError',
         errorCode: stripeErr.code || 'STRIPE_ERROR',
         requestId: request_id,
@@ -155,7 +155,7 @@ router.post('/create-donation', authenticate, [
  * Используйте POST /api/payments/create-donation
  */
 router.post('/create-request-payment', authenticate, async (req, res) => {
-  return error(res, 'Эндпоинт удален. Платные заявки больше не поддерживаются. Используйте POST /api/payments/create-donation для создания доната от создателя заявки.', 410);
+  return error(res, 'Endpoint removed. Paid requests are no longer supported. Use POST /api/payments/create-donation to create a donation from the request creator.', 410);
 });
 
 /**
@@ -169,7 +169,7 @@ router.post('/complete-request', authenticate, [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, errors.array());
+      return error(res, 'Validation error', 400, errors.array());
     }
 
     const { request_id, performer_user_id } = req.body;

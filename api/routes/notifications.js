@@ -28,18 +28,18 @@ const router = express.Router();
  * }
  */
 router.post('/send', authenticate, requireAdmin, [
-  body('title').notEmpty().withMessage('Заголовок обязателен'),
-  body('body').notEmpty().withMessage('Текст уведомления обязателен'),
-  body('user_ids').isArray({ min: 1 }).withMessage('Массив ID пользователей обязателен и не должен быть пустым'),
-  body('user_ids.*').isUUID().withMessage('Каждый ID пользователя должен быть валидным UUID'),
-  body('image_url').optional().isURL().withMessage('URL изображения должен быть валидным'),
+  body('title').notEmpty().withMessage('Title is required'),
+  body('body').notEmpty().withMessage('Notification body is required'),
+  body('user_ids').isArray({ min: 1 }).withMessage('user_ids array is required and must not be empty'),
+  body('user_ids.*').isUUID().withMessage('Each user ID must be a valid UUID'),
+  body('image_url').optional().isURL().withMessage('Image URL must be valid'),
   body('sound').optional().isString(),
   body('data').optional().isObject(),
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { title, body: bodyText, user_ids, image_url, sound, data } = req.body;
@@ -57,21 +57,21 @@ router.post('/send', authenticate, requireAdmin, [
     // Проверяем результат отправки
     if (result.successCount === 0 && result.failureCount > 0) {
       // Если ничего не отправилось, возвращаем ошибку
-      return error(res, result.errorMessage || 'Не удалось отправить уведомления', 400, {
+      return error(res, result.errorMessage || 'Failed to send notifications', 400, {
         sent: result.successCount,
         failed: result.failureCount,
         total: user_ids.length,
-        reason: result.reason || 'Неизвестная ошибка',
+        reason: result.reason || 'Unknown error',
       });
     }
 
     if (result.successCount === 0 && result.failureCount === 0) {
       // Если нет токенов или другие проблемы
-      return error(res, result.errorMessage || 'Не удалось отправить уведомления: у пользователей нет FCM токенов', 400, {
+      return error(res, result.errorMessage || 'Failed to send notifications: users have no FCM tokens', 400, {
         sent: 0,
         failed: user_ids.length,
         total: user_ids.length,
-        reason: result.reason || 'У пользователей отсутствуют FCM токены',
+        reason: result.reason || 'Users have no FCM tokens',
       });
     }
 
@@ -83,7 +83,7 @@ router.post('/send', authenticate, requireAdmin, [
     }, `Отправлено ${result.successCount} из ${user_ids.length} уведомлений`);
   } catch (err) {
     console.error('Ошибка массовой рассылки уведомлений:', err);
-    error(res, 'Ошибка при отправке уведомлений', 500, err);
+    error(res, 'Error sending notifications', 500, err);
   }
 });
 
@@ -166,7 +166,7 @@ router.get('/', authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения уведомлений:', err);
-    error(res, 'Ошибка при получении списка уведомлений', 500, err);
+    error(res, 'Error fetching notifications list', 500, err);
   }
 });
 
@@ -187,7 +187,7 @@ router.put('/:id/read', authenticate, async (req, res) => {
     );
 
     if (notifications.length === 0) {
-      return error(res, 'Уведомление не найдено', 404);
+      return error(res, 'Notification not found', 404);
     }
 
     // Отмечаем как прочитанное
@@ -196,10 +196,10 @@ router.put('/:id/read', authenticate, async (req, res) => {
       [id]
     );
 
-    success(res, null, 'Уведомление отмечено как прочитанное');
+    success(res, null, 'Notification marked as read');
   } catch (err) {
     console.error('Ошибка отметки уведомления:', err);
-    error(res, 'Ошибка при отметке уведомления', 500, err);
+    error(res, 'Error marking notification', 500, err);
   }
 });
 
@@ -223,7 +223,7 @@ router.put('/read-all', authenticate, async (req, res) => {
     }, `Отмечено ${result.affectedRows} уведомлений как прочитанных`);
   } catch (err) {
     console.error('Ошибка отметки всех уведомлений:', err);
-    error(res, 'Ошибка при отметке уведомлений', 500, err);
+    error(res, 'Error marking notifications', 500, err);
   }
 });
 
@@ -246,7 +246,7 @@ router.get('/unread-count', authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения количества непрочитанных уведомлений:', err);
-    error(res, 'Ошибка при получении количества уведомлений', 500, err);
+    error(res, 'Error fetching notifications count', 500, err);
   }
 });
 

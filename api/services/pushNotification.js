@@ -384,8 +384,8 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
     return { 
       successCount: 0, 
       failureCount: 0,
-      errorMessage: 'Не указаны пользователи для отправки уведомлений',
-      reason: 'userIds пустой или не указан'
+      errorMessage: 'No users specified for sending notifications',
+      reason: 'userIds is empty or not specified'
     };
   }
 
@@ -405,19 +405,19 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
       const usersWithoutTokens = users.filter(u => !u.fcm_token || u.fcm_token.trim() === '');
       const usersNotFound = userIds.filter(id => !users.find(u => u.id === id));
       
-      let reason = 'У пользователей отсутствуют FCM токены';
+      let reason = 'Users have no FCM tokens';
       if (usersNotFound.length > 0) {
-        reason += `. Пользователи не найдены: ${usersNotFound.join(', ')}`;
+        reason += `. Users not found: ${usersNotFound.join(', ')}`;
       }
       if (usersWithoutTokens.length > 0) {
         const emails = usersWithoutTokens.map(u => u.email || u.id).join(', ');
-        reason += `. Пользователи без токенов: ${emails}`;
+        reason += `. Users without tokens: ${emails}`;
       }
       
       return { 
         successCount: 0, 
         failureCount: userIds.length,
-        errorMessage: 'Не удалось отправить уведомления: у пользователей нет FCM токенов',
+        errorMessage: 'Failed to send notifications: users have no FCM tokens',
         reason: reason
       };
     }
@@ -442,8 +442,8 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
 
     // Если ничего не отправилось, добавляем информацию об ошибке
     if (result.successCount === 0 && result.failureCount > 0) {
-      result.errorMessage = 'Не удалось отправить уведомления: все токены невалидны или произошла ошибка при отправке';
-      result.reason = result.reason || 'Ошибка при отправке через FCM';
+      result.errorMessage = 'Failed to send notifications: all tokens invalid or send error';
+      result.reason = result.reason || 'Error sending via FCM';
     }
 
     return result;
@@ -452,7 +452,7 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
     return { 
       successCount: 0, 
       failureCount: userIds.length,
-      errorMessage: `Ошибка при отправке уведомлений: ${error.message}`,
+      errorMessage: `Error sending notifications: ${error.message}`,
       reason: error.message
     };
   }

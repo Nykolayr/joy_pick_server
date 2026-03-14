@@ -20,13 +20,13 @@ const uploadOne = upload.fields([
 router.post('/', authenticate, requireAdmin, uploadOne, (req, res) => {
   const file = (req.files && req.files.file && req.files.file[0]) || (req.files && req.files.image && req.files.image[0]) || req.file;
   if (!file) {
-    return error(res, 'Файл не получен. Отправьте изображение в поле "file" или "image" (multipart/form-data).', 400);
+    return error(res, 'File not received. Send an image in field "file" or "image" (multipart/form-data).', 400);
   }
   const url = getFileUrlFromPath(file.path);
   if (!url) {
-    return error(res, 'Не удалось сформировать URL файла', 500);
+    return error(res, 'Failed to build file URL', 500);
   }
-  return success(res, { url }, 'Файл загружен', 201);
+  return success(res, { url }, 'File uploaded', 201);
 });
 
 module.exports = router;

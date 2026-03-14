@@ -108,7 +108,7 @@ app.use((err, req, res, next) => {
   // ВСЕГДА возвращаем детальную информацию об ошибке в API ответе
   const errorResponse = {
     success: false,
-    message: err.message || 'Внутренняя ошибка сервера',
+    message: err.message || 'Internal server error',
     timestamp: new Date().toISOString(),
     path: req.path,
     method: req.method,
@@ -182,7 +182,7 @@ app.get('/', (req, res) => {
 app.get('/info', (req, res) => {
   res.json({
     success: true,
-    message: 'Список всех API роутов',
+    message: 'List of all API routes',
     server: 'Joy Pick Server',
     timestamp: new Date().toISOString(),
     endpoints: {
@@ -230,25 +230,25 @@ app.get('/health', (req, res) => {
          if (!io) {
            return res.status(500).json({
              success: false,
-             message: 'Socket.io не инициализирован'
+             message: 'Socket.io not initialized'
            });
          }
          
          // Проверяем, может ли Socket.io обработать запрос
          res.json({
            success: true,
-           message: 'Socket.io доступен',
+           message: 'Socket.io is available',
            socket: {
              path: io.path,
              transports: io.opts?.transports,
              connected: io.sockets.sockets.size
            },
-           test: 'Попробуйте подключиться через клиент Socket.io'
+           test: 'Try connecting via Socket.io client'
          });
        } catch (error) {
          res.status(500).json({
            success: false,
-           message: 'Ошибка при проверке Socket.io',
+           message: 'Error checking Socket.io',
            error: error.message
          });
        }
@@ -261,8 +261,8 @@ app.get('/health', (req, res) => {
          if (!io) {
            return res.status(500).json({
              success: false,
-             message: 'Socket.io не инициализирован',
-             error: 'Socket.io сервер не найден в app'
+message: 'Socket.io not initialized',
+            error: 'Socket.io server not found in app'
            });
          }
          
@@ -292,7 +292,7 @@ app.get('/health', (req, res) => {
        } catch (error) {
          res.status(500).json({
            success: false,
-           message: 'Ошибка при проверке Socket.io',
+           message: 'Error checking Socket.io',
            error: error.message,
            errorDetails: {
              name: error.name,

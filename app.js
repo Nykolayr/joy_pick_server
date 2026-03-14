@@ -82,6 +82,11 @@ app.get('/privacy-policy', (req, res) => {
   });
 });
 
+// Логотип для писем (app_logo.png в корне проекта)
+app.get('/email-logo.png', (req, res) => {
+  res.sendFile(path.join(__dirname, 'app_logo.png'));
+});
+
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

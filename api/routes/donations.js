@@ -79,7 +79,7 @@ router.get('/', authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения донатов:', err);
-    error(res, 'Ошибка при получении списка донатов', 500);
+    error(res, 'Error fetching donations list', 500);
   }
 });
 
@@ -102,7 +102,7 @@ router.get('/:id', authenticate, async (req, res) => {
     );
 
     if (donations.length === 0) {
-      return error(res, 'Донат не найден', 404);
+      return error(res, 'Donation not found', 404);
     }
 
     // Нормализация дат в UTC
@@ -111,7 +111,7 @@ router.get('/:id', authenticate, async (req, res) => {
     success(res, { donation: normalizedDonation });
   } catch (err) {
     console.error('Ошибка получения доната:', err);
-    error(res, 'Ошибка при получении доната', 500);
+    error(res, 'Error fetching donation', 500);
   }
 });
 
@@ -263,14 +263,14 @@ router.delete('/by-payment-intent/:payment_intent_id', authenticate, async (req,
     );
 
     if (donations.length === 0) {
-      return error(res, 'Донат не найден', 404);
+      return error(res, 'Donation not found', 404);
     }
 
     const donation = donations[0];
 
     // Проверка прав: только создатель доната или админ может удалить
     if (donation.user_id !== userId && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
+      return error(res, 'Access denied', 403);
     }
 
     // Откатываем total_contributed в заявке
@@ -309,9 +309,9 @@ router.delete('/by-payment-intent/:payment_intent_id', authenticate, async (req,
       // Игнорируем ошибки Stripe (возможно, уже отменен)
     }
 
-    success(res, null, 'Донат удален, сумма откачена');
+    success(res, null, 'Donation deleted, amount refunded');
   } catch (err) {
-    return error(res, 'Ошибка при удалении доната', 500, err);
+    return error(res, 'Error deleting donation', 500, err);
   }
 });
 

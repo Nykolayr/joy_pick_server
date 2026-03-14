@@ -121,7 +121,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (err) {
-    error(res, 'Ошибка при получении списка станций переработки', 500, err);
+    error(res, 'Error fetching recycling stations list', 500, err);
   }
 });
 
@@ -139,7 +139,7 @@ router.get('/:id', async (req, res) => {
     );
 
     if (stations.length === 0) {
-      return error(res, 'Станция переработки не найдена', 404);
+      return error(res, 'Recycling station not found', 404);
     }
 
     const station = stations[0];
@@ -172,7 +172,7 @@ router.get('/:id', async (req, res) => {
 
     success(res, { station });
   } catch (err) {
-    error(res, 'Ошибка при получении станции переработки', 500, err);
+    error(res, 'Error fetching recycling station', 500, err);
   }
 });
 
@@ -193,7 +193,7 @@ router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     // Обработка загруженных файлов
@@ -293,9 +293,9 @@ router.post('/', authenticate, requireAdmin, upload.array('photos', 10), [
       station.accepted_waste_types = [];
     }
 
-    success(res, { station }, 'Станция переработки создана', 201);
+    success(res, { station }, 'Recycling station created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании станции переработки', 500, err);
+    error(res, 'Error creating recycling station', 500, err);
   }
 });
 
@@ -311,7 +311,7 @@ router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async
     // Проверка существования
     const [existing] = await pool.execute('SELECT * FROM recycling_stations WHERE id = ?', [id]);
     if (existing.length === 0) {
-      return error(res, 'Станция переработки не найдена', 404);
+      return error(res, 'Recycling station not found', 404);
     }
 
     // Обработка загруженных файлов
@@ -436,9 +436,9 @@ router.put('/:id', authenticate, requireAdmin, upload.array('photos', 10), async
       station.accepted_waste_types = [];
     }
 
-    success(res, { station }, 'Станция переработки обновлена');
+    success(res, { station }, 'Recycling station updated');
   } catch (err) {
-    error(res, 'Ошибка при обновлении станции переработки', 500, err);
+    error(res, 'Error updating recycling station', 500, err);
   }
 });
 
@@ -452,14 +452,14 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
 
     const [existing] = await pool.execute('SELECT id FROM recycling_stations WHERE id = ?', [id]);
     if (existing.length === 0) {
-      return error(res, 'Станция переработки не найдена', 404);
+      return error(res, 'Recycling station not found', 404);
     }
 
     await pool.execute('DELETE FROM recycling_stations WHERE id = ?', [id]);
 
-    success(res, null, 'Станция переработки удалена');
+    success(res, null, 'Recycling station deleted');
   } catch (err) {
-    error(res, 'Ошибка при удалении станции переработки', 500, err);
+    error(res, 'Error deleting recycling station', 500, err);
   }
 });
 

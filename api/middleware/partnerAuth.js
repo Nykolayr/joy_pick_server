@@ -10,7 +10,7 @@ function authenticatePartnerAdmin(req, res, next) {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Токен авторизации не предоставлен'
+      message: 'Authorization token not provided'
     });
   }
 
@@ -19,7 +19,7 @@ function authenticatePartnerAdmin(req, res, next) {
   if (!decoded || decoded.type !== 'partner_admin') {
     return res.status(401).json({
       success: false,
-      message: 'Недействительный или истекший токен. Требуется вход как администратор партнёра.'
+      message: 'Invalid or expired token. Sign in as partner admin required.'
     });
   }
 
@@ -38,7 +38,7 @@ function authenticatePartnerSeller(req, res, next) {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Токен авторизации не предоставлен'
+      message: 'Authorization token not provided'
     });
   }
 
@@ -47,7 +47,7 @@ function authenticatePartnerSeller(req, res, next) {
   if (!decoded || decoded.type !== 'partner_seller') {
     return res.status(401).json({
       success: false,
-      message: 'Недействительный или истекший токен. Требуется вход как продавец партнёра.'
+      message: 'Invalid or expired token. Sign in as partner seller required.'
     });
   }
 

@@ -9,7 +9,7 @@ function authenticate(req, res, next) {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Токен авторизации не предоставлен'
+      message: 'Authorization token not provided'
     });
   }
   
@@ -18,7 +18,7 @@ function authenticate(req, res, next) {
   if (!decoded) {
     return res.status(401).json({
       success: false,
-      message: 'Недействительный или истекший токен'
+      message: 'Invalid or expired token'
     });
   }
   
@@ -50,7 +50,7 @@ function requireAdmin(req, res, next) {
   if (!req.user || !req.user.isAdmin) {
     return res.status(403).json({
       success: false,
-      message: 'Доступ запрещен. Требуются права администратора'
+      message: 'Access denied. Admin rights required'
     });
   }
   next();
@@ -64,7 +64,7 @@ function requireSuperAdmin(req, res, next) {
   if (!req.user || !req.user.isSuperAdmin) {
     return res.status(403).json({
       success: false,
-      message: 'Доступ запрещен. Требуются права суперадминистратора'
+      message: 'Access denied. Super admin rights required'
     });
   }
   next();

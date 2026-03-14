@@ -48,9 +48,9 @@ router.get('/', async (req, res) => {
     <div class="container">
         <h1>Stripe Onboarding</h1>
         <p class="${status === 'success' ? 'success' : status === 'refresh' ? 'refresh' : 'loading'}">
-            ${status === 'success' ? '✅ Onboarding завершен!' : status === 'refresh' ? '🔄 Завершите onboarding' : '⏳ Проверка статуса...'}
+            ${status === 'success' ? '✅ Onboarding complete!' : status === 'refresh' ? '🔄 Complete onboarding' : '⏳ Checking status...'}
         </p>
-        <p>Вы можете закрыть это окно</p>
+        <p>You can close this window</p>
     </div>
 </body>
 </html>

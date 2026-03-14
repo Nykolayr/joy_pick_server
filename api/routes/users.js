@@ -65,7 +65,7 @@ router.get('/', authenticate, requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения пользователей:', err);
-    error(res, 'Ошибка при получении списка пользователей', 500, err);
+    error(res, 'Error fetching users list', 500, err);
   }
 });
 
@@ -99,7 +99,7 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
 
     success(res, { users, total: users.length });
   } catch (err) {
-    error(res, 'Ошибка при получении списка всех пользователей', 500, err);
+    error(res, 'Error fetching all users list', 500, err);
   }
 });
 
@@ -130,7 +130,7 @@ router.get('/:id', authenticate, async (req, res) => {
     );
 
     if (users.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     const user = users[0];
@@ -168,7 +168,7 @@ router.get('/:id', authenticate, async (req, res) => {
     success(res, { user });
   } catch (err) {
     console.error('Ошибка получения пользователя:', err);
-    error(res, 'Ошибка при получении данных пользователя', 500, err);
+    error(res, 'Error fetching user data', 500, err);
   }
 });
 
@@ -208,14 +208,14 @@ router.put('/:id', authenticate, (req, res, next) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { id } = req.params;
 
     // Пользователь может обновлять только свои данные, если он не админ
     if (req.user.userId !== id && !req.user.isAdmin) {
-      return error(res, 'Доступ запрещен', 403);
+      return error(res, 'Access denied', 403);
     }
 
     // Обработка загруженного файла аватара
@@ -265,7 +265,7 @@ router.put('/:id', authenticate, (req, res, next) => {
     );
 
     if (existingUsers.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     // Формирование запроса обновления
@@ -326,12 +326,12 @@ router.put('/:id', authenticate, (req, res, next) => {
         // Проверяем, что все элементы - строки (URL)
         const allStrings = social_links.every(link => typeof link === 'string');
         if (!allStrings) {
-          return error(res, 'social_links должен быть массивом строк (URL)', 400);
+          return error(res, 'social_links must be an array of strings (URLs)', 400);
         }
         updates.push('social_links = ?');
         params.push(JSON.stringify(social_links));
       } else {
-        return error(res, 'social_links должен быть массивом', 400);
+        return error(res, 'social_links must be an array', 400);
       }
     }
     if (lang !== undefined) {
@@ -353,7 +353,7 @@ router.put('/:id', authenticate, (req, res, next) => {
     if (req.user.isSuperAdmin) {
       // Нельзя снять права суперадмина у самого себя
       if (req.user.userId === id && super_admin === false) {
-        return error(res, 'Нельзя снять права суперадмина у самого себя', 400);
+        return error(res, 'Cannot revoke super admin rights from yourself', 400);
       }
 
       if (admin !== undefined) {
@@ -379,11 +379,11 @@ router.put('/:id', authenticate, (req, res, next) => {
       }
     } else if (admin !== undefined || super_admin !== undefined) {
       // Если не суперадмин пытается изменить admin/super_admin
-      return error(res, 'Только суперадмин может изменять права администратора', 403);
+      return error(res, 'Only super admin can change admin rights', 403);
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления. Отправьте JSON (Content-Type: application/json), например { "lang": "en" }.', 400);
+      return error(res, 'No data to update. Send JSON (Content-Type: application/json), e.g. { "lang": "en" }.', 400);
     }
 
     updates.push('updated_at = NOW()');
@@ -423,10 +423,10 @@ router.put('/:id', authenticate, (req, res, next) => {
       updatedUser.social_links = [];
     }
 
-    success(res, { user: updatedUser }, 'Данные пользователя обновлены');
+    success(res, { user: updatedUser }, 'User data updated');
   } catch (err) {
     console.error('Ошибка обновления пользователя:', err);
-    error(res, 'Ошибка при обновлении данных пользователя', 500, err);
+    error(res, 'Error updating user data', 500, err);
   }
 });
 
@@ -435,13 +435,13 @@ router.put('/:id', authenticate, (req, res, next) => {
  * Обновление количества Joycoins (только для админов)
  */
 router.put('/:id/jcoins', authenticate, requireAdmin, [
-  body('jcoins').isInt().withMessage('jcoins должен быть числом'),
-  body('operation').optional().isIn(['set', 'add', 'subtract']).withMessage('Операция должна быть set, add или subtract')
+  body('jcoins').isInt().withMessage('jcoins must be a number'),
+  body('operation').optional().isIn(['set', 'add', 'subtract']).withMessage('Operation must be set, add or subtract')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { id } = req.params;
@@ -454,7 +454,7 @@ router.put('/:id/jcoins', authenticate, requireAdmin, [
     );
 
     if (existingUsers.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     const currentJcoins = existingUsers[0].jcoins || 0;
@@ -478,10 +478,10 @@ router.put('/:id/jcoins', authenticate, requireAdmin, [
       [newJcoins, id]
     );
 
-    success(res, { jcoins: newJcoins }, 'Joycoins обновлены');
+    success(res, { jcoins: newJcoins }, 'Joycoins updated');
   } catch (err) {
     console.error('Ошибка обновления Joycoins:', err);
-    error(res, 'Ошибка при обновлении Joycoins', 500, err);
+    error(res, 'Error updating Joycoins', 500, err);
   }
 });
 
@@ -500,15 +500,15 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (existingUsers.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     await pool.execute('DELETE FROM users WHERE id = ?', [id]);
 
-    success(res, null, 'Пользователь удален');
+    success(res, null, 'User deleted');
   } catch (err) {
     console.error('Ошибка удаления пользователя:', err);
-    error(res, 'Ошибка при удалении пользователя', 500, err);
+    error(res, 'Error deleting user', 500, err);
   }
 });
 
@@ -517,13 +517,13 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
  * Назначение/снятие прав администратора (только для суперадмина)
  */
 router.put('/:id/admin', authenticate, requireSuperAdmin, [
-  body('admin').isBoolean().withMessage('admin должен быть boolean'),
-  body('super_admin').optional().isBoolean().withMessage('super_admin должен быть boolean')
+  body('admin').isBoolean().withMessage('admin must be boolean'),
+  body('super_admin').optional().isBoolean().withMessage('super_admin must be boolean')
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { id } = req.params;
@@ -531,7 +531,7 @@ router.put('/:id/admin', authenticate, requireSuperAdmin, [
 
     // Нельзя снять права суперадмина у самого себя
     if (req.user.userId === id && super_admin === false) {
-      return error(res, 'Нельзя снять права суперадмина у самого себя', 400);
+      return error(res, 'Cannot revoke super admin rights from yourself', 400);
     }
 
     // Проверка существования пользователя
@@ -541,7 +541,7 @@ router.put('/:id/admin', authenticate, requireSuperAdmin, [
     );
 
     if (existingUsers.length === 0) {
-      return error(res, 'Пользователь не найден', 404);
+      return error(res, 'User not found', 404);
     }
 
     const existingUser = existingUsers[0];
@@ -574,7 +574,7 @@ router.put('/:id/admin', authenticate, requireSuperAdmin, [
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления', 400);
+      return error(res, 'No data to update', 400);
     }
 
     updates.push('updated_at = NOW()');
@@ -591,9 +591,9 @@ router.put('/:id/admin', authenticate, requireSuperAdmin, [
       [id]
     );
 
-    success(res, { user: updatedUsers[0] }, 'Права администратора обновлены');
+    success(res, { user: updatedUsers[0] }, 'Admin rights updated');
   } catch (err) {
-    return error(res, 'Ошибка при обновлении прав администратора', 500, err);
+    return error(res, 'Error updating admin rights', 500, err);
   }
 });
 

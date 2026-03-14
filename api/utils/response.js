@@ -1,7 +1,7 @@
 /**
  * Успешный ответ
  */
-function success(res, data = null, message = 'Успешно', statusCode = 200) {
+function success(res, data = null, message = 'Success', statusCode = 200) {
   return res.status(statusCode).json({
     success: true,
     message,
@@ -12,7 +12,7 @@ function success(res, data = null, message = 'Успешно', statusCode = 200)
 /**
  * Ответ с ошибкой
  */
-function error(res, message = 'Произошла ошибка', statusCode = 400, errors = null) {
+function error(res, message = 'An error occurred', statusCode = 400, errors = null) {
   const response = {
     success: false,
     message,

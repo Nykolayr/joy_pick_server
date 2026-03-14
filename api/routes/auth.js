@@ -27,7 +27,10 @@ router.post('/register', [
   body('phone_number').optional().isString(),
   body('city').optional().isString(),
   body('country').optional().isString(),
-  body('gender').optional().isString()
+  body('gender').optional().isString(),
+  body('email_subject').optional().isString(),
+  body('email_html').optional().isString(),
+  body('email_text').optional().isString()
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -45,7 +48,10 @@ router.post('/register', [
       city,
       country,
       gender,
-      auth_type = 'email'
+      auth_type = 'email',
+      email_subject,
+      email_html,
+      email_text
     } = req.body;
 
     // Проверка существования пользователя
@@ -118,8 +124,11 @@ router.post('/register', [
         ]
       );
 
-      // Отправка кода на email
-      const emailResult = await sendVerificationCode(email, verificationCode);
+      // Отправка кода на email (текст с фронта по языку: email_subject, email_html, email_text; плейсхолдеры {{code}}, {{logo_url}})
+      const emailOptions = [email_subject, email_html, email_text].some(Boolean)
+        ? { subject: email_subject, html: email_html, text: email_text }
+        : undefined;
+      const emailResult = await sendVerificationCode(email, verificationCode, emailOptions);
       
       // Проверяем формат ответа
       const emailSent = emailResult && typeof emailResult === 'object' 
@@ -904,7 +913,7 @@ router.post('/verify-email', [
     if (!verification.password_hash) {
       // Это верификация для существующего пользователя
       if (!verification.user_id) {
-        return error(res, 'Ошибка: не найдены данные для создания пользователя', 500);
+        return error(res, 'Error: user creation data not found', 500);
       }
 
       // Обновление статуса верификации

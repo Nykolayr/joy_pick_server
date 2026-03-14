@@ -100,7 +100,7 @@ async function createGroupChatForRequest(requestId, createdBy, category) {
   } catch (err) {
     // Если ошибка при добавлении, передаем все детали
     const errorDetails = {
-      message: err.message || 'Неизвестная ошибка',
+      message: err.message || 'Unknown error',
       originalError: err.originalError ? {
         message: err.originalError.message,
         code: err.originalError.code,

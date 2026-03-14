@@ -104,7 +104,7 @@ router.get('/payment-intents', async (req, res) => {
       total: detailedPaymentIntents.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении PaymentIntent', 500, err);
+    return error(res, 'Error fetching PaymentIntent', 500, err);
   }
 });
 
@@ -123,7 +123,7 @@ router.get('/payment-intents/:payment_intent_id', async (req, res) => {
     );
 
     if (paymentIntents.length === 0) {
-      return error(res, 'PaymentIntent не найден в БД', 404);
+      return error(res, 'PaymentIntent not found in database', 404);
     }
 
     const paymentIntent = paymentIntents[0];
@@ -184,10 +184,10 @@ router.get('/payment-intents/:payment_intent_id', async (req, res) => {
         }
       });
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении данных из Stripe', 500, stripeErr);
+      return error(res, 'Error fetching data from Stripe', 500, stripeErr);
     }
   } catch (err) {
-    return error(res, 'Ошибка при получении PaymentIntent', 500, err);
+    return error(res, 'Error fetching PaymentIntent', 500, err);
   }
 });
 
@@ -316,7 +316,7 @@ router.get('/transfers/:transfer_id', async (req, res) => {
     );
 
     if (transfers.length === 0) {
-      return error(res, 'Transfer не найден в БД', 404);
+      return error(res, 'Transfer not found in database', 404);
     }
 
     const transfer = transfers[0];
@@ -382,10 +382,10 @@ router.get('/transfers/:transfer_id', async (req, res) => {
         }
       });
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении данных из Stripe', 500, stripeErr);
+      return error(res, 'Error fetching data from Stripe', 500, stripeErr);
     }
   } catch (err) {
-    return error(res, 'Ошибка при получении Transfer', 500, err);
+    return error(res, 'Error fetching Transfer', 500, err);
   }
 });
 
@@ -485,7 +485,7 @@ router.get('/accounts', async (req, res) => {
       total: detailedAccounts.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении Accounts', 500, err);
+    return error(res, 'Error fetching Accounts', 500, err);
   }
 });
 
@@ -504,7 +504,7 @@ router.get('/accounts/:account_id', async (req, res) => {
     );
 
     if (accounts.length === 0) {
-      return error(res, 'Account не найден в БД', 404);
+      return error(res, 'Account not found in database', 404);
     }
 
     const account = accounts[0];
@@ -555,10 +555,10 @@ router.get('/accounts/:account_id', async (req, res) => {
         }
       });
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении данных из Stripe', 500, stripeErr);
+      return error(res, 'Error fetching data from Stripe', 500, stripeErr);
     }
   } catch (err) {
-    return error(res, 'Ошибка при получении Account', 500, err);
+    return error(res, 'Error fetching Account', 500, err);
   }
 });
 
@@ -589,7 +589,7 @@ router.get('/charges', async (req, res) => {
         });
         charges = paymentIntent.charges?.data || [];
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Charges из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Charges from Stripe', 500, stripeErr);
       }
     } else {
       // Получаем последние charges
@@ -599,7 +599,7 @@ router.get('/charges', async (req, res) => {
         });
         charges = chargesList.data;
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Charges из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Charges from Stripe', 500, stripeErr);
       }
     }
 
@@ -654,7 +654,7 @@ router.get('/charges', async (req, res) => {
       total: detailedCharges.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении Charges', 500, err);
+    return error(res, 'Error fetching Charges', 500, err);
   }
 });
 
@@ -745,10 +745,10 @@ router.get('/charges/:charge_id', async (req, res) => {
         }
       });
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении данных из Stripe', 500, stripeErr);
+      return error(res, 'Error fetching data from Stripe', 500, stripeErr);
     }
   } catch (err) {
-    return error(res, 'Ошибка при получении Charge', 500, err);
+    return error(res, 'Error fetching Charge', 500, err);
   }
 });
 
@@ -788,7 +788,7 @@ router.get('/balance-transactions', async (req, res) => {
           balanceTransactionIds.map(id => stripe.balanceTransactions.retrieve(id))
         );
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Balance Transactions из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Balance Transactions from Stripe', 500, stripeErr);
       }
     } else {
       // Получаем последние транзакции
@@ -800,7 +800,7 @@ router.get('/balance-transactions', async (req, res) => {
         const transactionsList = await stripe.balanceTransactions.list(listParams);
         balanceTransactions = transactionsList.data;
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Balance Transactions из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Balance Transactions from Stripe', 500, stripeErr);
       }
     }
 
@@ -884,7 +884,7 @@ router.get('/balance-transactions', async (req, res) => {
       total: detailedTransactions.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении Balance Transactions', 500, err);
+    return error(res, 'Error fetching Balance Transactions', 500, err);
   }
 });
 
@@ -959,10 +959,10 @@ router.get('/balance-transactions/:transaction_id', async (req, res) => {
         }
       });
     } catch (stripeErr) {
-      return error(res, 'Ошибка при получении данных из Stripe', 500, stripeErr);
+      return error(res, 'Error fetching data from Stripe', 500, stripeErr);
     }
   } catch (err) {
-    return error(res, 'Ошибка при получении Balance Transaction', 500, err);
+    return error(res, 'Error fetching Balance Transaction', 500, err);
   }
 });
 
@@ -1008,7 +1008,7 @@ router.get('/refunds', async (req, res) => {
         );
         refunds = refundsList.flat();
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Refunds из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Refunds from Stripe', 500, stripeErr);
       }
     } else {
       // Получаем последние refunds
@@ -1018,7 +1018,7 @@ router.get('/refunds', async (req, res) => {
         });
         refunds = refundsList.data;
       } catch (stripeErr) {
-        return error(res, 'Ошибка при получении Refunds из Stripe', 500, stripeErr);
+        return error(res, 'Error fetching Refunds from Stripe', 500, stripeErr);
       }
     }
 
@@ -1090,7 +1090,7 @@ router.get('/refunds', async (req, res) => {
       total: detailedRefunds.length
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении Refunds', 500, err);
+    return error(res, 'Error fetching Refunds', 500, err);
   }
 });
 
@@ -1159,7 +1159,7 @@ router.get('/summary', async (req, res) => {
       balance
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении статистики', 500, err);
+    return error(res, 'Error fetching statistics', 500, err);
   }
 });
 
@@ -1470,7 +1470,7 @@ router.delete('/requests/:request_id/donations/:donation_id', async (req, res) =
       removed_donation_id: donation_id,
       amount_removed: amount,
       request_id,
-      message: 'Донат удалён из заявки. total_contributed обновлён. Можно создавать трансфер по оставшимся донатам.'
+      message: 'Donation removed from request. total_contributed updated. You can create transfer for remaining donations.'
     });
   } catch (err) {
     return error(res, 'Error removing donation from request', 500, err);
@@ -1641,7 +1641,7 @@ router.post('/create-transfer', [
       const isBalanceInsufficient = code === 'balance_insufficient';
 
       const userMessage = isBalanceInsufficient
-        ? 'На платформенном Stripe-аккаунте недостаточно средств для создания трансфера. Частая причина — автоматические выплаты (payouts) забирают баланс. Включите ручные выплаты в Stripe Dashboard: https://dashboard.stripe.com/account/payouts — тогда средства будут доступны для трансферов исполнителям.'
+        ? 'Insufficient balance on platform Stripe account for transfer. Common cause: automatic payouts drain the balance. Enable manual payouts in Stripe Dashboard: https://dashboard.stripe.com/account/payouts so funds are available for transfers to performers.'
         : 'Error creating transfer in Stripe';
 
       const errorPayload = {

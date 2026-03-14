@@ -276,7 +276,7 @@ router.get('/', authenticate, async (req, res) => {
       total
     });
   } catch (err) {
-    error(res, 'Ошибка при получении списка чатов', 500, err);
+    error(res, 'Error fetching chats list', 500, err);
   }
 });
 
@@ -301,7 +301,7 @@ router.get('/support', authenticate, async (req, res) => {
     );
 
     if (chats.length === 0) {
-      return error(res, 'Чат техподдержки не найден', 404);
+      return error(res, 'Support chat not found', 404);
     }
 
     const chat = chats[0];
@@ -316,7 +316,7 @@ router.get('/support', authenticate, async (req, res) => {
 
     success(res, chat);
   } catch (err) {
-    error(res, 'Ошибка при получении чата техподдержки', 500, err);
+    error(res, 'Error fetching support chat', 500, err);
   }
 });
 
@@ -404,9 +404,9 @@ router.post('/support', authenticate, async (req, res) => {
     chat.participants_count = participantsCount;
     chat.type = 'support'; // Явно указываем тип
 
-    success(res, chat, 'Чат техподдержки создан', 201);
+    success(res, chat, 'Support chat created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании чата техподдержки', 500, err);
+    error(res, 'Error creating support chat', 500, err);
   }
 });
 
@@ -426,7 +426,7 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     // Ищем приватный чат по request_id и типу (один приватный чат на заявку)
@@ -444,7 +444,7 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
     );
 
     if (chats.length === 0) {
-      return error(res, 'Приватный чат не найден', 404);
+      return error(res, 'Private chat not found', 404);
     }
 
     const chat = chats[0];
@@ -454,7 +454,7 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
 
     success(res, chat);
   } catch (err) {
-    error(res, 'Ошибка при получении приватного чата', 500, err);
+    error(res, 'Error fetching private chat', 500, err);
   }
 });
 
@@ -482,18 +482,18 @@ router.post('/private', authenticate, async (req, res) => {
       );
 
       if (requests.length === 0) {
-        return error(res, 'Заявка не найдена', 404);
+        return error(res, 'Request not found', 404);
       }
 
       participant1 = userId;
       participant2 = requests[0].created_by;
     } else {
-      return error(res, 'Необходимо указать либо user_id_1 и user_id_2, либо request_id', 400);
+      return error(res, 'Must specify either user_id_1 and user_id_2, or request_id', 400);
     }
 
     // Проверяем, что пользователи разные
     if (participant1 === participant2) {
-      return error(res, 'Нельзя создать приватный чат с самим собой', 400);
+      return error(res, 'Cannot create private chat with yourself', 400);
     }
 
     // Проверяем существование обоих пользователей
@@ -503,12 +503,12 @@ router.post('/private', authenticate, async (req, res) => {
     );
 
     if (users.length !== 2) {
-      return error(res, 'Один или оба пользователя не найдены', 404);
+      return error(res, 'One or both users not found', 404);
     }
 
     // Валидация: для private чата request_id должен быть указан
     if (!request_id) {
-      return error(res, 'Для private чата request_id обязателен', 400);
+      return error(res, 'request_id is required for private chat', 400);
     }
 
     // Проверяем, существует ли уже private чат для этой заявки (один приватный чат на заявку)
@@ -567,7 +567,7 @@ router.post('/private', authenticate, async (req, res) => {
     } catch (chatErr) {
       // Если ошибка при добавлении участников, передаем все детали
       const errorDetails = {
-        message: chatErr.message || 'Неизвестная ошибка',
+        message: chatErr.message || 'Unknown error',
         originalError: chatErr.originalError ? {
           message: chatErr.originalError.message,
           code: chatErr.originalError.code,
@@ -606,9 +606,9 @@ router.post('/private', authenticate, async (req, res) => {
     chat.participants_count = participantsCount;
     chat.type = 'private';
 
-    success(res, chat, 'Приватный чат создан', 201);
+    success(res, chat, 'Private chat created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании приватного чата', 500, err);
+    error(res, 'Error creating private chat', 500, err);
   }
 });
 
@@ -628,7 +628,7 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     // Ищем чат
@@ -645,7 +645,7 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
     );
 
     if (chats.length === 0) {
-      return error(res, 'Групповой чат не найден', 404);
+      return error(res, 'Group chat not found', 404);
     }
 
     const chat = chats[0];
@@ -660,7 +660,7 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
 
     success(res, chat);
   } catch (err) {
-    error(res, 'Ошибка при получении группового чата', 500, err);
+    error(res, 'Error fetching group chat', 500, err);
   }
 });
 
@@ -674,7 +674,7 @@ router.post('/group', authenticate, async (req, res) => {
     const { request_id } = req.body;
 
     if (!request_id) {
-      return error(res, 'request_id обязателен', 400);
+      return error(res, 'request_id is required', 400);
     }
 
     // Проверяем существование заявки
@@ -685,7 +685,7 @@ router.post('/group', authenticate, async (req, res) => {
     );
 
     if (requests.length === 0) {
-      return error(res, 'Заявка не найдена', 404);
+      return error(res, 'Request not found', 404);
     }
 
     const request = requests[0];
@@ -777,7 +777,7 @@ router.post('/group', authenticate, async (req, res) => {
 
     // Убеждаемся, что есть хотя бы один участник
     if (participants.size === 0) {
-      return error(res, 'Не удалось определить участников чата', 500);
+      return error(res, 'Failed to determine chat participants', 500);
     }
 
     // Добавляем всех участников в chat_participants
@@ -794,7 +794,7 @@ router.post('/group', authenticate, async (req, res) => {
 
     // Если были критические ошибки при добавлении участников, возвращаем ошибку
     if (insertErrors.length > 0 && participants.size === insertErrors.length) {
-      return error(res, 'Ошибка при добавлении участников в чат', 500, { insertErrors });
+      return error(res, 'Error adding participants to chat', 500, { insertErrors });
     }
 
     const participantsCount = await getParticipantsCount(chatId);
@@ -825,9 +825,9 @@ router.post('/group', authenticate, async (req, res) => {
     if (participantsCount < 2) {
     }
 
-    success(res, chat, 'Групповой чат создан', 201);
+    success(res, chat, 'Group chat created', 201);
   } catch (err) {
-    error(res, 'Ошибка при создании группового чата', 500, err);
+    error(res, 'Error creating group chat', 500, err);
   }
 });
 
@@ -860,7 +860,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       );
 
       if (chatExists.length === 0) {
-        return error(res, 'Чат не найден', 404);
+        return error(res, 'Chat not found', 404);
       }
 
       const chat = chatExists[0];
@@ -879,7 +879,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
           const added = await ensurePrivateChatParticipants(chatId, userId, chat);
           if (!added) {
             const errorDetails = {
-              message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+              message: `User ${userId} is not a participant of private chat ${chatId}`,
               chatId,
               userId,
               chatType: chat.type,
@@ -887,7 +887,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
               chatUserId: chat.user_id,
               chatCreatedBy: chat.created_by
             };
-            return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+            return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
           }
           // Повторно проверяем доступ после добавления
           [chats] = await pool.execute(
@@ -914,7 +914,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
         // Если пользователь не создатель, проверяем, является ли он участником
         if (!participantIds.includes(userId)) {
           const errorDetails = {
-            message: `Пользователь ${userId} не является участником чата поддержки ${chatId}`,
+            message: `User ${userId} is not a participant of support chat ${chatId}`,
             chatId,
             userId,
             chatType: chat.type,
@@ -922,7 +922,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
             chatUserId: chat.user_id,
             chatCreatedBy: chat.created_by
           };
-          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
         }
       }
 
@@ -951,13 +951,13 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
 
       if (chats.length === 0) {
         const errorDetails = {
-          message: `Пользователь ${userId} не имеет доступа к чату ${chatId}`,
+          message: `User ${userId} has no access to chat ${chatId}`,
           chatId,
           userId,
           chatType: chat.type,
           participants: participantIds
         };
-        return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
       }
     }
 
@@ -1031,7 +1031,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       has_more: total > offsetNum + limitNum
     });
   } catch (err) {
-    error(res, 'Ошибка при получении сообщений', 500, err);
+    error(res, 'Error fetching messages', 500, err);
   }
 });
 
@@ -1046,7 +1046,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
     const { message, message_type = 'text' } = req.body;
 
     if (!message) {
-      return error(res, 'message обязателен', 400);
+      return error(res, 'message is required', 400);
     }
 
     // Проверяем доступ к чату
@@ -1065,7 +1065,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       );
 
       if (chatExists.length === 0) {
-        return error(res, 'Чат не найден', 404);
+        return error(res, 'Chat not found', 404);
       }
 
       const chat = chatExists[0];
@@ -1084,7 +1084,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
           const added = await ensurePrivateChatParticipants(chatId, userId, chat);
           if (!added) {
             const errorDetails = {
-              message: `Пользователь ${userId} не является участником приватного чата ${chatId}`,
+              message: `User ${userId} is not a participant of private chat ${chatId}`,
               chatId,
               userId,
               chatType: chat.type,
@@ -1092,7 +1092,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
               chatUserId: chat.user_id,
               chatCreatedBy: chat.created_by
             };
-            return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+            return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
           }
           // Повторно проверяем доступ после добавления
           [chats] = await pool.execute(
@@ -1119,7 +1119,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
         // Если пользователь не создатель, проверяем, является ли он участником
         if (!participantIds.includes(userId)) {
           const errorDetails = {
-            message: `Пользователь ${userId} не является участником чата поддержки ${chatId}`,
+            message: `User ${userId} is not a participant of support chat ${chatId}`,
             chatId,
             userId,
             chatType: chat.type,
@@ -1127,7 +1127,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
             chatUserId: chat.user_id,
             chatCreatedBy: chat.created_by
           };
-          return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+          return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
         }
       }
 
@@ -1156,13 +1156,13 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
 
       if (chats.length === 0) {
         const errorDetails = {
-          message: `Пользователь ${userId} не имеет доступа к чату ${chatId}`,
+          message: `User ${userId} has no access to chat ${chatId}`,
           chatId,
           userId,
           chatType: chat.type,
           participants: participantIds
         };
-        return error(res, 'Чат не найден или нет доступа', 404, new Error(JSON.stringify(errorDetails)));
+        return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
       }
     }
 
@@ -1261,9 +1261,9 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       created_at: messageData.created_at,
       read_by: messageData.read_by,
       unread_by: messageData.unread_by
-    }, 'Сообщение отправлено', 201);
+    }, 'Message sent', 201);
   } catch (err) {
-    error(res, 'Ошибка при отправке сообщения', 500, err);
+    error(res, 'Error sending message', 500, err);
   }
 });
 
@@ -1292,7 +1292,7 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       );
 
       if (chatExists.length === 0) {
-        return error(res, 'Чат не найден', 404);
+        return error(res, 'Chat not found', 404);
       }
 
       const chat = chatExists[0];
@@ -1322,7 +1322,7 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       }
 
       if (chats.length === 0) {
-        return error(res, 'Чат не найден или нет доступа', 404);
+        return error(res, 'Chat not found or access denied', 404);
       }
     }
 
@@ -1393,7 +1393,7 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       read_at: new Date().toISOString()
     });
   } catch (err) {
-    error(res, 'Ошибка при отметке сообщений как прочитанных', 500, err);
+    error(res, 'Error marking messages as read', 500, err);
   }
 });
 
@@ -1415,7 +1415,7 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
     );
 
     if (chats.length === 0) {
-      return error(res, 'Чат не найден или нет доступа', 404);
+      return error(res, 'Chat not found or access denied', 404);
     }
 
     // Получаем сообщение
@@ -1426,7 +1426,7 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
     );
 
     if (messages.length === 0) {
-      return error(res, 'Сообщение не найдено', 404);
+      return error(res, 'Message not found', 404);
     }
 
     const message = messages[0];
@@ -1482,7 +1482,7 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
       read_at: new Date().toISOString()
     });
   } catch (err) {
-    error(res, 'Ошибка при отметке сообщения как прочитанного', 500, err);
+    error(res, 'Error marking message as read', 500, err);
   }
 });
 
@@ -1554,7 +1554,7 @@ router.get('/admin/chats', authenticate, requireAdmin, async (req, res) => {
       total
     });
   } catch (err) {
-    error(res, 'Ошибка при получении списка чатов', 500, err);
+    error(res, 'Error fetching chats list', 500, err);
   }
 });
 
@@ -1577,7 +1577,7 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
     );
 
     if (chats.length === 0) {
-      return error(res, 'Чат не найден', 404);
+      return error(res, 'Chat not found', 404);
     }
 
     // Получаем сообщения (аналогично обычному endpoint)
@@ -1649,7 +1649,7 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
       has_more: total > offsetNum + limitNum
     });
   } catch (err) {
-    error(res, 'Ошибка при получении сообщений', 500, err);
+    error(res, 'Error fetching messages', 500, err);
   }
 });
 
@@ -1681,7 +1681,7 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
       );
 
       if (chatExists.length === 0) {
-        return error(res, 'Чат не найден', 404);
+        return error(res, 'Chat not found', 404);
       }
 
       const chat = chatExists[0];
@@ -1711,7 +1711,7 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
       }
 
       if (chats.length === 0) {
-        return error(res, 'Чат не найден или нет доступа', 404);
+        return error(res, 'Chat not found or access denied', 404);
       }
     }
 
@@ -1726,7 +1726,7 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
     // Отправляем начальное сообщение о подключении
     res.write(`data: ${JSON.stringify({
       type: 'connected',
-      message: 'Подключено к чату',
+      message: 'Connected to chat',
       chatId: chatId,
       timestamp: new Date().toISOString()
     })}\n\n`);
@@ -1771,7 +1771,7 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    error(res, 'Ошибка при подключении к SSE потоку', 500, err);
+    error(res, 'Error connecting to SSE stream', 500, err);
   }
 });
 

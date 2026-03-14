@@ -19,7 +19,7 @@ router.get('/token', async (req, res) => {
     const migrationSecret = process.env.MIGRATION_SECRET || 'migration-secret-key-change-in-production';
 
     if (secret !== migrationSecret) {
-      return error(res, 'Неверный секретный ключ', 401);
+      return error(res, 'Invalid secret key', 401);
     }
 
     // Генерируем универсальный токен администратора
@@ -32,13 +32,13 @@ router.get('/token', async (req, res) => {
 
     return success(res, {
       token: adminToken,
-      message: 'Токен администратора для миграции',
+      message: 'Admin token for migration',
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-      note: 'Используйте этот токен для всех запросов миграции. Сохраните его безопасно!'
+      note: 'Use this token for all migration requests. Store it securely!'
     }, 200);
   } catch (err) {
     console.error('Ошибка генерации токена миграции:', err);
-    return error(res, 'Ошибка при генерации токена: ' + err.message, 500);
+    return error(res, 'Error generating token: ' + err.message, 500);
   }
 });
 
@@ -68,7 +68,7 @@ function checkMigrationSecret(req, res, next) {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Требуется либо секретный ключ миграции (X-Migration-Secret), либо токен авторизации (Authorization: Bearer)'
+      message: 'Either migration secret key (X-Migration-Secret) or auth token (Authorization: Bearer) is required'
     });
   }
 
@@ -77,14 +77,14 @@ function checkMigrationSecret(req, res, next) {
   if (!decoded) {
     return res.status(401).json({
       success: false,
-      message: 'Недействительный или истекший токен'
+      message: 'Invalid or expired token'
     });
   }
 
   if (!decoded.isAdmin) {
     return res.status(403).json({
       success: false,
-      message: 'Доступ запрещен. Требуются права администратора'
+      message: 'Access denied. Admin rights required'
     });
   }
 
@@ -106,7 +106,7 @@ router.post('/users', checkMigrationSecret, async (req, res) => {
     const { users } = req.body;
 
     if (!Array.isArray(users) || users.length === 0) {
-      return error(res, 'Массив пользователей обязателен', 400);
+      return error(res, 'Users array is required', 400);
     }
 
     const results = {
@@ -121,7 +121,7 @@ router.post('/users', checkMigrationSecret, async (req, res) => {
         if (!userData.email) {
           results.failed.push({
             email: userData.email || 'unknown',
-            reason: 'Email обязателен'
+            reason: 'Email is required'
           });
           continue;
         }
@@ -135,7 +135,7 @@ router.post('/users', checkMigrationSecret, async (req, res) => {
         if (existing.length > 0) {
           results.skipped.push({
             email: userData.email,
-            reason: 'Пользователь уже существует'
+            reason: 'User already exists'
           });
           continue;
         }
@@ -241,7 +241,7 @@ router.post('/users', checkMigrationSecret, async (req, res) => {
     }, 200);
   } catch (err) {
     console.error('Ошибка миграции пользователей:', err);
-    return error(res, 'Ошибка при миграции пользователей: ' + err.message, 500);
+    return error(res, 'Error migrating users: ' + err.message, 500);
   }
 });
 

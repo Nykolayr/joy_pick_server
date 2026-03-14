@@ -61,11 +61,11 @@ function checkPasswordViaFirebaseAuth(email, password, apiKey) {
           if (response.idToken) {
             resolve({ 
               valid: true,
-              message: 'Пароль успешно проверен через Firebase Auth'
+              message: 'Password verified via Firebase Auth'
             });
           } else {
             // Пароль неверный или другая ошибка
-            const errorMessage = response.error?.message || 'Неизвестная ошибка Firebase Auth';
+            const errorMessage = response.error?.message || 'Unknown Firebase Auth error';
             const errorCode = response.error?.message || 'UNKNOWN_ERROR';
             
             resolve({ 
@@ -87,7 +87,7 @@ function checkPasswordViaFirebaseAuth(email, password, apiKey) {
 
     req.setTimeout(10000, () => {
       req.destroy();
-      reject(new Error('Таймаут запроса к Firebase Auth'));
+      reject(new Error('Firebase Auth request timeout'));
     });
 
     req.write(postData);
@@ -192,7 +192,7 @@ async function verifyPassword(password, hash, email = null) {
                       valid: true,
                       format: 'firebase_auth',
                       needsUpgrade: true, // Нужно перехешировать в bcrypt
-                      message: 'Пароль проверен через Firebase Auth (старый формат)'
+                      message: 'Password verified via Firebase Auth (legacy format)'
                     };
                   } else {
                     // Пароль не прошел проверку через Firebase Auth
@@ -273,7 +273,7 @@ async function verifyPassword(password, hash, email = null) {
       valid: false,
       format: 'firebase_scrypt',
       needsUpgrade: true,
-      error: 'Firebase scrypt формат требует специальной проверки'
+      error: 'Firebase scrypt format requires special verification'
     };
   }
 

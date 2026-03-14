@@ -60,7 +60,7 @@ router.get('/', optionalAuthenticate, async (req, res) => {
       }
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении списка новостей', 500, err);
+    return error(res, 'Error fetching news list', 500, err);
   }
 });
 
@@ -69,27 +69,27 @@ router.get('/', optionalAuthenticate, async (req, res) => {
  * Создание новости (только админ). Как POST /api/recycling-stations.
  */
 router.post('/', authenticate, requireAdmin, [
-  body('title').trim().notEmpty().withMessage('Заголовок обязателен'),
+  body('title').trim().notEmpty().withMessage('Title is required'),
   body('short_description').optional({ values: 'null' }).trim().isLength({ max: 500 }),
-  body('text').trim().notEmpty().withMessage('Текст обязателен'),
+  body('text').trim().notEmpty().withMessage('Text is required'),
   body('image_url').optional({ values: 'null' }).trim(),
-  body('published_at').trim().notEmpty().withMessage('Дата публикации обязательна')
+  body('published_at').trim().notEmpty().withMessage('Published date is required')
 ], async (req, res) => {
   try {
     const val = validationResult(req);
     if (!val.isEmpty()) {
-      return error(res, val.array()[0].msg || 'Ошибка валидации', 400, val.array());
+      return error(res, val.array()[0].msg || 'Validation error', 400, val.array());
     }
 
     const { title, short_description, text, image_url, published_at } = req.body;
     const id = generateId();
     let imageUrl = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
     if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
-      return error(res, 'Некорректная ссылка на картинку', 400);
+      return error(res, 'Invalid image URL', 400);
     }
     const publishedAt = new Date(published_at);
     if (isNaN(publishedAt.getTime())) {
-      return error(res, 'Некорректная дата публикации', 400);
+      return error(res, 'Invalid published date', 400);
     }
 
     const shortDesc = short_description != null && String(short_description).trim() ? String(short_description).trim().slice(0, 500) : null;
@@ -104,9 +104,9 @@ router.post('/', authenticate, requireAdmin, [
       [id]
     );
 
-    return success(res, { news: created[0] }, 'Новость создана', 201);
+    return success(res, { news: created[0] }, 'News created', 201);
   } catch (err) {
-    return error(res, 'Ошибка при создании новости', 500, err);
+    return error(res, 'Error creating news', 500, err);
   }
 });
 
@@ -118,14 +118,14 @@ router.get('/:id/like-status', authenticate, [
 ], async (req, res) => {
   try {
     if (!validationResult(req).isEmpty()) {
-      return error(res, 'Некорректный ID новости', 400);
+      return error(res, 'Invalid news ID', 400);
     }
     const { id: newsId } = req.params;
     const userId = req.user.userId;
 
     const [newsRows] = await pool.execute('SELECT id FROM news WHERE id = ?', [newsId]);
     if (newsRows.length === 0) {
-      return error(res, 'Новость не найдена', 404);
+      return error(res, 'News not found', 404);
     }
 
     const [liked] = await pool.execute(
@@ -139,7 +139,7 @@ router.get('/:id/like-status', authenticate, [
       likes_count: countRows[0].c
     });
   } catch (err) {
-    return error(res, 'Ошибка при получении статуса лайка', 500, err);
+    return error(res, 'Error fetching like status', 500, err);
   }
 });
 
@@ -152,14 +152,14 @@ router.post('/:id/like', authenticate, [
 ], async (req, res) => {
   try {
     if (!validationResult(req).isEmpty()) {
-      return error(res, 'Некорректный ID новости', 400);
+      return error(res, 'Invalid news ID', 400);
     }
     const { id: newsId } = req.params;
     const userId = req.user.userId;
 
     const [newsRows] = await pool.execute('SELECT id FROM news WHERE id = ?', [newsId]);
     if (newsRows.length === 0) {
-      return error(res, 'Новость не найдена', 404);
+      return error(res, 'News not found', 404);
     }
 
     const [existing] = await pool.execute(
@@ -173,7 +173,7 @@ router.post('/:id/like', authenticate, [
       return success(res, {
         liked: false,
         likes_count: countRows[0].c
-      }, 'Лайк убран');
+      }, 'Like removed');
     }
 
     await pool.execute('INSERT INTO news_likes (news_id, user_id) VALUES (?, ?)', [newsId, userId]);
@@ -181,9 +181,9 @@ router.post('/:id/like', authenticate, [
     return success(res, {
       liked: true,
       likes_count: countRows[0].c
-    }, 'Лайк поставлен');
+    }, 'Like added');
   } catch (err) {
-    return error(res, 'Ошибка при изменении лайка', 500, err);
+    return error(res, 'Error updating like', 500, err);
   }
 });
 
@@ -196,7 +196,7 @@ router.get('/:id', optionalAuthenticate, [
 ], async (req, res) => {
   try {
     if (!validationResult(req).isEmpty()) {
-      return error(res, 'Некорректный ID новости', 400);
+      return error(res, 'Invalid news ID', 400);
     }
     const { id } = req.params;
     const skipView = req.query.skip_view === '1' && req.user && req.user.isAdmin;
@@ -209,7 +209,7 @@ router.get('/:id', optionalAuthenticate, [
     );
 
     if (rows.length === 0) {
-      return error(res, 'Новость не найдена', 404);
+      return error(res, 'News not found', 404);
     }
 
     if (!skipView) {
@@ -234,7 +234,7 @@ router.get('/:id', optionalAuthenticate, [
 
     return success(res, { news });
   } catch (err) {
-    return error(res, 'Ошибка при получении новости', 500, err);
+    return error(res, 'Error fetching news', 500, err);
   }
 });
 
@@ -253,7 +253,7 @@ router.put('/:id', authenticate, requireAdmin, [
   try {
     const val = validationResult(req);
     if (!val.isEmpty()) {
-      return error(res, val.array()[0].msg || 'Ошибка валидации', 400, val.array());
+      return error(res, val.array()[0].msg || 'Validation error', 400, val.array());
     }
 
     const { id } = req.params;
@@ -261,7 +261,7 @@ router.put('/:id', authenticate, requireAdmin, [
 
     const [existing] = await pool.execute('SELECT id FROM news WHERE id = ?', [id]);
     if (existing.length === 0) {
-      return error(res, 'Новость не найдена', 404);
+      return error(res, 'News not found', 404);
     }
 
     const updates = [];
@@ -283,7 +283,7 @@ router.put('/:id', authenticate, requireAdmin, [
     if (image_url !== undefined) {
       const img = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
       if (img && !/^https?:\/\//i.test(img)) {
-        return error(res, 'Некорректная ссылка на картинку', 400);
+        return error(res, 'Invalid image URL', 400);
       }
       updates.push('image_url = ?');
       params.push(img);
@@ -291,14 +291,14 @@ router.put('/:id', authenticate, requireAdmin, [
     if (published_at !== undefined) {
       const d = new Date(published_at);
       if (isNaN(d.getTime())) {
-        return error(res, 'Некорректная дата публикации', 400);
+        return error(res, 'Invalid published date', 400);
       }
       updates.push('published_at = ?');
       params.push(d.toISOString().slice(0, 19).replace('T', ' '));
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет данных для обновления', 400);
+      return error(res, 'No data to update', 400);
     }
 
     updates.push('updated_at = NOW()');
@@ -316,9 +316,9 @@ router.put('/:id', authenticate, requireAdmin, [
       [id]
     );
 
-    return success(res, { news: updated[0] }, 'Новость обновлена');
+    return success(res, { news: updated[0] }, 'News updated');
   } catch (err) {
-    return error(res, 'Ошибка при обновлении новости', 500, err);
+    return error(res, 'Error updating news', 500, err);
   }
 });
 
@@ -331,18 +331,18 @@ router.delete('/:id', authenticate, requireAdmin, [
 ], async (req, res) => {
   try {
     if (!validationResult(req).isEmpty()) {
-      return error(res, 'Некорректный ID новости', 400);
+      return error(res, 'Invalid news ID', 400);
     }
     const { id } = req.params;
 
     const [result] = await pool.execute('DELETE FROM news WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
-      return error(res, 'Новость не найдена', 404);
+      return error(res, 'News not found', 404);
     }
 
-    return success(res, null, 'Новость удалена');
+    return success(res, null, 'News deleted');
   } catch (err) {
-    return error(res, 'Ошибка при удалении новости', 500, err);
+    return error(res, 'Error deleting news', 500, err);
   }
 });
 

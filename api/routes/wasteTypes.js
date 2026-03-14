@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
     success(res, rows);
   } catch (err) {
     console.error('Ошибка получения списка типов отходов:', err);
-    error(res, 'Ошибка при получении списка типов отходов', 500, err);
+    error(res, 'Error fetching waste types list', 500, err);
   }
 });
 
@@ -38,13 +38,13 @@ router.get('/:id', async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return error(res, 'Тип отходов не найден', 404);
+      return error(res, 'Waste type not found', 404);
     }
 
     success(res, rows[0]);
   } catch (err) {
     console.error('Ошибка получения типа отходов:', err);
-    error(res, 'Ошибка при получении типа отходов', 500, err);
+    error(res, 'Error fetching waste type', 500, err);
   }
 });
 
@@ -55,22 +55,22 @@ router.get('/:id', async (req, res) => {
 router.post('/', authenticate, requireAdmin, [
   body('name')
     .notEmpty()
-    .withMessage('Название обязательно')
+    .withMessage('Name is required')
     .isString()
     .withMessage('Название должно быть строкой')
     .trim()
     .toLowerCase()
     .isLength({ min: 1, max: 255 })
-    .withMessage('Название должно быть от 1 до 255 символов'),
+    .withMessage('Name must be 1 to 255 characters'),
   body('danger')
     .optional()
     .isBoolean()
-    .withMessage('danger должен быть булевым значением'),
+    .withMessage('danger must be boolean'),
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { name, danger = false } = req.body;
@@ -98,7 +98,7 @@ router.post('/', authenticate, requireAdmin, [
       [id]
     );
 
-    success(res, rows[0], 'Тип отходов успешно создан', 201);
+    success(res, rows[0], 'Waste type created', 201);
   } catch (err) {
     console.error('Ошибка создания типа отходов:', err);
     
@@ -107,7 +107,7 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, 'Тип отходов с таким названием уже существует', 409);
     }
     
-    error(res, 'Ошибка при создании типа отходов', 500, err);
+    error(res, 'Error creating waste type', 500, err);
   }
 });
 
@@ -123,16 +123,16 @@ router.put('/:id', authenticate, requireAdmin, [
     .trim()
     .toLowerCase()
     .isLength({ min: 1, max: 255 })
-    .withMessage('Название должно быть от 1 до 255 символов'),
+    .withMessage('Name must be 1 to 255 characters'),
   body('danger')
     .optional()
     .isBoolean()
-    .withMessage('danger должен быть булевым значением'),
+    .withMessage('danger must be boolean'),
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Ошибка валидации', 400, validationErrors.array());
+      return error(res, 'Validation error', 400, validationErrors.array());
     }
 
     const { id } = req.params;
@@ -145,7 +145,7 @@ router.put('/:id', authenticate, requireAdmin, [
     );
 
     if (existing.length === 0) {
-      return error(res, 'Тип отходов не найден', 404);
+      return error(res, 'Waste type not found', 404);
     }
 
     // Если обновляется name, проверяем на уникальность
@@ -175,7 +175,7 @@ router.put('/:id', authenticate, requireAdmin, [
     }
 
     if (updates.length === 0) {
-      return error(res, 'Нет полей для обновления', 400);
+      return error(res, 'No fields to update', 400);
     }
 
     params.push(id);
@@ -191,7 +191,7 @@ router.put('/:id', authenticate, requireAdmin, [
       [id]
     );
 
-    success(res, rows[0], 'Тип отходов успешно обновлен');
+    success(res, rows[0], 'Waste type updated');
   } catch (err) {
     console.error('Ошибка обновления типа отходов:', err);
     
@@ -200,7 +200,7 @@ router.put('/:id', authenticate, requireAdmin, [
       return error(res, 'Тип отходов с таким названием уже существует', 409);
     }
     
-    error(res, 'Ошибка при обновлении типа отходов', 500, err);
+    error(res, 'Error updating waste type', 500, err);
   }
 });
 
@@ -219,7 +219,7 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (existing.length === 0) {
-      return error(res, 'Тип отходов не найден', 404);
+      return error(res, 'Waste type not found', 404);
     }
 
     // Проверка использования в заявках

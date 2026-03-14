@@ -381,6 +381,10 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 Отправка кода верификации на email. Пользователь создается только после успешной верификации кода через `/auth/verify-email`.
 
 **Тело запроса:**
+- Обязательные: `email`, `password`.
+- Опциональные: `display_name`, `first_name`, `second_name`, `phone_number`, `city`, `country`, `gender`.
+- **Текст письма (по языку с фронта):** опционально передать `email_subject`, `email_html`, `email_text`. В строках можно использовать плейсхолдеры: `{{code}}` — код верификации, `{{logo_url}}` — URL логотипа приложения. Если не переданы — используется письмо по умолчанию (русский).
+
 ```json
 {
   "email": "user@example.com",
@@ -391,6 +395,9 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "phone_number": "+1234567890",
   "city": "Москва",
   "country": "Россия",
+  "email_subject": "Verification code for Joy Pick",
+  "email_html": "<p>Your code: {{code}}</p><img src=\"{{logo_url}}\" alt=\"Logo\" />",
+  "email_text": "Your code: {{code}}",
   "gender": "male"
 }
 ```
@@ -5897,6 +5904,15 @@ try {
 ## Настройка Email
 
 Для работы верификации email необходимо настроить отправку email. Поддерживаются следующие способы:
+
+### Логотип в письме
+
+Чтобы в письме отображался логотип приложения:
+1. **Положите файл логотипа** в папку `uploads` проекта и назовите его, например, `email-logo.png` (или другой формат: jpg, webp).
+2. Убедитесь, что в `.env` задан **APP_URL** (полный URL сайта, например `https://danilagames.ru`). Тогда логотип будет доступен по адресу `APP_URL/uploads/email-logo.png`.
+3. Либо задайте в `.env` переменную **EMAIL_LOGO_URL** с полным URL картинки (например `https://danilagames.ru/uploads/email-logo.png`).
+
+В шаблоне письма с фронта используйте плейсхолдер `{{logo_url}}` — он подставит этот URL.
 
 ### Способ 1: SMTP (Gmail, Outlook, Yandex и т.д.)
 

@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     const { requestId } = req.query;
 
     if (!requestId) {
-      return error(res, 'ID заявки обязателен', 400);
+      return error(res, 'Request ID is required', 400);
     }
 
     // Участники event теперь хранятся в actual_participants (JSON поле в requests)
@@ -49,7 +49,7 @@ router.get('/', async (req, res) => {
     success(res, { participants });
   } catch (err) {
     console.error('Ошибка получения участников:', err);
-    error(res, 'Ошибка при получении списка участников', 500);
+    error(res, 'Error fetching participants list', 500);
   }
 });
 
@@ -62,7 +62,7 @@ router.get('/contributors', async (req, res) => {
     const { requestId } = req.query;
 
     if (!requestId) {
-      return error(res, 'ID заявки обязателен', 400);
+      return error(res, 'Request ID is required', 400);
     }
 
     // Вкладчики теперь хранятся только в таблице donations
@@ -79,7 +79,7 @@ router.get('/contributors', async (req, res) => {
     success(res, { contributors });
   } catch (err) {
     console.error('Ошибка получения вкладчиков:', err);
-    error(res, 'Ошибка при получении списка вкладчиков', 500);
+    error(res, 'Error fetching contributors list', 500);
   }
 });
 

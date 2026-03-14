@@ -45,7 +45,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Недопустимый тип файла. Разрешены только изображения (JPEG, PNG, GIF, WebP)'), false);
+    cb(new Error('Invalid file type. Only images (JPEG, PNG, GIF, WebP) are allowed'), false);
   }
 };
 
