@@ -188,7 +188,7 @@ npm start
 **Query параметры:**
 - `page`, `limit` - пагинация
 - `category` - фильтр по категории (wasteLocation, speedCleanup, event)
-- `status` - фильтр по статусу (pending, approved, rejected, completed)
+- `status` - фильтр по статусу (pending, approved, rejected, archived)
 - `city` - фильтр по городу
 - `latitude`, `longitude`, `radius` - фильтр по радиусу
 - `isOpen` - фильтр по открытости

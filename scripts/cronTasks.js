@@ -56,8 +56,8 @@ async function logCronAction(actionType, requestId, requestCategory, actionDescr
 }
 
 /**
- * Автоматический перевод speedCleanup в completed через 7 дней с создания.
- * Перед переводом: выплата только по донатам после одобрения (payoutSpeedCleanupNewDonationsBeforeArchive).
+ * Автоматический перевод speedCleanup в archived через 7 дней с создания (после выплат и окончания срока).
+ * Перед переводом: выплата по донатам после одобрения (payoutSpeedCleanupNewDonationsBeforeArchive).
  * Первая выплата — при одобрении (в requests.js).
  */
 async function autoCompleteSpeedCleanup() {
@@ -82,10 +82,10 @@ async function autoCompleteSpeedCleanup() {
         // Сначала выплата по донатам после одобрения (деньги создателю, коины только новым донатерам)
         await payoutSpeedCleanupNewDonationsBeforeArchive(requestId);
 
-        // Перевод в completed
+        // Перевод в archived (после выплат и окончания срока)
         await pool.execute(
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-          ['completed', requestId]
+          ['archived', requestId]
         );
 
         if (request.created_by) {
@@ -102,7 +102,7 @@ async function autoCompleteSpeedCleanup() {
           'autoCompleteSpeedCleanup',
           requestId,
           'speedCleanup',
-          `Заявка ${requestId} переведена в completed (7 дней с создания)`,
+          `Заявка ${requestId} переведена в archived (7 дней с создания)`,
           'completed',
           {}
         );
@@ -856,7 +856,7 @@ async function checkEventTimes() {
  * 
  * ВАЖНО: Не проверяем заявки, которые:
  * - pendingApproval (на модерации)
- * - approved, rejected, completed (в архиве)
+ * - approved, rejected, archived (в архиве)
  */
 async function checkEventAfterStartDate() {
   try {
@@ -864,12 +864,12 @@ async function checkEventAfterStartDate() {
     
     // Находим event заявки, которые прошли более 24 часов после start_date
     // и НЕ на модерации и НЕ в архиве
-    // Архивные статусы: approved, rejected, completed
+    // Архивные статусы: approved, rejected, archived
     const [requests] = await pool.execute(
       `SELECT id, created_by, start_date, status, payment_intent_id, name
        FROM requests 
        WHERE category = 'event'
-         AND status NOT IN ('pendingApproval', 'approved', 'rejected', 'completed')
+         AND status NOT IN ('pendingApproval', 'approved', 'rejected', 'archived')
          AND start_date IS NOT NULL
          AND start_date <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
     );

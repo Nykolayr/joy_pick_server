@@ -1290,7 +1290,7 @@ router.get('/requests/active', async (req, res) => {
  * GET /api/stripe-admin/requests/closed
  * Получение закрытых/архивных заявок с донатами
  *
- * Закрытые заявки: approved, rejected, completed, archived (waste/event после одобрения переходят в archived)
+ * Закрытые заявки: approved, rejected, archived
  */
 router.get('/requests/closed', async (req, res) => {
   try {
@@ -1302,7 +1302,7 @@ router.get('/requests/closed', async (req, res) => {
       FROM requests r
       LEFT JOIN users u ON r.created_by = u.id
       LEFT JOIN donations d ON r.id = d.request_id
-      WHERE r.status IN ('approved', 'rejected', 'completed', 'archived')
+      WHERE r.status IN ('approved', 'rejected', 'archived')
         AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
       GROUP BY r.id
       ORDER BY r.updated_at DESC

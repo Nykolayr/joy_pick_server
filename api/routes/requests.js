@@ -166,7 +166,7 @@ router.get('/', async (req, res) => {
 
     if (status) {
       conditions.push('r.status = ?');
-      params.push(status);
+      params.push(String(status).trim().toLowerCase());
     } else {
       // По умолчанию отклонённые модератором не показываем в списке
       conditions.push("r.status != 'rejected'");
@@ -299,7 +299,7 @@ router.get('/my', authenticate, async (req, res) => {
     }
     if (status) {
       conditions.push('r.status = ?');
-      params.push(status);
+      params.push(String(status).trim().toLowerCase());
     }
 
     const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
@@ -1614,7 +1614,6 @@ router.post('/:id/join', authenticate, async (req, res) => {
         inProgress: 'Someone has already joined this request',
         approved: 'Request has been approved and is closed',
         archived: 'Request is archived',
-        completed: 'Request is completed',
         rejected: 'Request was rejected',
         pending_payment: 'Request is awaiting payment',
         pendingApproval: 'Request is under review',
@@ -2241,12 +2240,7 @@ async function handleWasteApproval(requestId, creatorId) {
   const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
   deleteGroupChatForRequest(requestId).catch(() => {});
 
-  // 7. Меняем статус на archived
-  await pool.execute(
-    'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-    ['archived', requestId]
-  );
-
+  // Статус остаётся approved. В archived переводит cron после всех выплат и окончания срока.
   return transferResult;
 }
 
@@ -2432,11 +2426,7 @@ async function handleEventApproval(requestId, creatorId) {
   const { deleteGroupChatForRequest } = require('../utils/chatHelpers');
   deleteGroupChatForRequest(requestId).catch(() => {});
 
-  // 8. Меняем статус на archived
-  await pool.execute(
-    'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
-    ['archived', requestId]
-  );
+  // Статус остаётся approved. В archived переводит cron после всех выплат и окончания срока.
 }
 
 /**
@@ -2537,7 +2527,7 @@ async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
 }
 
 /**
- * Перед переводом speedCleanup в completed: выплата только по донатам после одобрения (деньги — создателю, коины — только новым донатерам).
+ * Перед переводом speedCleanup в archived: выплата только по донатам после одобрения (деньги — создателю, коины — только новым донатерам).
  * Вызывается из крона в autoCompleteSpeedCleanup. Идемпотентно по cron_actions.
  */
 async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
