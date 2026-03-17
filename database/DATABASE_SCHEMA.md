@@ -2,7 +2,7 @@
 
 **Важно:** Этот файл содержит актуальную структуру всех таблиц базы данных. При изменении структуры таблиц обновляйте соответствующие разделы.
 
-## Список всех таблиц (16 таблиц)
+## Список всех таблиц (17 таблиц)
 
 1. `users` - Пользователи (27 колонок) - [users_table_structure.md](users_table_structure.md)
 2. `requests` - Заявки (44 колонки) - [requests_table_structure.md](requests_table_structure.md)
@@ -15,11 +15,12 @@
 9. `partner_sellers` - Продавцы партнёров (9 колонок) - [partner_sellers_table_structure.md](partner_sellers_table_structure.md)
 10. `partner_coin_redemptions` - Списания коинов у волонтёров у партнёров (10 колонок) - [partner_coin_redemptions_table_structure.md](partner_coin_redemptions_table_structure.md)
 11. `recycling_stations` - Станции переработки (11 колонок) - [recycling_stations_table_structure.md](recycling_stations_table_structure.md)
-12. `user_completed_requests` - Завершенные заявки (5 колонок) - TODO
-13. `waste_types` - Типы отходов (5 колонок) - TODO
-14. `email_verifications` - Верификация email (16 колонок) - TODO
-15. `push_notifications` - Push уведомления (8 колонок) - TODO
-16. `cron_actions` - Действия cron (8 колонок) - TODO
+12. `news` - Новости с мультиязычным контентом (10 колонок, i18n) - [news_table_structure.md](news_table_structure.md)
+13. `user_completed_requests` - Завершенные заявки (5 колонок) - TODO
+14. `waste_types` - Типы отходов (5 колонок) - TODO
+15. `email_verifications` - Верификация email (16 колонок) - TODO
+16. `push_notifications` - Push уведомления (8 колонок) - TODO
+17. `cron_actions` - Действия cron (8 колонок) - TODO
 
 ## Удаленные таблицы (помечены на удаление)
 
@@ -41,6 +42,7 @@
 - ✅ `partner_sellers_table_structure.md` - структура таблицы partner_sellers
 - ✅ `partner_coin_redemptions_table_structure.md` - структура таблицы partner_coin_redemptions
 - ✅ `recycling_stations_table_structure.md` - структура таблицы recycling_stations
+- ✅ `news_table_structure.md` - структура таблицы news (source_lang, title_i18n, short_description_i18n, text_i18n)
 - ⏳ Остальные таблицы - TODO
 
 ## Как обновить документацию

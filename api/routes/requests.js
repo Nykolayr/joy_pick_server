@@ -1226,6 +1226,19 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(JSON.stringify(uploadedPhotosAfter));
     }
 
+    // Для event: перенос времени (start_date/end_date) разрешён только создателю или админу
+    if (start_date !== undefined || end_date !== undefined) {
+      const [reqRow] = await pool.execute(
+        'SELECT category FROM requests WHERE id = ?',
+        [id]
+      );
+      if (reqRow.length > 0 && String(reqRow[0].category || '').toLowerCase() === 'event') {
+        if (!isCreator && !isAdmin) {
+          return error(res, 'Only the event creator or admin can reschedule the event', 403);
+        }
+      }
+    }
+
     if (updates.length === 0) {
       return error(res, 'No data to update', 400);
     }

@@ -4,25 +4,63 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, optionalAuthenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const { SUPPORTED_LOCALES, parseContent, translateToAllLocales } = require('../services/translateNews');
 
 const router = express.Router();
 
-// --- Как у recycling-stations: один путь /news, админские операции по auth ---
+function parseI18n(val) {
+  if (val == null) return {};
+  if (typeof val === 'object') return val;
+  try {
+    return typeof val === 'string' ? JSON.parse(val) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/** Выбрать текст по локали из JSON i18n, fallback на en */
+function pickLocale(i18n, locale) {
+  const obj = parseI18n(i18n);
+  return (obj[locale] != null && String(obj[locale]).trim() !== '') ? String(obj[locale]) : (obj.en != null ? String(obj.en) : '');
+}
+
+/** Преобразовать строку новости из БД (с *_i18n) в плоские title, short_description, text для locale */
+function rowToLocale(row, locale) {
+  const r = { ...row };
+  r.title = pickLocale(row.title_i18n, locale);
+  r.short_description = pickLocale(row.short_description_i18n, locale);
+  r.text = pickLocale(row.text_i18n, locale);
+  delete r.title_i18n;
+  delete r.short_description_i18n;
+  delete r.text_i18n;
+  return r;
+}
+
+function validateLocale(locale) {
+  return locale && SUPPORTED_LOCALES.includes(String(locale).toLowerCase());
+}
+
+/** Для обратной совместимости: если locale не передан или неверный — используем en */
+function resolveLocale(queryLocale) {
+  const locale = (queryLocale || '').toLowerCase();
+  return validateLocale(locale) ? locale : 'en';
+}
 
 /**
  * GET /api/news
- * Список новостей (с пагинацией). С auth — в каждой новости is_liked.
+ * Список новостей. Query locale опционален: при отсутствии или неверном значении используется en.
  */
 router.get('/', optionalAuthenticate, async (req, res) => {
   try {
+    const locale = resolveLocale(req.query.locale);
+
     const { page = 1, limit = 20 } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    // LIMIT/OFFSET — числа в запросе (mysql2 не поддерживает плейсхолдеры для них), значения уже провалидированы
     const [rows] = await pool.execute(
-      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n
        ORDER BY n.published_at DESC
@@ -30,28 +68,28 @@ router.get('/', optionalAuthenticate, async (req, res) => {
     );
 
     const userId = req.user && req.user.userId;
-    if (userId && rows.length > 0) {
-      const ids = rows.map(r => r.id);
+    const list = rows.map(row => {
+      const r = rowToLocale(row, locale);
+      r.is_liked = false;
+      return r;
+    });
+
+    if (userId && list.length > 0) {
+      const ids = list.map(r => r.id);
       const placeholders = ids.map(() => '?').join(',');
       const [likedRows] = await pool.execute(
         `SELECT news_id FROM news_likes WHERE user_id = ? AND news_id IN (${placeholders})`,
         [userId, ...ids]
       );
       const likedSet = new Set(likedRows.map(r => r.news_id));
-      rows.forEach(row => {
-        row.is_liked = likedSet.has(row.id);
-      });
-    } else {
-      rows.forEach(row => {
-        row.is_liked = false;
-      });
+      list.forEach(row => { row.is_liked = likedSet.has(row.id); });
     }
 
     const [countResult] = await pool.execute('SELECT COUNT(*) AS total FROM news');
     const total = countResult[0].total;
 
     return success(res, {
-      news: rows,
+      news: list,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -66,12 +104,12 @@ router.get('/', optionalAuthenticate, async (req, res) => {
 
 /**
  * POST /api/news
- * Создание новости (только админ). Как POST /api/recycling-stations.
+ * Создание новости (админ). Тело: content (title[|||]short_description[|||]text), source_lang, image_url?, published_at.
+ * В ответе — translation_report (полный отчёт по переводу для админки).
  */
 router.post('/', authenticate, requireAdmin, [
-  body('title').trim().notEmpty().withMessage('Title is required'),
-  body('short_description').optional({ values: 'null' }).trim().isLength({ max: 500 }),
-  body('text').trim().notEmpty().withMessage('Text is required'),
+  body('content').trim().notEmpty().withMessage('content is required (title[|||]short_description[|||]text)'),
+  body('source_lang').trim().notEmpty().withMessage('source_lang is required').isIn(SUPPORTED_LOCALES).withMessage('source_lang must be one of: ' + SUPPORTED_LOCALES.join(', ')),
   body('image_url').optional({ values: 'null' }).trim(),
   body('published_at').trim().notEmpty().withMessage('Published date is required')
 ], async (req, res) => {
@@ -81,8 +119,12 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, val.array()[0].msg || 'Validation error', 400, val.array());
     }
 
-    const { title, short_description, text, image_url, published_at } = req.body;
-    const id = generateId();
+    const { content, source_lang, image_url, published_at } = req.body;
+    const parsed = parseContent(content);
+    if (parsed.error) {
+      return error(res, parsed.error, 400);
+    }
+
     let imageUrl = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
     if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
       return error(res, 'Invalid image URL', 400);
@@ -92,19 +134,35 @@ router.post('/', authenticate, requireAdmin, [
       return error(res, 'Invalid published date', 400);
     }
 
-    const shortDesc = short_description != null && String(short_description).trim() ? String(short_description).trim().slice(0, 500) : null;
+    const { title_i18n, short_description_i18n, text_i18n, translation_report } = await translateToAllLocales(
+      source_lang,
+      parsed.title,
+      parsed.short_description,
+      parsed.text
+    );
+
+    const id = generateId();
     await pool.execute(
-      `INSERT INTO news (id, title, short_description, text, image_url, published_at, view_count)
-       VALUES (?, ?, ?, ?, ?, ?, 0)`,
-      [id, title.trim(), shortDesc, text.trim(), imageUrl, publishedAt.toISOString().slice(0, 19).replace('T', ' ')]
+      `INSERT INTO news (id, source_lang, title_i18n, short_description_i18n, text_i18n, image_url, published_at, view_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        id,
+        source_lang,
+        JSON.stringify(title_i18n),
+        JSON.stringify(short_description_i18n),
+        JSON.stringify(text_i18n),
+        imageUrl,
+        publishedAt.toISOString().slice(0, 19).replace('T', ' ')
+      ]
     );
 
     const [created] = await pool.execute(
-      'SELECT id, title, short_description, text, image_url, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
+      'SELECT id, source_lang, title_i18n, short_description_i18n, text_i18n, image_url, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
       [id]
     );
 
-    return success(res, { news: created[0] }, 'News created', 201);
+    const news = rowToLocale(created[0], 'en');
+    return success(res, { news, translation_report }, 'News created', 201);
   } catch (err) {
     return error(res, 'Error creating news', 500, err);
   }
@@ -145,7 +203,6 @@ router.get('/:id/like-status', authenticate, [
 
 /**
  * POST /api/news/:id/like
- * Toggle лайка. Требуется авторизация.
  */
 router.post('/:id/like', authenticate, [
   param('id').isUUID()
@@ -189,7 +246,7 @@ router.post('/:id/like', authenticate, [
 
 /**
  * GET /api/news/:id
- * Одна новость. По умолчанию +1 просмотр. Если ?skip_view=1 и пользователь админ — просмотр не увеличиваем (для редактирования).
+ * Одна новость. Query locale опционален: при отсутствии или неверном значении используется en. По умолчанию +1 просмотр; при skip_view=1 и админ — без инкремента.
  */
 router.get('/:id', optionalAuthenticate, [
   param('id').isUUID()
@@ -198,11 +255,12 @@ router.get('/:id', optionalAuthenticate, [
     if (!validationResult(req).isEmpty()) {
       return error(res, 'Invalid news ID', 400);
     }
+    const locale = resolveLocale(req.query.locale);
     const { id } = req.params;
     const skipView = req.query.skip_view === '1' && req.user && req.user.isAdmin;
 
     const [rows] = await pool.execute(
-      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
@@ -216,7 +274,7 @@ router.get('/:id', optionalAuthenticate, [
       await pool.execute('UPDATE news SET view_count = view_count + 1, updated_at = NOW() WHERE id = ?', [id]);
     }
 
-    const news = rows[0];
+    const news = rowToLocale(rows[0], locale);
     if (!skipView) {
       news.view_count = (news.view_count || 0) + 1;
     }
@@ -240,13 +298,13 @@ router.get('/:id', optionalAuthenticate, [
 
 /**
  * PUT /api/news/:id
- * Редактирование новости (только админ). Как PUT /api/recycling-stations/:id.
+ * Редактирование новости (админ). Можно передать content + source_lang (пересчёт переводов) и/или image_url, published_at.
+ * В ответе — translation_report при обновлении контента.
  */
 router.put('/:id', authenticate, requireAdmin, [
   param('id').isUUID(),
-  body('title').optional().trim().notEmpty(),
-  body('short_description').optional({ values: 'null' }).trim().isLength({ max: 500 }),
-  body('text').optional().trim().notEmpty(),
+  body('content').optional().trim().notEmpty(),
+  body('source_lang').optional().trim().isIn(SUPPORTED_LOCALES),
   body('image_url').optional({ values: 'null' }).trim(),
   body('published_at').optional().trim()
 ], async (req, res) => {
@@ -257,29 +315,36 @@ router.put('/:id', authenticate, requireAdmin, [
     }
 
     const { id } = req.params;
-    const { title, short_description, text, image_url, published_at } = req.body;
+    const { content, source_lang, image_url, published_at } = req.body;
 
     const [existing] = await pool.execute('SELECT id FROM news WHERE id = ?', [id]);
     if (existing.length === 0) {
       return error(res, 'News not found', 404);
     }
 
+    let translation_report = null;
+
+    if (content != null && content !== '' && source_lang) {
+      const parsed = parseContent(content);
+      if (parsed.error) {
+        return error(res, parsed.error, 400);
+      }
+      const result = await translateToAllLocales(source_lang, parsed.title, parsed.short_description, parsed.text);
+      translation_report = result.translation_report;
+      await pool.execute(
+        `UPDATE news SET source_lang = ?, title_i18n = ?, short_description_i18n = ?, text_i18n = ?, updated_at = NOW() WHERE id = ?`,
+        [
+          source_lang,
+          JSON.stringify(result.title_i18n),
+          JSON.stringify(result.short_description_i18n),
+          JSON.stringify(result.text_i18n),
+          id
+        ]
+      );
+    }
+
     const updates = [];
     const params = [];
-
-    if (title !== undefined) {
-      updates.push('title = ?');
-      params.push(title.trim());
-    }
-    if (short_description !== undefined) {
-      const v = short_description != null && String(short_description).trim() ? String(short_description).trim().slice(0, 500) : null;
-      updates.push('short_description = ?');
-      params.push(v);
-    }
-    if (text !== undefined) {
-      updates.push('text = ?');
-      params.push(text.trim());
-    }
     if (image_url !== undefined) {
       const img = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
       if (img && !/^https?:\/\//i.test(img)) {
@@ -296,27 +361,21 @@ router.put('/:id', authenticate, requireAdmin, [
       updates.push('published_at = ?');
       params.push(d.toISOString().slice(0, 19).replace('T', ' '));
     }
-
-    if (updates.length === 0) {
-      return error(res, 'No data to update', 400);
+    if (updates.length > 0) {
+      params.push(id);
+      await pool.execute(`UPDATE news SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`, params);
     }
 
-    updates.push('updated_at = NOW()');
-    params.push(id);
-
-    await pool.execute(
-      `UPDATE news SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
-
     const [updated] = await pool.execute(
-      `SELECT n.id, n.title, n.short_description, n.text, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
     );
-
-    return success(res, { news: updated[0] }, 'News updated');
+    const news = rowToLocale(updated[0], 'en');
+    const payload = { news };
+    if (translation_report) payload.translation_report = translation_report;
+    return success(res, payload, 'News updated');
   } catch (err) {
     return error(res, 'Error updating news', 500, err);
   }
@@ -324,7 +383,6 @@ router.put('/:id', authenticate, requireAdmin, [
 
 /**
  * DELETE /api/news/:id
- * Удаление новости (только админ). Как DELETE /api/recycling-stations/:id.
  */
 router.delete('/:id', authenticate, requireAdmin, [
   param('id').isUUID()
