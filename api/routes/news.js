@@ -4,7 +4,7 @@ const pool = require('../config/database');
 const { success, error } = require('../utils/response');
 const { authenticate, optionalAuthenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
-const { SUPPORTED_LOCALES, parseContent, translateToAllLocales } = require('../services/translateNews');
+const { SUPPORTED_LOCALES, parseContent, parseContentFromRequest, translateToAllLocales } = require('../services/translateNews');
 
 const router = express.Router();
 const NEWS_TYPES = ['simple', 'from_request'];
@@ -51,10 +51,14 @@ function rowToLocale(row, locale) {
   return r;
 }
 
-/** Для приложения: из статьи from_request отдаём только request_id (остальное есть в репо заявок); simple — image_urls */
+/** Для приложения: from_request — поля theme и text (вместо title/short_description/text), только request_id по картинке; simple — title, short_description, text, image_urls */
 function formatNewsForApp(item) {
   const r = { ...item };
   if (r.type === 'from_request') {
+    r.theme = r.title;
+    r.text = r.text;
+    delete r.title;
+    delete r.short_description;
     delete r.image_urls;
     if (!r.request_id) r.request_id = null;
   } else {
@@ -180,10 +184,16 @@ router.post('/', authenticate, requireAdmin, [
       }
     }
 
-    const parsed = parseContent(content);
+    const parsed = type === 'from_request'
+      ? parseContentFromRequest(content)
+      : parseContent(content);
     if (parsed.error) {
       return error(res, parsed.error, 400);
     }
+
+    const titleForTranslate = type === 'from_request' ? parsed.theme : parsed.title;
+    const shortForTranslate = type === 'from_request' ? '' : parsed.short_description;
+    const textForTranslate = parsed.text;
 
     let imageUrlsJson = null;
     if (type === 'simple' && image_urls != null) {
@@ -199,9 +209,9 @@ router.post('/', authenticate, requireAdmin, [
 
     const { title_i18n, short_description_i18n, text_i18n, translation_report } = await translateToAllLocales(
       source_lang,
-      parsed.title,
-      parsed.short_description,
-      parsed.text
+      titleForTranslate,
+      shortForTranslate,
+      textForTranslate
     );
 
     const id = generateId();
@@ -415,11 +425,15 @@ router.put('/:id', authenticate, requireAdmin, [
     let translation_report = null;
 
     if (content != null && content !== '' && source_lang) {
-      const parsed = parseContent(content);
+      const parsed = currentType === 'from_request'
+        ? parseContentFromRequest(content)
+        : parseContent(content);
       if (parsed.error) {
         return error(res, parsed.error, 400);
       }
-      const result = await translateToAllLocales(source_lang, parsed.title, parsed.short_description, parsed.text);
+      const titleForT = currentType === 'from_request' ? parsed.theme : parsed.title;
+      const shortForT = currentType === 'from_request' ? '' : parsed.short_description;
+      const result = await translateToAllLocales(source_lang, titleForT, shortForT, parsed.text);
       translation_report = result.translation_report;
       await pool.execute(
         `UPDATE news SET source_lang = ?, title_i18n = ?, short_description_i18n = ?, text_i18n = ?, updated_at = NOW() WHERE id = ?`,

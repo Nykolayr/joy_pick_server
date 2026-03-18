@@ -132,9 +132,28 @@ function parseContent(content) {
   return { title, short_description: short_description || '', text };
 }
 
+/**
+ * Parse content для статей из заявок (from_request): "theme[|||]text" — два поля (тема и текст).
+ * @returns {{ theme, text } | { error: string }}
+ */
+function parseContentFromRequest(content) {
+  if (content == null || typeof content !== 'string') {
+    return { error: 'content is required and must be a string' };
+  }
+  const parts = content.split(CONTENT_DELIMITER).map(s => s.trim());
+  if (parts.length !== 2) {
+    return { error: `content for from_request must contain exactly 2 parts (theme and text) separated by "${CONTENT_DELIMITER}" (got ${parts.length})` };
+  }
+  const [theme, text] = parts;
+  if (!theme) return { error: 'theme (first part) cannot be empty' };
+  if (!text) return { error: 'text (second part) cannot be empty' };
+  return { theme, text };
+}
+
 module.exports = {
   SUPPORTED_LOCALES,
   CONTENT_DELIMITER,
   parseContent,
+  parseContentFromRequest,
   translateToAllLocales
 };
