@@ -87,6 +87,26 @@ app.get('/email-logo.png', (req, res) => {
   res.sendFile(path.join(__dirname, 'app_logo.png'));
 });
 
+// Диплинки: редирект 302 на joypick:// (кастомная схема приложения)
+const DEEPLINK_CATEGORIES = ['waste_location', 'speed_cleanup', 'event'];
+app.get('/request/:category/:requestId', (req, res) => {
+  const { category, requestId } = req.params;
+  if (!category || !requestId) {
+    return res.redirect(302, '/');
+  }
+  if (!DEEPLINK_CATEGORIES.includes(category)) {
+    return res.redirect(302, '/');
+  }
+  res.redirect(302, `joypick://request/${encodeURIComponent(category)}/${encodeURIComponent(requestId)}`);
+});
+app.get('/news/:newsId', (req, res) => {
+  const { newsId } = req.params;
+  if (!newsId) {
+    return res.redirect(302, '/');
+  }
+  res.redirect(302, `joypick://news/${encodeURIComponent(newsId)}`);
+});
+
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
