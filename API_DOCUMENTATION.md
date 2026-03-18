@@ -6257,15 +6257,24 @@ API для мультиязычной ленты новостей. Контен�
 
 **Поддерживаемые локали:** `en`, `ru`, `es`, `ar`, `zh`, `hi`, `fr`, `pt`, `he`, `de`.
 
-### Модель News (в ответах API)
+### Типы статей
+
+- **`simple`** — обычная статья: массив фото `image_urls` (полные URL).
+- **`from_request`** — статья из заявки: в ответе приложению передаётся только **`request_id`** (ID заявки); остальные данные заявки уже есть в репозитории заявок в приложении. Поле картинки не отдаётся.
+
+**Важно:** При выдаче списка или одной статьи сервер проверяет заявки, привязанные к статьям типа `from_request`. Если заявка перешла в статус **archived**, статья удаляется из БД и в ответ не попадает (или возвращается 404 для одной статьи).
+
+### Модель News (в ответах API для приложения)
 
 | Поле | Тип | Описание |
 |------|-----|----------|
 | `id` | string (UUID) | ID новости |
+| `type` | string | Тип: `simple` \| `from_request` |
 | `title` | string | Заголовок (для выбранной локали) |
-| `short_description` | string | Краткое описание / подзаголовок (для выбранной локали) |
+| `short_description` | string | Краткое описание (для выбранной локали) |
 | `text` | string | Текст новости (для выбранной локали) |
-| `image_url` | string \| null | Ссылка на картинку |
+| `image_urls` | array[string] | Только для `type: "simple"`. Массив полных URL фото. Для `from_request` поле отсутствует. |
+| `request_id` | string \| null | Только для `type: "from_request"`. ID заявки; данные заявки брать из репо заявок в приложении. |
 | `published_at` | datetime | Дата публикации (UTC, ISO 8601) |
 | `view_count` | number | Количество просмотров |
 | `likes_count` | number | Количество лайков (из таблицы `news_likes`) |
@@ -6273,7 +6282,7 @@ API для мультиязычной ленты новостей. Контен�
 | `created_at` | datetime | Дата создания |
 | `updated_at` | datetime \| null | Дата обновления |
 
-В таблице БД хранятся `source_lang`, `title_i18n`, `short_description_i18n`, `text_i18n` (JSON по локалям). Колонок `title`, `short_description`, `text` в БД нет — см. описание таблицы в `database/news_table_structure.md`.
+В БД хранятся `type`, `source_lang`, `title_i18n`, `short_description_i18n`, `text_i18n`, `image_urls` (JSON), `request_id`. См. `database/news_table_structure.md`.
 
 **Механизм лайков:** таблица `news_likes` (пары `news_id`, `user_id`). Поставить/убрать лайк — **POST** `/news/:id/like` (toggle). В ответах списка и одной новости при переданном токене возвращается `is_liked`.
 
@@ -6304,13 +6313,27 @@ API для мультиязычной ленты новостей. Контен�
     "news": [
       {
         "id": "uuid",
+        "type": "simple",
         "title": "Заголовок",
         "short_description": "Краткое описание",
         "text": "Текст новости",
-        "image_url": "https://...",
+        "image_urls": ["https://...", "https://..."],
         "published_at": "2025-02-20T12:00:00.000Z",
         "view_count": 100,
         "likes_count": 15,
+        "is_liked": false,
+        "created_at": "2025-02-20T10:00:00.000Z"
+      },
+      {
+        "id": "uuid2",
+        "type": "from_request",
+        "title": "Итоги заявки",
+        "short_description": "...",
+        "text": "...",
+        "request_id": "uuid-заявки",
+        "published_at": "2025-02-20T12:00:00.000Z",
+        "view_count": 50,
+        "likes_count": 5,
         "is_liked": false,
         "created_at": "2025-02-20T10:00:00.000Z"
       }
@@ -6319,6 +6342,7 @@ API для мультиязычной ленты новостей. Контен�
   }
 }
 ```
+Статьи типа `from_request`, у которых заявка в архиве, при запросе удаляются из БД и в список не попадают.
 
 ---
 
@@ -6369,21 +6393,35 @@ title[|||]short_description[|||]text
 
 **POST** `/news` или **POST** `/news-admin`
 
-**Request Body:**
+**Request Body (простая статья):**
 ```json
 {
-  "content": "Заголовок новости[|||]Краткое описание до 500 символов.[|||]Полный текст новости.",
+  "type": "simple",
+  "content": "Заголовок новости[|||]Краткое описание.[|||]Полный текст новости.",
   "source_lang": "ru",
-  "image_url": "https://example.com/image.jpg",
+  "image_urls": ["https://example.com/1.jpg", "https://example.com/2.jpg"],
+  "published_at": "2025-02-20T12:00:00.000Z"
+}
+```
+
+**Request Body (статья из заявки):**
+```json
+{
+  "type": "from_request",
+  "content": "Заголовок[|||]Краткое описание.[|||]Текст.",
+  "source_lang": "ru",
+  "request_id": "uuid-заявки",
   "published_at": "2025-02-20T12:00:00.000Z"
 }
 ```
 
 | Поле | Обязательное | Описание |
 |------|---------------|----------|
+| `type` | Нет | Тип статьи: `simple` (по умолчанию) или `from_request`. |
 | `content` | Да | Строка формата `title[|||]short_description[|||]text`. |
-| `source_lang` | Да | Язык оригинала: один из `en`, `ru`, `es`, `ar`, `zh`, `hi`, `fr`, `pt`, `he`, `de`. |
-| `image_url` | Нет | Полный URL картинки (как возвращает POST /api/upload, http/https). Пустая строка или отсутствие — без картинки (`null`). |
+| `source_lang` | Да | Язык оригинала: один из поддерживаемых локалей. |
+| `image_urls` | Для `simple` | Массив полных URL фото (как возвращает POST /api/upload). Для `from_request` не передаётся. |
+| `request_id` | Для `from_request` | ID заявки (UUID). Обязателен при `type: "from_request"`. Заявка должна существовать. |
 | `published_at` | Да | Дата публикации (ISO 8601). |
 
 **Ответ (201):**
@@ -6392,7 +6430,7 @@ title[|||]short_description[|||]text
   "success": true,
   "message": "Новость создана",
   "data": {
-    "news": { "id": "uuid", "title": "...", "short_description": "...", "text": "...", "image_url": "...", "published_at": "...", "view_count": 0, "created_at": "...", "updated_at": "..." },
+    "news": { "id": "uuid", "type": "simple", "title": "...", "short_description": "...", "text": "...", "image_urls": [], "published_at": "...", "view_count": 0, "created_at": "...", "updated_at": "..." },
     "translation_report": {
       "success": true,
       "source_lang": "ru",
@@ -6415,15 +6453,18 @@ title[|||]short_description[|||]text
 **Request Body (все поля опциональны, частичное обновление):**
 ```json
 {
+  "type": "simple",
   "content": "Новый заголовок[|||]Новое краткое описание[|||]Новый текст",
   "source_lang": "en",
-  "image_url": "",
+  "image_urls": ["https://..."],
+  "request_id": null,
   "published_at": "2025-02-21T14:00:00.000Z"
 }
 ```
 
-- Если переданы `content` и `source_lang` — контент парсится, переводится на все локали, обновляются `title_i18n`, `short_description_i18n`, `text_i18n`; в ответ добавляется **`translation_report`**.
-- `image_url`, `published_at` можно менять отдельно без перевода.
+- Если переданы `content` и `source_lang` — контент парсится, переводится на все локали; в ответ добавляется **`translation_report`**.
+- `type`: при смене на `from_request` обязателен `request_id`; при `simple` — можно передать `image_urls` (массив URL).
+- `published_at` можно менять отдельно.
 
 **Ответ (200):** `data.news` — обновлённая новость; при обновлении контента также `data.translation_report`.
 
@@ -6445,8 +6486,8 @@ title[|||]short_description[|||]text
 |-------|------|----------|
 | GET | `/news-admin?page=1&limit=20&locale=` | Список новостей. Если передан валидный `locale` — в каждой новости плоские `title`, `short_description`, `text` для этой локали; без `locale` — полные объекты `title_i18n`, `short_description_i18n`, `text_i18n` (для редактора). |
 | GET | `/news-admin/:id?locale=` | Одна новость. Аналогично: с `locale` — плоские поля для локали; без — полные i18n. Счётчик просмотров не увеличивается. |
-| POST | `/news-admin` | Создание: `content`, `source_lang`, опционально `image_url`, `published_at`. Ответ: `news` + `translation_report`. |
-| PUT | `/news-admin/:id` | Редактирование: опционально `content`+`source_lang` (пересчёт переводов), `image_url`, `published_at`. При обновлении контента в ответе — `translation_report`. |
+| POST | `/news-admin` | Создание: `type` (simple \| from_request), `content`, `source_lang`, для simple — `image_urls` (массив), для from_request — `request_id`, `published_at`. Ответ: `news` + `translation_report`. |
+| PUT | `/news-admin/:id` | Редактирование: опционально `type`, `content`+`source_lang`, `image_urls` (simple), `request_id` (from_request), `published_at`. При обновлении контента — `translation_report`. |
 | DELETE | `/news-admin/:id` | Удаление новости. |
 
 ---

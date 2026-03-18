@@ -7,6 +7,7 @@ const { generateId } = require('../utils/uuid');
 const { SUPPORTED_LOCALES, parseContent, translateToAllLocales } = require('../services/translateNews');
 
 const router = express.Router();
+const NEWS_TYPES = ['simple', 'from_request'];
 
 router.use(authenticate);
 router.use(requireAdmin);
@@ -21,6 +22,17 @@ function parseI18n(val) {
   }
 }
 
+function parseImageUrls(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) return val.filter(u => u != null && String(u).trim() !== '');
+  try {
+    const arr = typeof val === 'string' ? JSON.parse(val) : val;
+    return Array.isArray(arr) ? arr.filter(u => u != null && String(u).trim() !== '') : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 function pickLocale(i18n, locale) {
   const obj = parseI18n(i18n);
   return (obj[locale] != null && String(obj[locale]).trim() !== '') ? String(obj[locale]) : (obj.en != null ? String(obj.en) : '');
@@ -31,6 +43,9 @@ function rowToLocale(row, locale) {
   r.title = pickLocale(row.title_i18n, locale);
   r.short_description = pickLocale(row.short_description_i18n, locale);
   r.text = pickLocale(row.text_i18n, locale);
+  r.type = row.type || 'simple';
+  r.image_urls = parseImageUrls(row.image_urls);
+  r.request_id = row.request_id || null;
   delete r.title_i18n;
   delete r.short_description_i18n;
   delete r.text_i18n;
@@ -49,7 +64,7 @@ router.get('/', async (req, res) => {
     const offset = (pageNum - 1) * limitNum;
 
     const [rows] = await pool.execute(
-      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.type, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_urls, n.request_id, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n
        ORDER BY n.published_at DESC
@@ -90,7 +105,7 @@ router.get('/:id', [param('id').isUUID()], async (req, res) => {
     const { locale } = req.query;
 
     const [rows] = await pool.execute(
-      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.type, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_urls, n.request_id, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
@@ -110,13 +125,14 @@ router.get('/:id', [param('id').isUUID()], async (req, res) => {
 
 /**
  * POST /api/news-admin
- * Создание новости. Тело: content (title[|||]short_description[|||]text), source_lang, image_url?, published_at.
- * В ответе — translation_report.
+ * Создание новости. type: simple | from_request. simple — image_urls (массив); from_request — request_id.
  */
 router.post('/', [
   body('content').trim().notEmpty().withMessage('content is required (title[|||]short_description[|||]text)'),
   body('source_lang').trim().notEmpty().withMessage('source_lang is required').isIn(SUPPORTED_LOCALES).withMessage('source_lang must be one of: ' + SUPPORTED_LOCALES.join(', ')),
-  body('image_url').optional({ values: 'null' }).trim(),
+  body('type').optional().trim().isIn(NEWS_TYPES).withMessage('type must be simple or from_request'),
+  body('image_urls').optional(),
+  body('request_id').optional({ values: 'null' }).trim(),
   body('published_at').trim().notEmpty().withMessage('Published date is required')
 ], async (req, res) => {
   try {
@@ -125,16 +141,31 @@ router.post('/', [
       return error(res, val.array()[0].msg || 'Validation error', 400, val.array());
     }
 
-    const { content, source_lang, image_url, published_at } = req.body;
+    const type = (req.body.type || 'simple').toLowerCase();
+    const { content, source_lang, image_urls, request_id, published_at } = req.body;
+
+    if (type === 'from_request') {
+      if (!request_id || String(request_id).trim() === '') {
+        return error(res, 'request_id is required for type from_request', 400);
+      }
+      const [reqExists] = await pool.execute('SELECT id FROM requests WHERE id = ?', [request_id.trim()]);
+      if (reqExists.length === 0) {
+        return error(res, 'Request not found', 404);
+      }
+    }
+
     const parsed = parseContent(content);
     if (parsed.error) {
       return error(res, parsed.error, 400);
     }
 
-    let imageUrl = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
-    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
-      return error(res, 'Invalid image URL', 400);
+    let imageUrlsJson = null;
+    if (type === 'simple' && image_urls != null) {
+      const arr = Array.isArray(image_urls) ? image_urls : [];
+      const valid = arr.filter(u => u != null && String(u).trim() !== '' && /^https?:\/\//i.test(String(u).trim()));
+      imageUrlsJson = JSON.stringify(valid);
     }
+
     const publishedAt = new Date(published_at);
     if (isNaN(publishedAt.getTime())) {
       return error(res, 'Invalid published date', 400);
@@ -148,22 +179,25 @@ router.post('/', [
     );
 
     const id = generateId();
+    const reqId = type === 'from_request' && request_id ? String(request_id).trim() : null;
     await pool.execute(
-      `INSERT INTO news (id, source_lang, title_i18n, short_description_i18n, text_i18n, image_url, published_at, view_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      `INSERT INTO news (id, type, source_lang, title_i18n, short_description_i18n, text_i18n, image_urls, request_id, published_at, view_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         id,
+        type,
         source_lang,
         JSON.stringify(title_i18n),
         JSON.stringify(short_description_i18n),
         JSON.stringify(text_i18n),
-        imageUrl,
+        imageUrlsJson,
+        reqId,
         publishedAt.toISOString().slice(0, 19).replace('T', ' ')
       ]
     );
 
     const [created] = await pool.execute(
-      'SELECT id, source_lang, title_i18n, short_description_i18n, text_i18n, image_url, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
+      'SELECT id, type, source_lang, title_i18n, short_description_i18n, text_i18n, image_urls, request_id, published_at, view_count, created_at, updated_at FROM news WHERE id = ?',
       [id]
     );
 
@@ -183,7 +217,9 @@ router.put('/:id', [
   param('id').isUUID(),
   body('content').optional().trim().notEmpty(),
   body('source_lang').optional().trim().isIn(SUPPORTED_LOCALES),
-  body('image_url').optional({ values: 'null' }).trim(),
+  body('type').optional().trim().isIn(NEWS_TYPES),
+  body('image_urls').optional(),
+  body('request_id').optional({ values: 'null' }).trim(),
   body('published_at').optional().trim()
 ], async (req, res) => {
   try {
@@ -193,11 +229,25 @@ router.put('/:id', [
     }
 
     const { id } = req.params;
-    const { content, source_lang, image_url, published_at } = req.body;
+    const { content, source_lang, type, image_urls, request_id, published_at } = req.body;
 
-    const [existing] = await pool.execute('SELECT id FROM news WHERE id = ?', [id]);
+    const [existing] = await pool.execute('SELECT id, type FROM news WHERE id = ?', [id]);
     if (existing.length === 0) {
       return error(res, 'News not found', 404);
+    }
+
+    const currentType = (type || existing[0].type || 'simple').toLowerCase();
+    if (currentType === 'from_request') {
+      const rid = request_id !== undefined ? String(request_id).trim() : null;
+      if (type !== undefined && (!request_id || String(request_id).trim() === '')) {
+        return error(res, 'request_id is required when type is from_request', 400);
+      }
+      if (rid) {
+        const [reqExists] = await pool.execute('SELECT id FROM requests WHERE id = ?', [rid]);
+        if (reqExists.length === 0) {
+          return error(res, 'Request not found', 404);
+        }
+      }
     }
 
     let translation_report = null;
@@ -223,13 +273,33 @@ router.put('/:id', [
 
     const updates = [];
     const params = [];
-    if (image_url !== undefined) {
-      const img = image_url != null && String(image_url).trim() ? String(image_url).trim() : null;
-      if (img && !/^https?:\/\//i.test(img)) {
-        return error(res, 'Invalid image URL', 400);
+    if (type !== undefined) {
+      updates.push('type = ?');
+      params.push(currentType);
+      if (currentType === 'simple') {
+        updates.push('request_id = ?');
+        params.push(null);
+        updates.push('image_urls = ?');
+        params.push(image_urls !== undefined && Array.isArray(image_urls)
+          ? JSON.stringify(image_urls.filter(u => u != null && String(u).trim() !== '' && /^https?:\/\//i.test(String(u).trim())))
+          : '[]');
+      } else {
+        updates.push('request_id = ?');
+        params.push(request_id != null && String(request_id).trim() !== '' ? String(request_id).trim() : null);
+        updates.push('image_urls = ?');
+        params.push(JSON.stringify([]));
       }
-      updates.push('image_url = ?');
-      params.push(img);
+    } else {
+      if (currentType === 'simple' && image_urls !== undefined) {
+        const arr = Array.isArray(image_urls) ? image_urls : [];
+        const valid = arr.filter(u => u != null && String(u).trim() !== '' && /^https?:\/\//i.test(String(u).trim()));
+        updates.push('image_urls = ?');
+        params.push(JSON.stringify(valid));
+      }
+      if (currentType === 'from_request' && request_id !== undefined) {
+        updates.push('request_id = ?');
+        params.push(String(request_id).trim() || null);
+      }
     }
     if (published_at !== undefined) {
       const d = new Date(published_at);
@@ -245,7 +315,7 @@ router.put('/:id', [
     }
 
     const [updated] = await pool.execute(
-      `SELECT n.id, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_url, n.published_at, n.view_count, n.created_at, n.updated_at,
+      `SELECT n.id, n.type, n.source_lang, n.title_i18n, n.short_description_i18n, n.text_i18n, n.image_urls, n.request_id, n.published_at, n.view_count, n.created_at, n.updated_at,
        (SELECT COUNT(*) FROM news_likes WHERE news_id = n.id) AS likes_count
        FROM news n WHERE n.id = ?`,
       [id]
