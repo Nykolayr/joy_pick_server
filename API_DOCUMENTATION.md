@@ -6545,7 +6545,7 @@ title[|||]short_description[|||]text
 
 ### POST `/earthday-cleanups-admin/sync`
 
-По нажатию в админке: удаляет из таблицы строки с **`cleanup_date` раньше чем `now + 24 часа`** (UTC, сравнение по epoch ms); затем запрашивает ArcGIS (публичные одобренные заявки, **`cleanup_date` от `now+24ч` до `now+7 суток`**, не более **1000** записей, сортировка по `cleanup_date`); вставляет или обновляет по **`objectid`**. Записи **без `start_time`** не попадают в БД.
+По нажатию в админке: удаляет строки с **`cleanup_date` раньше чем `now + 24 часа`**; подтягивает из ArcGIS до **1000** заявок в окне дат **`now+24ч` … `now+7 суток`**; вставляет/обновляет по **`objectid`**. Записи **без `start_time`** или **без нормальных координат** (точка `geometry` в ответе) **просто пропускаются** — в таблицу не попадают. В ответе смотрите **`skippedNoStartTime`** и **`skippedNoCoordinates`**.
 
 **Успешный ответ (200):**
 ```json
@@ -6558,6 +6558,7 @@ title[|||]short_description[|||]text
     "newRows": 40,
     "updatedRows": 80,
     "skippedNoStartTime": 2,
+    "skippedNoCoordinates": 1,
     "skippedInvalid": 0,
     "upsertDbErrors": 0,
     "totalInTable": 500,
@@ -6573,7 +6574,7 @@ title[|||]short_description[|||]text
 ```
 
 **`parseErrors`** — массив объектов для отображения в админке (ошибки/пропуски при разборе и записях в БД). Примеры полей: `code`, `message`, `objectid`, `globalid`, `sqlMessage`, …  
-Коды, среди прочих: `SKIP_NO_START_TIME`, `MISSING_OBJECTID`, `MISSING_GLOBALID`, `INVALID_CLEANUP_DATE`, `MISSING_GEOMETRY`, `INVALID_COORDINATES`, `DB_UPSERT`.
+Коды в `parseErrors`, среди прочих: `SKIP_NO_START_TIME` (дублирует счётчик), `MISSING_OBJECTID`, `MISSING_GLOBALID`, `INVALID_CLEANUP_DATE`, `DB_UPSERT`. Пропуски только из‑за координат в `parseErrors` **не дублируются** — смотрите **`skippedNoCoordinates`**.
 
 **Ошибка ArcGIS (502 или HTTP ответа сервиса):** `success: false`, в **`errorDetails`** — `arcgisError`, `httpStatus`; тексты ошибок смотрите в `message` / `errorDetails`.
 

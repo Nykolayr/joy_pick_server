@@ -29,10 +29,25 @@ function msNowUtc() {
   return Date.now();
 }
 
+/**
+ * Поле cleanup_date в слое — esriFieldTypeDate; сравнение с «сырыми» epoch ms в WHERE даёт
+ * «Invalid query parameters» на FeatureServer. Нужен литерал date 'YYYY-MM-DD HH:mm:ss' в UTC.
+ */
+function arcgisDateLiteralUtc(ms) {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  const s = String(d.getUTCSeconds()).padStart(2, '0');
+  return `date '${y}-${mo}-${da} ${h}:${mi}:${s}'`;
+}
+
 function buildWhereClause(tFromMs, tToMs) {
   return (
     "(event_type = 'Public') AND (approved IS NULL OR approved = 'Yes') AND " +
-    `(cleanup_date >= ${tFromMs}) AND (cleanup_date <= ${tToMs})`
+    `(cleanup_date >= ${arcgisDateLiteralUtc(tFromMs)}) AND (cleanup_date <= ${arcgisDateLiteralUtc(tToMs)})`
   );
 }
 
@@ -186,18 +201,17 @@ function mapFeatureToRow(feature, parseErrors, counters) {
   if (geom && typeof geom.x === 'number' && typeof geom.y === 'number') {
     lng = geom.x;
     lat = geom.y;
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      pushErr('INVALID_COORDINATES', 'Координаты вне допустимого диапазона', {
-        objectid: Number(oid),
-        globalid: gid,
-        lat,
-        lng
-      });
-      lat = null;
-      lng = null;
-    }
-  } else {
-    pushErr('MISSING_GEOMETRY', 'Нет точки geometry (x/y)', { objectid: Number(oid), globalid: gid });
+  }
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    counters.skippedNoCoordinates += 1;
+    return null;
   }
 
   return {

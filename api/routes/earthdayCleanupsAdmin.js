@@ -171,7 +171,7 @@ router.get('/', async (req, res) => {
  * POST /earthday-cleanups-admin/sync
  * Удаляет просроченные и события в ближайшие 24ч (cleanup_date < now+24h),
  * подтягивает до 1000 заявок из ArcGIS с cleanup_date в [now+24h, now+7d],
- * вставляет/обновляет по objectid; без start_time — не вставляет (в parseErrors).
+ * вставляет/обновляет по objectid; без start_time или без координат — не вставляет.
  */
 router.post('/sync', async (req, res) => {
   const parseErrors = [];
@@ -190,6 +190,7 @@ router.post('/sync', async (req, res) => {
 
   const counters = {
     skippedNoStartTime: 0,
+    skippedNoCoordinates: 0,
     skippedInvalid: 0,
     upsertInserted: 0,
     upsertUpdated: 0,
@@ -269,6 +270,7 @@ router.post('/sync', async (req, res) => {
     newRows: counters.upsertInserted,
     updatedRows: counters.upsertUpdated,
     skippedNoStartTime: counters.skippedNoStartTime,
+    skippedNoCoordinates: counters.skippedNoCoordinates,
     skippedInvalid: counters.skippedInvalid,
     upsertDbErrors: counters.upsertDbErrors,
     totalInTable,
