@@ -133,13 +133,17 @@ router.get('/', async (req, res) => {
     );
     const total = countRows[0] ? Number(countRows[0].total) : 0;
 
+    // LIMIT/OFFSET нельзя надёжно биндить в prepared statement на части MySQL/MariaDB (ER_WRONG_ARGUMENTS).
+    const limitInt = Math.min(100, Math.max(1, Math.floor(Number(limit)) || 20));
+    const offsetInt = Math.max(0, Math.floor(Number(offset)) || 0);
+
     const [items] = await pool.execute(
       `SELECT ${SELECT_LIST_COLUMNS}
        FROM earthday_cleanups
        ${whereClause}
        ORDER BY cleanup_date ASC, objectid ASC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+       LIMIT ${limitInt} OFFSET ${offsetInt}`,
+      params
     );
 
     const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
