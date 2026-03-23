@@ -20,8 +20,8 @@ INSERT INTO earthday_cleanups (
   objectid, globalid, first_name_, last_name_, email_address_, phone_number_pub,
   cleanup_date, start_time, who_is_holding_the_cleanup, name_of_the_cleanup_event,
   name_of_cleanup_location, cleanup_event_location, how_should_volunteers_register,
-  GeoCodedAddress, lat, lng, used_for_internal_request
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
+  GeoCodedAddress, lat, lng, continent, country, location_hint, used_for_internal_request
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
 ON DUPLICATE KEY UPDATE
   globalid = VALUES(globalid),
   first_name_ = VALUES(first_name_),
@@ -38,6 +38,9 @@ ON DUPLICATE KEY UPDATE
   GeoCodedAddress = VALUES(GeoCodedAddress),
   lat = VALUES(lat),
   lng = VALUES(lng),
+  continent = VALUES(continent),
+  country = VALUES(country),
+  location_hint = VALUES(location_hint),
   used_for_internal_request = earthday_cleanups.used_for_internal_request
 `;
 
@@ -45,7 +48,7 @@ const SELECT_LIST_COLUMNS = `
   objectid, globalid, first_name_, last_name_, email_address_, phone_number_pub,
   cleanup_date, start_time, who_is_holding_the_cleanup, name_of_the_cleanup_event,
   name_of_cleanup_location, cleanup_event_location, how_should_volunteers_register,
-  GeoCodedAddress, lat, lng, used_for_internal_request, created_at, updated_at
+  GeoCodedAddress, lat, lng, continent, country, location_hint, used_for_internal_request, created_at, updated_at
 `;
 
 /**
@@ -87,9 +90,49 @@ function parseExcludeUsed(raw) {
   return s === 'true' || s === '1' || s === 'yes';
 }
 
+/** Разрешённые колонки для ORDER BY (только whitelist, без подстановки из query). */
+const SORT_BY_WHITELIST = {
+  cleanup_date: 'cleanup_date',
+  continent: 'continent',
+  country: 'country'
+};
+
+function parseSortBy(raw) {
+  const key = raw == null || String(raw).trim() === '' ? 'cleanup_date' : String(raw).trim().toLowerCase();
+  const column = SORT_BY_WHITELIST[key];
+  if (!column) {
+    return {
+      error:
+        'sort_by: допустимо cleanup_date (по умолчанию), continent или country'
+    };
+  }
+  return { column };
+}
+
+function parseSortDir(raw) {
+  const s = raw == null || String(raw).trim() === '' ? 'asc' : String(raw).trim().toLowerCase();
+  if (s !== 'asc' && s !== 'desc') {
+    return { error: 'sort_dir: допустимо asc или desc' };
+  }
+  return { dir: s.toUpperCase() };
+}
+
+/** Опциональный фильтр по значению колонки (точное совпадение, как в БД). */
+function parseStringEqFilter(raw, maxLen, paramName) {
+  if (raw === undefined || raw === null) return { value: null };
+  const s = String(raw).trim();
+  if (s === '') return { value: null };
+  if (s.length > maxLen) {
+    return { error: `${paramName}: максимум ${maxLen} символов` };
+  }
+  return { value: s };
+}
+
 /**
  * GET /earthday-cleanups-admin
- * Список с пагинацией; опционально cleanup_date_from / cleanup_date_to, exclude_used.
+ * Список с пагинацией; опционально cleanup_date_from / cleanup_date_to, exclude_used,
+ * continent / country (точное совпадение с полями в БД, англ. названия),
+ * sort_by (cleanup_date | continent | country), sort_dir (asc | desc).
  */
 router.get('/', async (req, res) => {
   try {
@@ -97,6 +140,26 @@ router.get('/', async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
     const excludeUsed = parseExcludeUsed(req.query.exclude_used);
+
+    const continentFilter = parseStringEqFilter(req.query.continent, 64, 'continent');
+    if (continentFilter.error) {
+      return error(res, continentFilter.error, 400);
+    }
+    const countryFilter = parseStringEqFilter(req.query.country, 128, 'country');
+    if (countryFilter.error) {
+      return error(res, countryFilter.error, 400);
+    }
+
+    const sortByParsed = parseSortBy(req.query.sort_by);
+    if (sortByParsed.error) {
+      return error(res, sortByParsed.error, 400);
+    }
+    const sortDirParsed = parseSortDir(req.query.sort_dir);
+    if (sortDirParsed.error) {
+      return error(res, sortDirParsed.error, 400);
+    }
+    const sortColumn = sortByParsed.column;
+    const sortDir = sortDirParsed.dir;
 
     const fromParsed = parseCleanupDateBound(req.query.cleanup_date_from, 'from');
     if (fromParsed.error) {
@@ -125,6 +188,17 @@ router.get('/', async (req, res) => {
       conditions.push('used_for_internal_request = ?');
       params.push(0);
     }
+    if (continentFilter.value != null) {
+      conditions.push('continent = ?');
+      params.push(continentFilter.value);
+    }
+    if (countryFilter.value != null) {
+      conditions.push('country = ?');
+      params.push(countryFilter.value);
+    }
+    // Не показывать заглушку 0,0 (нет реальных координат); пагинация считается без них
+    conditions.push('(COALESCE(lat, 0) != 0 OR COALESCE(lng, 0) != 0)');
+
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countRows] = await pool.execute(
@@ -137,11 +211,19 @@ router.get('/', async (req, res) => {
     const limitInt = Math.min(100, Math.max(1, Math.floor(Number(limit)) || 20));
     const offsetInt = Math.max(0, Math.floor(Number(offset)) || 0);
 
+    // При сортировке по континенту/стране: сначала не-NULL, потом направление по полю, затем дата (стабильность)
+    const orderPrimary =
+      sortColumn === 'continent'
+        ? `continent IS NULL ASC, continent ${sortDir}, cleanup_date ASC, objectid ASC`
+        : sortColumn === 'country'
+          ? `country IS NULL ASC, country ${sortDir}, cleanup_date ASC, objectid ASC`
+          : `cleanup_date ${sortDir}, objectid ASC`;
+
     const [items] = await pool.execute(
       `SELECT ${SELECT_LIST_COLUMNS}
        FROM earthday_cleanups
        ${whereClause}
-       ORDER BY cleanup_date ASC, objectid ASC
+       ORDER BY ${orderPrimary}
        LIMIT ${limitInt} OFFSET ${offsetInt}`,
       params
     );
@@ -159,7 +241,11 @@ router.get('/', async (req, res) => {
       filters: {
         cleanup_date_from: fromParsed.ms,
         cleanup_date_to: toParsed.ms,
-        exclude_used: excludeUsed
+        exclude_used: excludeUsed,
+        continent: continentFilter.value,
+        country: countryFilter.value,
+        sort_by: sortColumn,
+        sort_dir: sortDir.toLowerCase()
       }
     });
   } catch (e) {
@@ -233,7 +319,10 @@ router.post('/sync', async (req, res) => {
         row.how_should_volunteers_register,
         row.GeoCodedAddress,
         row.lat,
-        row.lng
+        row.lng,
+        row.continent,
+        row.country,
+        row.location_hint
       ];
       try {
         const [result] = await conn.execute(UPSERT_SQL, params);

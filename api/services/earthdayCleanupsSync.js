@@ -2,6 +2,13 @@
  * Синхронизация заявок Earth Day с ArcGIS FeatureServer.
  */
 
+const {
+  normalizeLon,
+  continentFromLatLon,
+  countryFromLatLon,
+  buildLocationHint
+} = require('../utils/geoContinentCountry');
+
 const ARCGIS_QUERY_BASE =
   'https://services5.arcgis.com/cy2zIylXXizcsMCw/arcgis/rest/services/survey123_745d2f8184964929a27c2d378c5ec575/FeatureServer/0/query';
 
@@ -214,6 +221,18 @@ function mapFeatureToRow(feature, parseErrors, counters) {
     return null;
   }
 
+  // Заглушка без реальной точки: ArcGIS часто отдаёт (0, 0) для «Place a Pin» без геокода
+  if (Math.abs(lat) < 1e-7 && Math.abs(lng) < 1e-7) {
+    counters.skippedNoCoordinates += 1;
+    return null;
+  }
+
+  const lonNorm = normalizeLon(lng);
+  const continent = continentFromLatLon(lat, lonNorm);
+  const country = countryFromLatLon(lat, lonNorm);
+  const geoAddr = strOrNull(attrs.GeoCodedAddress, 65535);
+  const location_hint = buildLocationHint(continent, country, geoAddr);
+
   return {
     objectid: Number(oid),
     globalid: gid,
@@ -228,9 +247,12 @@ function mapFeatureToRow(feature, parseErrors, counters) {
     name_of_cleanup_location: strOrNull(attrs.name_of_cleanup_location, 512),
     cleanup_event_location: strOrNull(attrs.cleanup_event_location, 255),
     how_should_volunteers_register: strOrNull(attrs.how_should_volunteers_register, 128),
-    GeoCodedAddress: strOrNull(attrs.GeoCodedAddress, 65535),
+    GeoCodedAddress: geoAddr,
     lat,
-    lng
+    lng,
+    continent,
+    country,
+    location_hint
   };
 }
 
