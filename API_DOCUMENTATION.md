@@ -6534,13 +6534,14 @@ title[|||]short_description[|||]text
 | `limit` | Размер страницы (**1…100**, по умолчанию **20**) |
 | `cleanup_date_from` | Нижняя граница **включительно** (опционально). Форматы: **ISO 8601** (`2025-04-01T00:00:00.000Z`); только дата **`YYYY-MM-DD`** → начало этого дня **UTC**; строка из **цифр** → трактуется как **миллисекунды** с эпохи |
 | `cleanup_date_to` | Верхняя граница **включительно** (опционально). Те же форматы; для **`YYYY-MM-DD`** подставляется **конец этого дня UTC** (`23:59:59.999`) |
+| `exclude_used` | Опционально. Если **`true`**, **`1`** или **`yes`** (регистр не важен) — в выборку попадают **только** записи с **`used_for_internal_request = 0`** (ещё не использованы для внутренней заявки Joy Pick). Условие **И** с фильтрами по дате. **Без параметра** — как раньше: все строки в диапазоне дат (полный список для обратной совместимости). |
 
 Сортировка: **`cleanup_date` по возрастанию**, затем **`objectid`**.
 
-**Пример:**  
-`GET /api/earthday-cleanups-admin?page=1&limit=20&cleanup_date_from=2025-04-01&cleanup_date_to=2025-04-30`
+**Пример (экран парсинга / только неиспользованные):**
+`GET /api/earthday-cleanups-admin?page=1&limit=20&cleanup_date_from=2025-04-01&cleanup_date_to=2025-04-30&exclude_used=true`
 
-**Ответ `data`:** `items` (массив строк со всеми полями, включая `used_for_internal_request`, `lat`, `lng`, …), `pagination`: `{ page, limit, total, totalPages }`, `filters`: применённые границы в **ms** (`cleanup_date_from` / `cleanup_date_to` или `null`, если не заданы).
+**Ответ `data`:** `items`, `pagination`: `{ page, limit, total, totalPages }`, `filters`: `cleanup_date_from` / `cleanup_date_to` в **ms** или `null`, плюс **`exclude_used`**: boolean. При **`exclude_used=true`** поля **`pagination.total`** и **`pagination.totalPages`** считаются **только по отфильтрованным** строкам (неиспользованным), поэтому **`items.length`** на странице согласован с **`limit`** (кроме последней страницы), и пагинация в админке корректна без догрузки «лишних» записей на клиент.
 
 ### POST `/earthday-cleanups-admin/sync`
 

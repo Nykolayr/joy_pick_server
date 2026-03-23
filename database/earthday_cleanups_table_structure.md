@@ -30,7 +30,7 @@
 
 ## Связанные API
 
-- Список с пагинацией и фильтром по дате: **`GET /api/earthday-cleanups-admin`** (query: `page`, `limit`, `cleanup_date_from`, `cleanup_date_to`).
+- Список с пагинацией и фильтром по дате: **`GET /api/earthday-cleanups-admin`** (query: `page`, `limit`, `cleanup_date_from`, `cleanup_date_to`, опционально **`exclude_used=true`** — только `used_for_internal_request = 0`, `total`/`totalPages` по этому подмножеству).
 - Синхронизация: **`POST /api/earthday-cleanups-admin/sync`** (суперадмин).
 - Обновление флага «использовано для нашей заявки»: **`PATCH /api/earthday-cleanups-admin/:objectid`** с телом `{ "used_for_internal_request": true }` или `false` (также допускаются `0`/`1`).
 

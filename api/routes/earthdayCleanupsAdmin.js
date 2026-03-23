@@ -80,15 +80,23 @@ function parseCleanupDateBound(raw, role) {
   return { ms };
 }
 
+/** Query exclude_used: только строки с used_for_internal_request = 0 (корректная пагинация на бэкенде). */
+function parseExcludeUsed(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return false;
+  const s = String(raw).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+
 /**
  * GET /earthday-cleanups-admin
- * Список с пагинацией; опционально cleanup_date_from / cleanup_date_to (см. parseCleanupDateBound).
+ * Список с пагинацией; опционально cleanup_date_from / cleanup_date_to, exclude_used.
  */
 router.get('/', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
+    const excludeUsed = parseExcludeUsed(req.query.exclude_used);
 
     const fromParsed = parseCleanupDateBound(req.query.cleanup_date_from, 'from');
     if (fromParsed.error) {
@@ -112,6 +120,10 @@ router.get('/', async (req, res) => {
     if (toParsed.ms != null) {
       conditions.push('cleanup_date <= ?');
       params.push(toParsed.ms);
+    }
+    if (excludeUsed) {
+      conditions.push('used_for_internal_request = ?');
+      params.push(0);
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -142,7 +154,8 @@ router.get('/', async (req, res) => {
       },
       filters: {
         cleanup_date_from: fromParsed.ms,
-        cleanup_date_to: toParsed.ms
+        cleanup_date_to: toParsed.ms,
+        exclude_used: excludeUsed
       }
     });
   } catch (e) {
