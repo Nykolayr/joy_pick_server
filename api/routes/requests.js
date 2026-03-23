@@ -115,6 +115,7 @@ function processRequestListItem(request) {
   result.is_open = Boolean(result.is_open);
   result.plant_tree = Boolean(result.plant_tree);
   result.trash_pickup_only = Boolean(result.trash_pickup_only);
+  result.from_external_source = Boolean(result.from_external_source);
 
   return normalizeDatesInObject(result);
 }
@@ -498,6 +499,7 @@ router.get('/:id', async (req, res) => {
     request.is_open = Boolean(request.is_open);
     request.plant_tree = Boolean(request.plant_tree);
     request.trash_pickup_only = Boolean(request.trash_pickup_only);
+    request.from_external_source = Boolean(request.from_external_source);
 
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
@@ -590,8 +592,34 @@ router.post('/', authenticate, uploadRequestPhotos, [
       waste_types = [],
       target_amount,
       plant_tree = false,
-      trash_pickup_only = false
+      trash_pickup_only = false,
+      from_external_source: rawFromExternal
     } = bodyData;
+
+    let fromExternalSource = false;
+    if (
+      rawFromExternal === true ||
+      rawFromExternal === 1 ||
+      rawFromExternal === '1' ||
+      rawFromExternal === 'true'
+    ) {
+      if (!req.user.isSuperAdmin) {
+        return error(res, 'from_external_source: true доступно только суперадмину', 403);
+      }
+      fromExternalSource = true;
+    } else if (
+      rawFromExternal === false ||
+      rawFromExternal === 0 ||
+      rawFromExternal === '0' ||
+      rawFromExternal === 'false' ||
+      rawFromExternal === undefined ||
+      rawFromExternal === null ||
+      rawFromExternal === ''
+    ) {
+      fromExternalSource = false;
+    } else {
+      return error(res, 'from_external_source: ожидается boolean или 0/1', 400);
+    }
 
     // Обработка waste_types - может быть массивом или строкой
     let processedWasteTypes = [];
@@ -655,8 +683,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         completion_comment, plant_tree, trash_pickup_only,
         created_at, updated_at, rejection_reason, rejection_message, actual_participants,
         photos_before, photos_after, registered_participants, waste_types, expires_at,
-        extended_count, participant_completions, group_chat_id, private_chats
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        extended_count, participant_completions, group_chat_id, private_chats, from_external_source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -697,7 +725,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         0, // extended_count (NOT NULL, default 0)
         null, // participant_completions
         null, // group_chat_id пока NULL, обновим после создания чата
-        privateChats
+        privateChats,
+        fromExternalSource ? 1 : 0
       ]
     );
 
@@ -813,6 +842,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
       request.private_chats = [];
     }
 
+    request.only_foot = Boolean(request.only_foot);
+    request.possible_by_car = Boolean(request.possible_by_car);
+    request.is_open = Boolean(request.is_open);
+    request.plant_tree = Boolean(request.plant_tree);
+    request.trash_pickup_only = Boolean(request.trash_pickup_only);
+    request.from_external_source = Boolean(request.from_external_source);
+
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
@@ -842,7 +878,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       errorCode: err.code || null,
       
       // Информация о структуре запроса
-      insertColumnsCount: 42, // ожидаемое количество колонок
+      insertColumnsCount: 43, // ожидаемое количество колонок
       insertColumns: [
         'id', 'user_id', 'category', 'name', 'description', 'latitude', 'longitude', 'city',
         'garbage_size', 'only_foot', 'possible_by_car', 'reward_amount', 'is_open',
@@ -851,13 +887,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
         'completion_comment', 'plant_tree', 'trash_pickup_only',
         'created_at', 'updated_at', 'rejection_reason', 'rejection_message', 'actual_participants',
         'photos_before', 'photos_after', 'registered_participants', 'waste_types', 'expires_at',
-        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats'
+        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats', 'from_external_source'
       ],
       
       // Информация о параметрах
-      valuesCount: 40, // количество ? параметров + 2 NOW()
+      valuesCount: 41, // количество ? плейсхолдеров + 2 NOW()
       nowCount: 2,
-      totalParams: 42
+      totalParams: 43
     };
     
     // Возвращаем детальную ошибку клиенту

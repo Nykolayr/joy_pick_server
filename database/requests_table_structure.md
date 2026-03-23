@@ -2,7 +2,7 @@
 
 **Важно:** Этот файл содержит актуальную структуру таблицы `requests`. При изменении структуры таблицы обновляйте этот файл.
 
-## Все колонки таблицы (42 колонки):
+## Все колонки таблицы (43 колонки):
 
 **ВАЖНО:** Поля `cost` и `payment_intent_id` удалены. Теперь все платежи идут через донаты.
 
@@ -34,24 +34,25 @@
 26. `completion_comment` - text
 27. `plant_tree` - tinyint(1)
 28. `trash_pickup_only` - tinyint(1)
-29. `created_at` - timestamp
-30. `updated_at` - timestamp
-31. `rejection_reason` - text
-32. `rejection_message` - text
-33. `actual_participants` - json
-34. `photos_before` - json
-35. `photos_after` - json
-36. `registered_participants` - json
-37. `waste_types` - json
-38. `expires_at` - datetime
-39. `extended_count` - int - **NOT NULL, DEFAULT 0**
-40. `participant_completions` - json
-41. `group_chat_id` - varchar(36)
-42. `private_chats` - json
+29. `from_external_source` - tinyint(1) NOT NULL DEFAULT 0 — **1** = заявка создана из внешнего источника (импорт Earth Day и т.п.)
+30. `created_at` - timestamp
+31. `updated_at` - timestamp
+32. `rejection_reason` - text
+33. `rejection_message` - text
+34. `actual_participants` - json
+35. `photos_before` - json
+36. `photos_after` - json
+37. `registered_participants` - json
+38. `waste_types` - json
+39. `expires_at` - datetime
+40. `extended_count` - int - **NOT NULL, DEFAULT 0**
+41. `participant_completions` - json
+42. `group_chat_id` - varchar(36)
+43. `private_chats` - json
 
 ## Порядок колонок в INSERT запросе
 
-При создании INSERT запроса ВСЕГДА используйте ВСЕ 42 колонки в правильном порядке:
+При создании INSERT запроса ВСЕГДА используйте все 43 колонки в правильном порядке:
 
 ```sql
 INSERT INTO requests (
@@ -59,21 +60,21 @@ INSERT INTO requests (
   garbage_size, only_foot, possible_by_car, reward_amount, is_open,
   start_date, end_date, status, priority, assigned_to, notes, created_by,
   taken_by, total_contributed, target_amount, joined_user_id, join_date,
-  completion_comment, plant_tree, trash_pickup_only,
+  completion_comment, plant_tree, trash_pickup_only, from_external_source,
   created_at, updated_at, rejection_reason, rejection_message, actual_participants,
   photos_before, photos_after, registered_participants, waste_types, expires_at,
   extended_count, participant_completions, group_chat_id, private_chats
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
-**Всего:** 42 колонки = 40 плейсхолдеров `?` + 2 `NOW()` для `created_at` и `updated_at`
+**Всего:** 43 колонки = 41 плейсхолдер `?` + 2 `NOW()` для `created_at` и `updated_at`
 
 ## Значения по умолчанию для новых заявок
 
 - `is_open` - true (1)
-- Все остальные колонки, не указанные явно - NULL
+- `from_external_source` - false (0)
+- Все остальные колонки, не указанные явно - NULL (где допустимо)
 
 ## Дата обновления структуры
 
-Последнее обновление: 2025-01-XX (удалены `cost` и `payment_intent_id` - теперь все платежи через донаты)
-
+Последнее обновление: миграция `025_requests_from_external_source.sql` — колонка `from_external_source`.

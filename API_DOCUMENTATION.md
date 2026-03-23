@@ -267,6 +267,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
 | `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
+| `from_external_source` | boolean | Нет | **`true`** — заявка создана из внешнего источника (например, после импорта Earth Day cleanups). В API при создании: передать **`true`** может только **суперадмин** (`isSuperAdmin` в JWT); иначе **403**. Обычные пользователи всегда получают **`false`**. В ответах списка и деталей поле всегда присутствует. |
 | `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
 | `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
 | `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события). **Важно:** Все ID должны быть UUID из базы данных (поле `id` из таблицы `users`), не Firebase UID. |
@@ -316,6 +317,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "target_amount": null,
   "plant_tree": false,
   "trash_pickup_only": false,
+  "from_external_source": false,
   "is_open": true,
   "created_by": "353f958d-8796-44c7-a877-3e376eca6784",
   "taken_by": null,
@@ -1583,6 +1585,7 @@ GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
         "completion_comment": null,
         "plant_tree": false,
         "trash_pickup_only": false,
+        "from_external_source": false,
         "created_at": "2024-01-01T00:00:00.000Z",
         "updated_at": "2024-01-01T00:00:00.000Z",
         "photos_before": ["url1", "url2"],
@@ -1699,9 +1702,12 @@ Authorization: Bearer <jwt_token>
   "waste_types": ["plastic", "glass"]
   "target_amount": null,
   "plant_tree": false,
-  "trash_pickup_only": false
+  "trash_pickup_only": false,
+  "from_external_source": false
 }
 ```
+
+**Импорт из Earth Day (суперадмин):** при создании заявки из данных `earthday_cleanups` передайте **`from_external_source`: `true`** (тот же запрос `POST /api/requests`, JWT суперадмина). После создания заявки вызовите **`PATCH /api/earthday-cleanups-admin/:objectid`** с **`used_for_internal_request`: `true`**.
 
 **Для Speed Cleanup:**
 ```json
@@ -1768,6 +1774,7 @@ Authorization: Bearer <jwt_token>
 - `target_amount` (integer, опционально) - целевая сумма
 - `plant_tree` (boolean, опционально) - посадить дерево
 - `trash_pickup_only` (boolean, опционально) - только сбор мусора
+- `from_external_source` (boolean, опционально) - пометка «из внешнего источника»; значение **`true`** / **`1`** допустимо **только у суперадмина**, иначе **403**
 - `photos_before` (file[], опционально) - массив файлов для фото "до" уборки
 - `photos_after` (file[], опционально) - массив файлов для фото "после" уборки
 
@@ -6489,6 +6496,101 @@ title[|||]short_description[|||]text
 | POST | `/news-admin` | Создание: `type` (simple \| from_request), `content`, `source_lang`, для simple — `image_urls` (массив), для from_request — `request_id`, `published_at`. Ответ: `news` + `translation_report`. |
 | PUT | `/news-admin/:id` | Редактирование: опционально `type`, `content`+`source_lang`, `image_urls` (simple), `request_id` (from_request), `published_at`. При обновлении контента — `translation_report`. |
 | DELETE | `/news-admin/:id` | Удаление новости. |
+
+---
+
+## 🌍 Earth Day cleanups (импорт с карты, суперадмин)
+
+Синхронизация заявок **The Great Global Cleanup** из ArcGIS в таблицу `earthday_cleanups`. Доступ **только суперадмину** (`isSuperAdmin: true` в JWT), не путать с обычным админом.
+
+**Базовый путь:** `/api/earthday-cleanups-admin`
+
+**Заголовок:** `Authorization: Bearer <jwt_token>`
+
+### Таблица и поле «уже использовано для нашей заявки»
+
+В БД у каждой строки есть флаг **`used_for_internal_request`** (`0` / `1`):
+
+- **`0`** — запись ещё не использовали для создания заявки Joy Pick (можно предлагать в админке).
+- **`1`** — из этой записи уже создавали нашу заявку; **повторно использовать нельзя**.
+
+При **повторном синке** из ArcGIS поля заявки обновляются, но **`used_for_internal_request` не сбрасывается** (остаётся прежнее значение).
+
+Чтобы зафиксировать, что запись **взяли для создания нашей заявки**, обновите флаг: **`PATCH /api/earthday-cleanups-admin/:objectid`** (см. ниже).
+
+Созданная из импорта заявка в **`requests`** должна иметь **`from_external_source`: `true`** при **`POST /api/requests`** (только суперадмин; описание поля — в модели **Request** выше).
+
+Структура таблицы: [database/earthday_cleanups_table_structure.md](database/earthday_cleanups_table_structure.md).
+
+### GET `/earthday-cleanups-admin`
+
+Список записей из таблицы с **пагинацией** и опциональным диапазоном по **`cleanup_date`** (в БД — **epoch ms**, как в ArcGIS).
+
+**Query-параметры:**
+
+| Параметр | Описание |
+|----------|-----------|
+| `page` | Номер страницы, с **1** (по умолчанию **1**) |
+| `limit` | Размер страницы (**1…100**, по умолчанию **20**) |
+| `cleanup_date_from` | Нижняя граница **включительно** (опционально). Форматы: **ISO 8601** (`2025-04-01T00:00:00.000Z`); только дата **`YYYY-MM-DD`** → начало этого дня **UTC**; строка из **цифр** → трактуется как **миллисекунды** с эпохи |
+| `cleanup_date_to` | Верхняя граница **включительно** (опционально). Те же форматы; для **`YYYY-MM-DD`** подставляется **конец этого дня UTC** (`23:59:59.999`) |
+
+Сортировка: **`cleanup_date` по возрастанию**, затем **`objectid`**.
+
+**Пример:**  
+`GET /api/earthday-cleanups-admin?page=1&limit=20&cleanup_date_from=2025-04-01&cleanup_date_to=2025-04-30`
+
+**Ответ `data`:** `items` (массив строк со всеми полями, включая `used_for_internal_request`, `lat`, `lng`, …), `pagination`: `{ page, limit, total, totalPages }`, `filters`: применённые границы в **ms** (`cleanup_date_from` / `cleanup_date_to` или `null`, если не заданы).
+
+### POST `/earthday-cleanups-admin/sync`
+
+По нажатию в админке: удаляет из таблицы строки с **`cleanup_date` раньше чем `now + 24 часа`** (UTC, сравнение по epoch ms); затем запрашивает ArcGIS (публичные одобренные заявки, **`cleanup_date` от `now+24ч` до `now+7 суток`**, не более **1000** записей, сортировка по `cleanup_date`); вставляет или обновляет по **`objectid`**. Записи **без `start_time`** не попадают в БД.
+
+**Успешный ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Синхронизация Earth Day cleanups выполнена",
+  "data": {
+    "deletedCount": 0,
+    "fetchedFromApi": 120,
+    "newRows": 40,
+    "updatedRows": 80,
+    "skippedNoStartTime": 2,
+    "skippedInvalid": 0,
+    "upsertDbErrors": 0,
+    "totalInTable": 500,
+    "window": {
+      "deleteIfCleanupDateBeforeMs": 1234567890123,
+      "arcgisCleanupDateFromMs": 1234567890123,
+      "arcgisCleanupDateToMs": 1234567890123,
+      "nowMs": 1234567890123
+    },
+    "parseErrors": []
+  }
+}
+```
+
+**`parseErrors`** — массив объектов для отображения в админке (ошибки/пропуски при разборе и записях в БД). Примеры полей: `code`, `message`, `objectid`, `globalid`, `sqlMessage`, …  
+Коды, среди прочих: `SKIP_NO_START_TIME`, `MISSING_OBJECTID`, `MISSING_GLOBALID`, `INVALID_CLEANUP_DATE`, `MISSING_GEOMETRY`, `INVALID_COORDINATES`, `DB_UPSERT`.
+
+**Ошибка ArcGIS (502 или HTTP ответа сервиса):** `success: false`, в **`errorDetails`** — `arcgisError`, `httpStatus`; тексты ошибок смотрите в `message` / `errorDetails`.
+
+### PATCH `/earthday-cleanups-admin/:objectid`
+
+Обновляет **только** поле **`used_for_internal_request`**. Когда в админке **выбираете запись импорта для создания заявки Joy Pick**, отправьте **`true`** или **`1`**, чтобы пометить строку как уже использованную и не предлагать её повторно.
+
+**Заголовок:** `Content-Type: application/json`
+
+**Тело (обязательно):**
+```json
+{ "used_for_internal_request": true }
+```
+Допустимо также **`false`** / **`0`** (например, отмена пометки вручную) и числа **`0`** / **`1`**.
+
+**Ответ `200`:** `data: { objectid, used_for_internal_request: true|false }` (boolean).  
+**404** — нет строки с таким **`objectid`**.  
+**400** — нет поля или неверный тип.
 
 ---
 
