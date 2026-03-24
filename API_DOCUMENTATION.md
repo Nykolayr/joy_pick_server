@@ -6254,6 +6254,76 @@ final response = await http.post(
 
 ---
 
+## 🖼️ Галерея изображений для создания заявок (Admin)
+
+Серверная галерея изображений, из которой админка может выбирать картинку при создании заявки.
+
+**Базовый путь:** `/api/request-gallery`
+
+**Авторизация:** обязательна, только администратор (Bearer token).
+
+### POST `/request-gallery/upload`
+
+Загружает изображение в галерею.
+
+**Content-Type:** `multipart/form-data`  
+**Поле файла:** `file` или `image` (один файл)  
+**Форматы:** JPEG, PNG, GIF, WebP  
+**Максимум:** 10 MB
+
+**Ответ (201):**
+```json
+{
+  "success": true,
+  "message": "Image uploaded to request gallery",
+  "data": {
+    "id": 123,
+    "image_url": "https://danilagames.ru/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
+    "uploaded_by": "uuid-admin",
+    "created_at": "2026-03-24T12:34:56.000Z"
+  }
+}
+```
+
+### GET `/request-gallery`
+
+Возвращает список изображений галереи (новые сверху) для выбора на фронте.
+
+**Query-параметры:**
+
+| Параметр | Описание |
+|----------|----------|
+| `page` | Номер страницы, с **1** (по умолчанию **1**) |
+| `limit` | Размер страницы **1..100** (по умолчанию **50**) |
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "items": [
+      {
+        "id": 123,
+        "image_url": "https://danilagames.ru/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
+        "uploaded_by": "uuid-admin",
+        "created_at": "2026-03-24T12:34:56.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "total": 1,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+**Ошибки:** 400 — файл не передан/неверный тип; 401/403 — нет прав админа; 500 — ошибка сохранения/чтения.
+
+---
+
 ## 📰 Новости (News)
 
 API для мультиязычной ленты новостей. Контент при создании/редактировании задаётся одним полем `content` и языком оригинала `source_lang`; сервер переводит на все поддерживаемые локали и сохраняет в БД. При выдаче можно передать параметр `locale` — в ответе возвращаются переведённые `title`, `short_description`, `text` для этой локали; если `locale` не передан или неверный, используется `en`.
