@@ -37,16 +37,28 @@ const requestGalleryRoutes = require('./routes/requestGallery');
 
 const app = express();
 
-// CORS - разрешаем все домены
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
-}));
+function parseAllowedOrigins() {
+  const raw = process.env.CORS_ORIGIN || process.env.ADMIN_PANEL_ORIGIN || '*';
+  if (raw === '*') return '*';
+  return raw.split(',').map((v) => v.trim()).filter(Boolean);
+}
 
-// Обработка preflight OPTIONS запросов
-app.options('*', cors());
+const allowedOrigins = parseAllowedOrigins();
+const corsOptions = {
+  origin(origin, cb) {
+    // Запросы без Origin (curl/postman/server-to-server) пропускаем
+    if (!origin) return cb(null, true);
+    if (allowedOrigins === '*') return cb(null, true);
+    return cb(null, allowedOrigins.includes(origin));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Парсинг JSON
 app.use(express.json({ limit: '10mb' }));

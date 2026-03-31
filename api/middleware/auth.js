@@ -4,6 +4,9 @@ const { verifyToken, extractToken } = require('../utils/jwt');
  * Middleware для проверки аутентификации
  */
 function authenticate(req, res, next) {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
   const token = extractToken(req.headers.authorization);
   
   if (!token) {
@@ -47,6 +50,9 @@ function optionalAuthenticate(req, res, next) {
  * Middleware для проверки прав администратора
  */
 function requireAdmin(req, res, next) {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
   if (!req.user || !req.user.isAdmin) {
     return res.status(403).json({
       success: false,
@@ -61,6 +67,9 @@ function requireAdmin(req, res, next) {
  * Суперадмин может назначать админов и получать Stripe данные
  */
 function requireSuperAdmin(req, res, next) {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
   if (!req.user || !req.user.isSuperAdmin) {
     return res.status(403).json({
       success: false,

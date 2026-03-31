@@ -12,6 +12,22 @@ const {
 
 const router = express.Router();
 
+router.use((req, res, next) => {
+  const shouldLog = req.method === 'OPTIONS' || req.method === 'PATCH';
+  if (shouldLog) {
+    const origin = req.headers.origin || 'no-origin';
+    const routePath = req.originalUrl ? req.originalUrl.split('?')[0] : req.path;
+    res.on('finish', () => {
+      console.log(`[earthday-cleanups-admin] ${req.method} ${routePath} status=${res.statusCode} origin=${origin}`);
+    });
+  }
+  // Preflight на этом роуте не должен упираться в auth middleware.
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  return next();
+});
+
 router.use(authenticate);
 router.use(requireSuperAdmin);
 
