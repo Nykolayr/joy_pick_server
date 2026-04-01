@@ -9,6 +9,12 @@ const {
   thresholdDeleteBeforeMs,
   syncWindowMs
 } = require('../services/earthdayCleanupsSync');
+const {
+  parseWikimediaLimit,
+  buildWikimediaSearchAttempts,
+  fetchWikimediaPreviewByAttempts
+} = require('../utils/wikimediaCommonsEarthday');
+const { runEarthdayBulkCreateRequests } = require('../services/earthdayBulkCreateRequests');
 
 const router = express.Router();
 
@@ -391,6 +397,40 @@ router.post('/sync', async (req, res) => {
   return success(res, data, 'Синхронизация Earth Day cleanups выполнена');
 });
 
+/**
+ * POST /earthday-cleanups-admin/bulk-create-requests
+ * Пакетное создание заявок category=event (from_external_source), фото из Wikimedia → сжатие → галерея.
+ * Частичный успех: ошибки по отдельным objectid не откатывают уже созданные заявки.
+ *
+ * Тело: до 5 objectid за запрос (чанк с фронта): { "objectids": [...] } или object_ids.
+ * Дубликаты удаляются; лимит: EARTHDAY_BULK_CHUNK_MAX (по умолчанию 5).
+ * Если в батче не создано ни одной заявки — ответ 422 (детали в errorDetails).
+ */
+router.post('/bulk-create-requests', async (req, res) => {
+  try {
+    const data = await runEarthdayBulkCreateRequests(pool, req.user.userId, req.body);
+    if (data.batch_all_failed) {
+      return error(
+        res,
+        'В этом батче не создано ни одной заявки',
+        422,
+        {
+          requested_count: data.requested_count,
+          created_count: data.created_count,
+          errors_count: data.errors_count,
+          errors: data.errors
+        }
+      );
+    }
+    return success(res, data, 'Пакетное создание заявок из Earth Day выполнено');
+  } catch (e) {
+    if (e && e.code === 'VALIDATION') {
+      return error(res, e.message, 400);
+    }
+    return error(res, e.message || 'Ошибка пакетного создания заявок', 500, e);
+  }
+});
+
 function parseUsedForInternalRequest(body) {
   if (body == null || typeof body !== 'object') return { error: 'Тело запроса должно быть JSON-объектом' };
   const v = body.used_for_internal_request;
@@ -398,235 +438,6 @@ function parseUsedForInternalRequest(body) {
   if (v === false || v === 0 || v === '0') return { value: 0 };
   if (v === undefined) return { error: 'Поле used_for_internal_request обязательно (true/false или 1/0)' };
   return { error: 'used_for_internal_request: ожидается boolean или 0/1' };
-}
-
-function parseWikimediaLimit(raw) {
-  if (raw == null || String(raw).trim() === '') return { value: 18 };
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) {
-    return { error: 'limit: ожидается целое число в диапазоне 1..50' };
-  }
-  if (n < 1 || n > 50) {
-    return { error: 'limit: допустимо 1..50' };
-  }
-  return { value: n };
-}
-
-/**
- * CirrusSearch на Commons: ограничить растровыми файлами (исключить PDF/DjVu и т.п. в выдаче).
- * @see https://www.mediawiki.org/wiki/Help:CirrusSearch#filetype
- */
-function appendBitmapFiletypeFilter(srsearch) {
-  const s = String(srsearch).trim();
-  if (/filetype:\s*bitmap\b/i.test(s)) return s;
-  return `${s} filetype:bitmap`.trim();
-}
-
-function validEarthdayCoords(lat, lng) {
-  if (lat == null || lng == null) return false;
-  const la = Number(lat);
-  const lo = Number(lng);
-  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
-  if (Math.abs(la) < 1e-9 && Math.abs(lo) < 1e-9) return false;
-  if (la < -90 || la > 90 || lo < -180 || lo > 180) return false;
-  return true;
-}
-
-/** Только веб-картинки для превью; без PDF/вектора/офиса/аудио/видео. */
-function isRasterPhotoCommonsTitle(title) {
-  if (title == null || typeof title !== 'string') return false;
-  const t = title.replace(/^File:/i, '');
-  if (/\.(pdf|djvu?|svg|epub|ps|tex|gz|zip|tar|mp4|webm|ogg|ogv|mp3|wav|mid|flac)$/i.test(t)) {
-    return false;
-  }
-  return /\.(jpe?g|png|gif|webp)$/i.test(t);
-}
-
-/**
- * Несколько стратегий поиска: сначала геопривязка (nearcoord), потом текст по адресу.
- * @returns {{ label: string, srsearch: string }[]}
- */
-function buildWikimediaSearchAttempts(row) {
-  const geo = row.GeoCodedAddress != null ? String(row.GeoCodedAddress).trim() : '';
-  const locationHint = row.location_hint != null ? String(row.location_hint).trim() : '';
-  const country = row.country != null ? String(row.country).trim() : '';
-  const locName = row.name_of_cleanup_location != null ? String(row.name_of_cleanup_location).trim() : '';
-  const lat = row.lat;
-  const lng = row.lng;
-
-  const attempts = [];
-
-  if (validEarthdayCoords(lat, lng)) {
-    const km = process.env.WIKIMEDIA_NEARRADIUS_KM != null
-      ? Math.min(80, Math.max(5, Number(process.env.WIKIMEDIA_NEARRADIUS_KM) || 25))
-      : 25;
-    attempts.push({
-      label: 'nearcoord_bitmap',
-      srsearch: appendBitmapFiletypeFilter(`nearcoord:${km}km,${Number(lat)},${Number(lng)}`)
-    });
-  }
-
-  if (geo !== '') {
-    const text = country && !geo.includes(country) ? `${geo} ${country}`.trim() : geo;
-    attempts.push({
-      label: 'address_bitmap',
-      srsearch: appendBitmapFiletypeFilter(text)
-    });
-  }
-
-  if (locName !== '' && geo !== '') {
-    attempts.push({
-      label: 'location_name_address_bitmap',
-      srsearch: appendBitmapFiletypeFilter(`${locName} ${geo}`)
-    });
-  }
-
-  if (locationHint !== '') {
-    const text = country && !locationHint.includes(country) ? `${locationHint} ${country}`.trim() : locationHint;
-    attempts.push({
-      label: 'location_hint_bitmap',
-      srsearch: appendBitmapFiletypeFilter(text)
-    });
-  }
-
-  if (country !== '' && attempts.length === 0) {
-    attempts.push({
-      label: 'country_bitmap',
-      srsearch: appendBitmapFiletypeFilter(country)
-    });
-  }
-
-  const seen = new Set();
-  return attempts.filter((a) => {
-    if (seen.has(a.srsearch)) return false;
-    seen.add(a.srsearch);
-    return true;
-  });
-}
-
-function buildImageItemFromPage(page) {
-  if (!page || page.missing != null || page.invalid != null) return null;
-  const imageInfo = Array.isArray(page.imageinfo) && page.imageinfo.length > 0 ? page.imageinfo[0] : null;
-  if (!imageInfo) return null;
-  const thumbUrl = imageInfo.thumburl || imageInfo.url || null;
-  if (!thumbUrl) return null;
-  const title = page.title || null;
-  const encodedTitle = title ? encodeURIComponent(title.replace(/ /g, '_')) : null;
-  const pageUrl = encodedTitle ? `https://commons.wikimedia.org/wiki/${encodedTitle}` : null;
-  const fullUrl = imageInfo.url || thumbUrl;
-  return {
-    thumb_url: thumbUrl,
-    full_url: fullUrl,
-    title,
-    page_url: pageUrl
-  };
-}
-
-/**
- * Несколько запросов list=search → prop=imageinfo:
- * - приоритет: nearcoord (геотеги на Commons) + filetype:bitmap;
- * - затем текст по адресу с тем же фильтром;
- * - заголовки режем до jpg/png/gif/webp (без PDF и сканов как «фото места»);
- * - дедуп по full_url между стратегиями.
- */
-async function fetchWikimediaPreviewByAttempts(attempts, limit) {
-  const endpoint = 'https://commons.wikimedia.org/w/api.php';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 18000);
-  const userAgent = process.env.WIKIMEDIA_USER_AGENT
-    || 'JoyPickServer/1.0 (contact: support@joypick.app)';
-
-  const fetchOpts = {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': userAgent
-    },
-    signal: controller.signal
-  };
-
-  const seenFull = new Set();
-  const items = [];
-  let strategyUsed = null;
-  let srsearchUsed = null;
-
-  try {
-    for (const att of attempts) {
-      if (items.length >= limit) break;
-
-      const need = limit - items.length;
-      const srlimit = Math.min(50, Math.max(need * 8, 24));
-
-      const searchUrl = new URL(endpoint);
-      searchUrl.searchParams.set('action', 'query');
-      searchUrl.searchParams.set('format', 'json');
-      searchUrl.searchParams.set('list', 'search');
-      searchUrl.searchParams.set('srsearch', att.srsearch);
-      searchUrl.searchParams.set('srnamespace', '6');
-      searchUrl.searchParams.set('srlimit', String(srlimit));
-
-      const searchRes = await fetch(searchUrl.toString(), fetchOpts);
-      if (!searchRes.ok) {
-        return { error: `Wikimedia search HTTP ${searchRes.status}`, status: 502 };
-      }
-      const searchData = await searchRes.json();
-      const hits = (searchData && searchData.query && Array.isArray(searchData.query.search))
-        ? searchData.query.search
-        : [];
-      const titles = hits
-        .map((h) => h && h.title)
-        .filter((t) => typeof t === 'string' && t.length > 0)
-        .filter(isRasterPhotoCommonsTitle);
-
-      if (titles.length === 0) continue;
-
-      const titleChunk = titles.slice(0, 50);
-      const infoUrl = new URL(endpoint);
-      infoUrl.searchParams.set('action', 'query');
-      infoUrl.searchParams.set('format', 'json');
-      infoUrl.searchParams.set('titles', titleChunk.join('|'));
-      infoUrl.searchParams.set('prop', 'imageinfo');
-      infoUrl.searchParams.set('iiprop', 'url|thumburl');
-      infoUrl.searchParams.set('iiurlwidth', '280');
-      infoUrl.searchParams.set('redirects', '1');
-
-      const infoRes = await fetch(infoUrl.toString(), fetchOpts);
-      if (!infoRes.ok) {
-        return { error: `Wikimedia imageinfo HTTP ${infoRes.status}`, status: 502 };
-      }
-      const infoData = await infoRes.json();
-      const pages = infoData && infoData.query && infoData.query.pages
-        ? Object.values(infoData.query.pages)
-        : [];
-      const byTitle = new Map();
-      for (const p of pages) {
-        if (p && p.title) byTitle.set(p.title, p);
-      }
-
-      for (const title of titleChunk) {
-        if (items.length >= limit) break;
-        const page = byTitle.get(title);
-        const item = buildImageItemFromPage(page);
-        if (!item) continue;
-        if (seenFull.has(item.full_url)) continue;
-        seenFull.add(item.full_url);
-        items.push(item);
-        if (!strategyUsed) {
-          strategyUsed = att.label;
-          srsearchUsed = att.srsearch;
-        }
-      }
-    }
-
-    return { items, strategy_used: strategyUsed, srsearch_used: srsearchUsed };
-  } catch (e) {
-    const message = e && e.name === 'AbortError'
-      ? 'Wikimedia request timeout'
-      : (e.message || 'Wikimedia request failed');
-    return { error: message, status: 502 };
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 /**
