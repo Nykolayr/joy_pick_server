@@ -78,3 +78,7 @@ INSERT INTO requests (
 ## Дата обновления структуры
 
 Последнее обновление: миграция `025_requests_from_external_source.sql` — колонка `from_external_source`.
+
+## Примечание по API-ответу
+
+В таблице нет отдельной колонки `photos`, но API `/api/requests` и `/api/requests/:id` всегда возвращает поле `photos` как массив URL (агрегировано из `photos_before` + `photos_after`, либо `[]`).

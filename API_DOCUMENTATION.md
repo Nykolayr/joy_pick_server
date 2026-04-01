@@ -252,6 +252,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `latitude` | float | Нет | Широта местоположения |
 | `longitude` | float | Нет | Долгота местоположения |
 | `city` | string | Нет | Город |
+| `photos` | array[string] | Нет | Агрегированный массив URL фото заявки для стабильного рендера на клиенте. В ответах **всегда присутствует** (может быть `[]`). Обычно это объединение `photos_before` + `photos_after`. |
 | `photos_before` | array[string] | Нет | Массив URL фотографий "до" уборки (для всех типов заявок) |
 | `photos_after` | array[string] | Нет | Массив URL фотографий "после" уборки (для всех типов заявок) |
 | `garbage_size` | integer | Нет | Размер мусора: `1` (bag), `2` (cart), `3` (car) |
@@ -267,7 +268,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
 | `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
-| `from_external_source` | boolean | Нет | **`true`** — заявка создана из внешнего источника (например, после импорта Earth Day cleanups). В API при создании: передать **`true`** может только **суперадмин** (`isSuperAdmin` в JWT); иначе **403**. Обычные пользователи всегда получают **`false`**. В ответах списка и деталей поле всегда присутствует. |
+| `from_external_source` | boolean | Нет | **`true`** — заявка создана из внешнего источника (например, после импорта Earth Day cleanups). В API при создании: передать **`true`** может только **суперадмин** (`isSuperAdmin` в JWT); иначе **403**. Обычные пользователи всегда получают **`false`**. В ответах списка и деталей поле всегда присутствует. Для внешних заявок фото из source-полей (`image_url`, `image_urls`, `photo_url`, `photo_urls`, `photos`) нормализуются и сохраняются в `photos_before`; в ответе клиент получает их также в `photos`. |
 | `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
 | `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
 | `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события). **Важно:** Все ID должны быть UUID из базы данных (поле `id` из таблицы `users`), не Firebase UID. |
@@ -1777,6 +1778,7 @@ Authorization: Bearer <jwt_token>
 - `from_external_source` (boolean, опционально) - пометка «из внешнего источника»; значение **`true`** / **`1`** допустимо **только у суперадмина**, иначе **403**
 - `photos_before` (file[], опционально) - массив файлов для фото "до" уборки
 - `photos_after` (file[], опционально) - массив файлов для фото "после" уборки
+- Для `from_external_source=true` дополнительно можно передать URL-фото от источника в любом из полей: `image_url`, `image_urls`, `photo_url`, `photo_urls`, `photos` (строка, JSON-массив или array[string]). Бэкенд нормализует эти значения в массив URL и сохраняет в `photos_before` (и отдаёт в `photos`).
 
 **Важно:**
 - Фотографии принимаются **только в виде файлов** через `multipart/form-data`
@@ -6671,6 +6673,65 @@ title[|||]short_description[|||]text
 **Ответ `200`:** `data: { objectid, used_for_internal_request: true|false }` (boolean).  
 **404** — нет строки с таким **`objectid`**.  
 **400** — нет поля или неверный тип.
+
+### GET `/earthday-cleanups-admin/:objectid/wikimedia-preview`
+
+Прокси-эндпоинт для админки: получает превью изображений из **Wikimedia Commons** по данным записи `earthday_cleanups`.
+Нужен, потому что прямой запрос с браузера часто упирается в CORS.
+
+**Авторизация:** только суперадмин (`isSuperAdmin: true`).
+
+**Query-параметры:**
+
+| Параметр | Описание |
+|----------|----------|
+| `limit` | Опционально. Целое число **1..50**, по умолчанию **18** |
+
+**Логика поиска:**
+- Берётся запись по `objectid` из `earthday_cleanups` (включая **`lat`**, **`lng`**, `GeoCodedAddress`, `location_hint`, `country`, `name_of_cleanup_location`).
+- По очереди пробуются стратегии (до первой с результатами, затем результаты дополняются следующими при нехватке `limit`):
+  1. **`nearcoord`** — геопоиск на Commons (`nearcoord:<радиус>km,lat,lng`) + **`filetype:bitmap`** (растровые фото, без PDF и прочих «документов» в индексе).
+  2. Текст **`GeoCodedAddress`** (+ `country`, если строка не дублирует страну).
+  3. **`name_of_cleanup_location` + GeoCodedAddress** (если оба заданы).
+  4. **`location_hint`** (+ `country` при необходимости).
+  5. Только **`country`**, если других данных нет.
+- Дополнительно отбрасываются файлы с расширениями вроде **`.pdf`**, **`.svg`**, видео/аудио; в превью попадают в основном **`.jpg`/`.jpeg`/`.png`/`.gif`/`.webp`**.
+- Одинаковые **`full_url`** (редиректы/дубли) по-прежнему **дедуплицируются**.
+- Радиус nearcoord по умолчанию **25 km**; можно переопределить env **`WIKIMEDIA_NEARRADIUS_KM`** (от 5 до 80).
+
+**Успешный ответ (200):**
+```json
+{
+  "success": true,
+  "message": "Wikimedia preview loaded",
+  "data": {
+    "objectid": 123456,
+    "limit": 18,
+    "search_strategy": "nearcoord_bitmap",
+    "srsearch": "nearcoord:25km,52.52,13.41 filetype:bitmap",
+    "attempts": [
+      { "label": "nearcoord_bitmap", "srsearch": "nearcoord:25km,52.52,13.41 filetype:bitmap" },
+      { "label": "address_bitmap", "srsearch": "Berlin Germany filetype:bitmap" }
+    ],
+    "items": [
+      {
+        "thumb_url": "https://upload.wikimedia.org/...",
+        "full_url": "https://upload.wikimedia.org/...",
+        "title": "File:Berlin skyline.jpg",
+        "page_url": "https://commons.wikimedia.org/wiki/File%3ABerlin_skyline.jpg"
+      }
+    ],
+    "urls": [
+      "https://upload.wikimedia.org/..."
+    ]
+  }
+}
+```
+
+**Ошибки:**
+- `404` — запись `earthday_cleanups` с таким `objectid` не найдена
+- `400` — некорректный `objectid`, `limit` вне диапазона, либо нет ни координат, ни текстовых полей для поиска
+- `502` — ошибка ответа/таймаут Wikimedia Commons
 
 ---
 

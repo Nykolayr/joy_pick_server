@@ -25,28 +25,56 @@ const router = express.Router();
 /**
  * Преобразует сырую строку заявки из БД в объект для ответа (JSON-поля, булевы значения, даты).
  */
+function parseJsonArraySafe(value) {
+  if (value == null || value === '') return [];
+  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (s === '') return [];
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+      }
+    } catch (e) {
+      // Для обратной совместимости: допускаем CSV-строку URL.
+      return s.split(',').map((v) => v.trim()).filter((v) => v !== '');
+    }
+  }
+  return [];
+}
+
+function uniqueUrls(urls) {
+  return Array.from(new Set((urls || []).filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim())));
+}
+
+function normalizeExternalPhotoUrls(input) {
+  const sources = [
+    input?.image_url,
+    input?.image_urls,
+    input?.photo_url,
+    input?.photo_urls,
+    input?.photos,
+    input?.photos_before,
+    input?.photos_after,
+    input?.['photos[]'],
+    input?.['photos_before[]'],
+    input?.['photos_after[]']
+  ];
+  const merged = [];
+  for (const source of sources) {
+    merged.push(...parseJsonArraySafe(source));
+  }
+  return uniqueUrls(merged);
+}
+
 function processRequestListItem(request) {
   const result = Object.assign({}, request);
 
-  if (request.photos_before) {
-    try {
-      result.photos_before = typeof request.photos_before === 'string' ? JSON.parse(request.photos_before) : request.photos_before;
-    } catch (e) {
-      result.photos_before = [];
-    }
-  } else {
-    result.photos_before = [];
-  }
-
-  if (request.photos_after) {
-    try {
-      result.photos_after = typeof request.photos_after === 'string' ? JSON.parse(request.photos_after) : request.photos_after;
-    } catch (e) {
-      result.photos_after = [];
-    }
-  } else {
-    result.photos_after = [];
-  }
+  result.photos_before = parseJsonArraySafe(request.photos_before);
+  result.photos_after = parseJsonArraySafe(request.photos_after);
+  const directPhotos = parseJsonArraySafe(request.photos);
+  result.photos = uniqueUrls(directPhotos.length > 0 ? directPhotos : [...result.photos_before, ...result.photos_after]);
 
   if (request.waste_types) {
     try {
@@ -410,6 +438,13 @@ router.get('/:id', async (req, res) => {
     } else {
       request.photos_after = [];
     }
+    // Стабильный контракт для клиента: photos всегда присутствует.
+    request.photos = uniqueUrls([
+      ...parseJsonArraySafe(request.photos),
+      ...request.photos_before,
+      ...request.photos_after
+    ]);
+    request.photos = uniqueUrls([...(request.photos_before || []), ...(request.photos_after || [])]);
     
     // Обработка waste_types из JSON поля
     if (request.waste_types) {
@@ -636,8 +671,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     }
 
-    // Используем только загруженные файлы (URL не принимаем)
-    const finalPhotosBefore = uploadedPhotosBefore;
+    const externalPhotos = fromExternalSource ? normalizeExternalPhotoUrls(bodyData) : [];
+
+    // Для внешних (parsed) заявок допускаем URL-фото из source-полей и form-data:
+    // image_url / image_urls / photo_url / photo_urls / photos / photos_before / photos_after (+ []-варианты).
+    // Сохраняем их в photos_before, чтобы мобильный клиент гарантированно получил превью.
+    const finalPhotosBefore = externalPhotos.length > 0
+      ? uniqueUrls([...uploadedPhotosBefore, ...externalPhotos])
+      : uploadedPhotosBefore;
     const finalPhotosAfter = uploadedPhotosAfter;
 
     const requestId = generateId();
