@@ -15,6 +15,7 @@ const { sendRequestCreatedNotification } = require('./pushNotification');
  * @param {number|string|null} [opts.longitude]
  * @param {string|null} [opts.city]
  * @param {string[]} opts.photosBeforeUrls — URL из нашей галереи или абсолютные ссылки
+ * @param {number|null} [opts.earthdayCleanupObjectid] — earthday_cleanups.objectid для сброса флага при удалении заявки
  * @returns {Promise<string>} request id
  */
 async function createEventRequestFromExternalSource(pool, opts) {
@@ -26,8 +27,15 @@ async function createEventRequestFromExternalSource(pool, opts) {
     latitude,
     longitude,
     city,
-    photosBeforeUrls
+    photosBeforeUrls,
+    earthdayCleanupObjectid: rawEarthdayOid
   } = opts;
+
+  let earthdayCleanupObjectid = null;
+  if (rawEarthdayOid != null && rawEarthdayOid !== '') {
+    const n = Number(rawEarthdayOid);
+    if (Number.isInteger(n) && n > 0) earthdayCleanupObjectid = n;
+  }
 
   const category = 'event';
   const defaultStatus = 'inProgress';
@@ -53,8 +61,9 @@ async function createEventRequestFromExternalSource(pool, opts) {
       completion_comment, plant_tree, trash_pickup_only,
       created_at, updated_at, rejection_reason, rejection_message, actual_participants,
       photos_before, photos_after, registered_participants, waste_types, expires_at,
-      extended_count, participant_completions, group_chat_id, private_chats, from_external_source
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      extended_count, participant_completions, group_chat_id, private_chats, from_external_source,
+      earthday_cleanup_objectid
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       requestId,
       userId,
@@ -96,7 +105,8 @@ async function createEventRequestFromExternalSource(pool, opts) {
       null,
       null,
       privateChats,
-      1
+      1,
+      earthdayCleanupObjectid
     ]
   );
 

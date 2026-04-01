@@ -27,6 +27,7 @@ const {
 } = require('../api/services/pushNotification');
 const { generateId } = require('../api/utils/uuid');
 const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
+const { releaseEarthdayCleanupOnRequestDelete } = require('../api/utils/earthdayRequestLink');
 
 // Путь к файлу с информацией о последнем запуске
 const LAST_RUN_FILE = path.join(__dirname, '..', 'logs', 'cron_last_run.json');
@@ -928,8 +929,9 @@ async function checkEventAfterStartDate() {
             }
           }
 
+          await releaseEarthdayCleanupOnRequestDelete(pool, request.id);
+
           // Удаляем все чаты заявки
-          const { deleteAllChatsForRequest } = require('../api/utils/chatHelpers');
           await deleteAllChatsForRequest(request.id);
 
           // Удаляем заявку
@@ -1064,6 +1066,8 @@ async function cleanupUnpaidRequests() {
                 requestCategory: request.category || 'wasteLocation',
               });
 
+              await releaseEarthdayCleanupOnRequestDelete(pool, request.id);
+
               // Удаляем ВСЕ чаты заявки перед удалением заявки
               await deleteAllChatsForRequest(request.id);
 
@@ -1114,6 +1118,8 @@ async function cleanupUnpaidRequests() {
             }
           } catch (stripeErr) {
             // Если не удалось получить PaymentIntent, удаляем заявку
+            await releaseEarthdayCleanupOnRequestDelete(pool, request.id);
+
             // Удаляем ВСЕ чаты заявки перед удалением заявки
             await deleteAllChatsForRequest(request.id);
             
@@ -1132,6 +1138,8 @@ async function cleanupUnpaidRequests() {
           }
         } else {
           // Если payment_intent_id отсутствует, просто удаляем заявку
+          await releaseEarthdayCleanupOnRequestDelete(pool, request.id);
+
           // Удаляем ВСЕ чаты заявки перед удалением заявки
           await deleteAllChatsForRequest(request.id);
           

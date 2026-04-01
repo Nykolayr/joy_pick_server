@@ -2,7 +2,7 @@
 
 **Важно:** Этот файл содержит актуальную структуру таблицы `requests`. При изменении структуры таблицы обновляйте этот файл.
 
-## Все колонки таблицы (43 колонки):
+## Все колонки таблицы (44 колонки):
 
 **ВАЖНО:** Поля `cost` и `payment_intent_id` удалены. Теперь все платежи идут через донаты.
 
@@ -35,24 +35,25 @@
 27. `plant_tree` - tinyint(1)
 28. `trash_pickup_only` - tinyint(1)
 29. `from_external_source` - tinyint(1) NOT NULL DEFAULT 0 — **1** = заявка создана из внешнего источника (импорт Earth Day и т.п.)
-30. `created_at` - timestamp
-31. `updated_at` - timestamp
-32. `rejection_reason` - text
-33. `rejection_message` - text
-34. `actual_participants` - json
-35. `photos_before` - json
-36. `photos_after` - json
-37. `registered_participants` - json
-38. `waste_types` - json
-39. `expires_at` - datetime
-40. `extended_count` - int - **NOT NULL, DEFAULT 0**
-41. `participant_completions` - json
-42. `group_chat_id` - varchar(36)
-43. `private_chats` - json
+30. `earthday_cleanup_objectid` - bigint NULL — **`earthday_cleanups.objectid`**, если заявка создана из парсинга Earth Day; при удалении заявки флаг **`used_for_internal_request`** у строки импорта сбрасывается, если нет другой заявки с тем же id
+31. `created_at` - timestamp
+32. `updated_at` - timestamp
+33. `rejection_reason` - text
+34. `rejection_message` - text
+35. `actual_participants` - json
+36. `photos_before` - json
+37. `photos_after` - json
+38. `registered_participants` - json
+39. `waste_types` - json
+40. `expires_at` - datetime
+41. `extended_count` - int - **NOT NULL, DEFAULT 0**
+42. `participant_completions` - json
+43. `group_chat_id` - varchar(36)
+44. `private_chats` - json
 
 ## Порядок колонок в INSERT запросе
 
-При создании INSERT запроса ВСЕГДА используйте все 43 колонки в правильном порядке:
+При создании INSERT запроса ВСЕГДА используйте все 44 колонки в правильном порядке:
 
 ```sql
 INSERT INTO requests (
@@ -60,14 +61,14 @@ INSERT INTO requests (
   garbage_size, only_foot, possible_by_car, reward_amount, is_open,
   start_date, end_date, status, priority, assigned_to, notes, created_by,
   taken_by, total_contributed, target_amount, joined_user_id, join_date,
-  completion_comment, plant_tree, trash_pickup_only, from_external_source,
+  completion_comment, plant_tree, trash_pickup_only, from_external_source, earthday_cleanup_objectid,
   created_at, updated_at, rejection_reason, rejection_message, actual_participants,
   photos_before, photos_after, registered_participants, waste_types, expires_at,
   extended_count, participant_completions, group_chat_id, private_chats
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
-**Всего:** 43 колонки = 41 плейсхолдер `?` + 2 `NOW()` для `created_at` и `updated_at`
+**Всего:** 44 колонки = 42 плейсхолдера `?` + 2 `NOW()` для `created_at` и `updated_at`
 
 ## Значения по умолчанию для новых заявок
 
@@ -77,7 +78,7 @@ INSERT INTO requests (
 
 ## Дата обновления структуры
 
-Последнее обновление: миграция `025_requests_from_external_source.sql` — колонка `from_external_source`.
+Последнее обновление: миграция `029_requests_earthday_cleanup_objectid.sql` — колонка `earthday_cleanup_objectid`.
 
 ## Примечание по API-ответу
 

@@ -360,7 +360,8 @@ async function runEarthdayBulkCreateRequests(pool, userId, body) {
         latitude: j.payload.latitude,
         longitude: j.payload.longitude,
         city: j.payload.city,
-        photosBeforeUrls: [photoUrl]
+        photosBeforeUrls: [photoUrl],
+        earthdayCleanupObjectid: j.objectid
       });
       await pool.execute(
         'UPDATE earthday_cleanups SET used_for_internal_request = 1 WHERE objectid = ?',

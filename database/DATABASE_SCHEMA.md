@@ -5,7 +5,7 @@
 ## Список всех таблиц (18 таблиц)
 
 1. `users` - Пользователи (27 колонок) - [users_table_structure.md](users_table_structure.md)
-2. `requests` - Заявки (43 колонки) - [requests_table_structure.md](requests_table_structure.md)
+2. `requests` - Заявки (44 колонки) - [requests_table_structure.md](requests_table_structure.md)
 3. `chats` - Чаты (8 колонок) - [chats_table_structure.md](chats_table_structure.md)
 4. `messages` - Сообщения в чатах (10 колонок) - [messages_table_structure.md](messages_table_structure.md)
 5. `chat_participants` - Участники чатов (5 колонок) - [chat_participants_table_structure.md](chat_participants_table_structure.md)

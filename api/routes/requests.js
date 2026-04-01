@@ -145,6 +145,13 @@ function processRequestListItem(request) {
   result.trash_pickup_only = Boolean(result.trash_pickup_only);
   result.from_external_source = Boolean(result.from_external_source);
 
+  if (request.earthday_cleanup_objectid != null && request.earthday_cleanup_objectid !== '') {
+    const eo = Number(request.earthday_cleanup_objectid);
+    result.earthday_cleanup_objectid = Number.isFinite(eo) ? eo : null;
+  } else {
+    result.earthday_cleanup_objectid = null;
+  }
+
   return normalizeDatesInObject(result);
 }
 
@@ -656,6 +663,23 @@ router.post('/', authenticate, uploadRequestPhotos, [
       return error(res, 'from_external_source: ожидается boolean или 0/1', 400);
     }
 
+    let earthdayCleanupObjectid = null;
+    const rawEarthdayOid = bodyData.earthday_cleanup_objectid;
+    if (rawEarthdayOid != null && rawEarthdayOid !== '') {
+      if (!fromExternalSource || !req.user.isSuperAdmin) {
+        return error(
+          res,
+          'earthday_cleanup_objectid допустим только при from_external_source: true и для суперадмина',
+          400
+        );
+      }
+      const e = typeof rawEarthdayOid === 'number' ? rawEarthdayOid : parseInt(String(rawEarthdayOid), 10);
+      if (!Number.isFinite(e) || !Number.isInteger(e) || e <= 0) {
+        return error(res, 'earthday_cleanup_objectid: ожидается положительное целое число', 400);
+      }
+      earthdayCleanupObjectid = e;
+    }
+
     // Обработка waste_types - может быть массивом или строкой
     let processedWasteTypes = [];
     if (waste_types) {
@@ -724,8 +748,9 @@ router.post('/', authenticate, uploadRequestPhotos, [
         completion_comment, plant_tree, trash_pickup_only,
         created_at, updated_at, rejection_reason, rejection_message, actual_participants,
         photos_before, photos_after, registered_participants, waste_types, expires_at,
-        extended_count, participant_completions, group_chat_id, private_chats, from_external_source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        extended_count, participant_completions, group_chat_id, private_chats, from_external_source,
+        earthday_cleanup_objectid
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -767,7 +792,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         null, // participant_completions
         null, // group_chat_id пока NULL, обновим после создания чата
         privateChats,
-        fromExternalSource ? 1 : 0
+        fromExternalSource ? 1 : 0,
+        earthdayCleanupObjectid
       ]
     );
 
@@ -797,6 +823,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
         // Передаем детали ошибки в ответ API
         return error(res, 'Error initializing participant_completion for creator', 500, completionErr);
       }
+    }
+
+    if (earthdayCleanupObjectid != null) {
+      await pool.execute(
+        'UPDATE earthday_cleanups SET used_for_internal_request = 1 WHERE objectid = ?',
+        [earthdayCleanupObjectid]
+      );
     }
 
     // Получение созданной заявки
@@ -919,7 +952,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       errorCode: err.code || null,
       
       // Информация о структуре запроса
-      insertColumnsCount: 43, // ожидаемое количество колонок
+      insertColumnsCount: 44, // ожидаемое количество колонок
       insertColumns: [
         'id', 'user_id', 'category', 'name', 'description', 'latitude', 'longitude', 'city',
         'garbage_size', 'only_foot', 'possible_by_car', 'reward_amount', 'is_open',
@@ -928,13 +961,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
         'completion_comment', 'plant_tree', 'trash_pickup_only',
         'created_at', 'updated_at', 'rejection_reason', 'rejection_message', 'actual_participants',
         'photos_before', 'photos_after', 'registered_participants', 'waste_types', 'expires_at',
-        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats', 'from_external_source'
+        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats', 'from_external_source',
+        'earthday_cleanup_objectid'
       ],
       
       // Информация о параметрах
-      valuesCount: 41, // количество ? плейсхолдеров + 2 NOW()
+      valuesCount: 42, // количество ? плейсхолдеров + 2 NOW()
       nowCount: 2,
-      totalParams: 43
+      totalParams: 44
     };
     
     // Возвращаем детальную ошибку клиенту
@@ -1612,6 +1646,9 @@ router.delete('/:id', authenticate, async (req, res) => {
         });
       }
     }
+
+    const { releaseEarthdayCleanupOnRequestDelete } = require('../utils/earthdayRequestLink');
+    await releaseEarthdayCleanupOnRequestDelete(pool, id);
 
     // Удаляем ВСЕ чаты заявки (group и private) перед удалением заявки
     const { deleteAllChatsForRequest } = require('../utils/chatHelpers');

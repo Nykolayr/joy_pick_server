@@ -269,6 +269,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
 | `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
 | `from_external_source` | boolean | Нет | **`true`** — заявка создана из внешнего источника (например, после импорта Earth Day cleanups). В API при создании: передать **`true`** может только **суперадмин** (`isSuperAdmin` в JWT); иначе **403**. Обычные пользователи всегда получают **`false`**. В ответах списка и деталей поле всегда присутствует. Для внешних заявок фото из source-полей (`image_url`, `image_urls`, `photo_url`, `photo_urls`, `photos`) нормализуются и сохраняются в `photos_before`; в ответе клиент получает их также в `photos`. |
+| `earthday_cleanup_objectid` | integer или null | Нет | Связь с **`earthday_cleanups.objectid`** (только если заявка из парсинга Earth Day). Задаётся при создании вместе с **`from_external_source: true`** (суперадмин). В ответах API — только чтение. При удалении заявки флаг **`used_for_internal_request`** у строки импорта сбрасывается, если нет другой заявки с тем же id. |
 | `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
 | `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
 | `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события). **Важно:** Все ID должны быть UUID из базы данных (поле `id` из таблицы `users`), не Firebase UID. |
@@ -1708,7 +1709,7 @@ Authorization: Bearer <jwt_token>
 }
 ```
 
-**Импорт из Earth Day (суперадмин):** при создании заявки из данных `earthday_cleanups` передайте **`from_external_source`: `true`** (тот же запрос `POST /api/requests`, JWT суперадмина). После создания заявки вызовите **`PATCH /api/earthday-cleanups-admin/:objectid`** с **`used_for_internal_request`: `true`**.
+**Импорт из Earth Day (суперадмин):** при создании заявки из данных `earthday_cleanups` передайте **`from_external_source`: `true`** (тот же запрос `POST /api/requests`, JWT суперадмина). Рекомендуется также передать **`earthday_cleanup_objectid`** (целое число = **`objectid`** строки в `earthday_cleanups`): тогда сервер сохранит связь, выставит **`used_for_internal_request = 1`** для этой строки (как при PATCH) и при **удалении** заявки снова сбросит флаг, чтобы парсинг снова попал в выборку. Поле допустимо **только** вместе с **`from_external_source: true`** и **только у суперадмина**. Отдельный **`PATCH .../earthday-cleanups-admin/:objectid`** при наличии **`earthday_cleanup_objectid`** в теле создания не обязателен (но повторный PATCH не мешает).
 
 **Для Speed Cleanup:**
 ```json
@@ -1776,6 +1777,7 @@ Authorization: Bearer <jwt_token>
 - `plant_tree` (boolean, опционально) - посадить дерево
 - `trash_pickup_only` (boolean, опционально) - только сбор мусора
 - `from_external_source` (boolean, опционально) - пометка «из внешнего источника»; значение **`true`** / **`1`** допустимо **только у суперадмина**, иначе **403**
+- `earthday_cleanup_objectid` (integer, опционально) - **`earthday_cleanups.objectid`** при создании из парсинга Earth Day; только с **`from_external_source: true`** и суперадмина; при удалении заявки соответствующая строка импорта снова становится доступной для создания заявок (если нет другой заявки с тем же id)
 - `photos_before` (file[], опционально) - массив файлов для фото "до" уборки
 - `photos_after` (file[], опционально) - массив файлов для фото "после" уборки
 - Для `from_external_source=true` дополнительно можно передать URL-фото от источника в любом из полей: `image_url`, `image_urls`, `photo_url`, `photo_urls`, `photos` (строка, JSON-массив или array[string]). Бэкенд нормализует эти значения в массив URL и сохраняет в `photos_before` (и отдаёт в `photos`).
