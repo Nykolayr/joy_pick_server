@@ -267,9 +267,14 @@ module.exports = {
   thresholdDeleteBeforeMs(nowMs) {
     return nowMs + 24 * 60 * 60 * 1000;
   },
-  /** Окно выгрузки из ArcGIS: [now+24h, now+7d] */
+  /** Окно выгрузки из ArcGIS: [now+24h, now+N дней], по умолчанию N=60 (~2 месяца). */
   syncWindowMs(nowMs) {
     const day = 24 * 60 * 60 * 1000;
-    return { tFrom: nowMs + day, tTo: nowMs + 7 * day };
+    const defaultDaysAhead = 60;
+    const rawDaysAhead = Number(process.env.EARTHDAY_SYNC_DAYS_AHEAD);
+    const daysAhead = Number.isFinite(rawDaysAhead)
+      ? Math.min(120, Math.max(7, Math.floor(rawDaysAhead)))
+      : defaultDaysAhead;
+    return { tFrom: nowMs + day, tTo: nowMs + daysAhead * day };
   }
 };

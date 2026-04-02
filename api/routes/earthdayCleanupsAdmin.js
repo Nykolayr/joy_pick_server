@@ -158,6 +158,7 @@ function parseStringEqFilter(raw, maxLen, paramName) {
  */
 router.get('/', async (req, res) => {
   try {
+    const nowMs = msNowUtc();
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
@@ -183,11 +184,21 @@ router.get('/', async (req, res) => {
     const sortColumn = sortByParsed.column;
     const sortDir = sortDirParsed.dir;
 
-    const fromParsed = parseCleanupDateBound(req.query.cleanup_date_from, 'from');
+    // По умолчанию выдаём неделю вперёд: [now+24h, now+7d], если фронт не передал фильтры явно.
+    const fallbackFromMs = nowMs + 24 * 60 * 60 * 1000;
+    const fallbackToMs = nowMs + 7 * 24 * 60 * 60 * 1000;
+    const rawCleanupDateFrom = req.query.cleanup_date_from == null || String(req.query.cleanup_date_from).trim() === ''
+      ? String(fallbackFromMs)
+      : req.query.cleanup_date_from;
+    const rawCleanupDateTo = req.query.cleanup_date_to == null || String(req.query.cleanup_date_to).trim() === ''
+      ? String(fallbackToMs)
+      : req.query.cleanup_date_to;
+
+    const fromParsed = parseCleanupDateBound(rawCleanupDateFrom, 'from');
     if (fromParsed.error) {
       return error(res, fromParsed.error, 400);
     }
-    const toParsed = parseCleanupDateBound(req.query.cleanup_date_to, 'to');
+    const toParsed = parseCleanupDateBound(rawCleanupDateTo, 'to');
     if (toParsed.error) {
       return error(res, toParsed.error, 400);
     }
@@ -218,6 +229,8 @@ router.get('/', async (req, res) => {
       conditions.push('country = ?');
       params.push(countryFilter.value);
     }
+    // Не показывать записи без адреса парсинга (GeoCodedAddress пустой/NULL)
+    conditions.push("TRIM(COALESCE(GeoCodedAddress, '')) <> ''");
     // Не показывать заглушку 0,0 (нет реальных координат); пагинация считается без них
     conditions.push('(COALESCE(lat, 0) != 0 OR COALESCE(lng, 0) != 0)');
 
