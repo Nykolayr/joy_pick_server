@@ -270,6 +270,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `trash_pickup_only` | boolean | Нет | Флаг "только вывоз мусора" (для Waste Location, по умолчанию: `false`) |
 | `from_external_source` | boolean | Нет | **`true`** — заявка создана из внешнего источника (например, после импорта Earth Day cleanups). В API при создании: передать **`true`** может только **суперадмин** (`isSuperAdmin` в JWT); иначе **403**. Обычные пользователи всегда получают **`false`**. В ответах списка и деталей поле всегда присутствует. Для внешних заявок фото из source-полей (`image_url`, `image_urls`, `photo_url`, `photo_urls`, `photos`) нормализуются и сохраняются в `photos_before`; в ответе клиент получает их также в `photos`. |
 | `earthday_cleanup_objectid` | integer или null | Нет | Связь с **`earthday_cleanups.objectid`** (только если заявка из парсинга Earth Day). Задаётся при создании вместе с **`from_external_source: true`** (суперадмин). В ответах API — только чтение. При удалении заявки флаг **`used_for_internal_request`** у строки импорта сбрасывается, если нет другой заявки с тем же id. |
+| `work_duration_minutes` | integer или null | Нет | **Только `speedCleanup`:** длительность работы в целых минутах, задаётся клиентом (интервал таймера `start_date`–`end_date`). Принимается при **POST/PUT** заявки (см. ниже); в ответах списка и деталей заявки поле всегда нормализуется (`null`, если не задано). Для **event** и **wasteLocation** минуты хранятся в **`participant_completions[userId].work_duration_minutes`**, а не в этой колонке. |
 | `rejection_reason` | string | Нет | Причина отклонения заявки (стандартное или кастомное сообщение, только чтение) |
 | `rejection_message` | string | Нет | Кастомное сообщение от модератора при отклонении (только для модераторов) |
 | `actual_participants` | array[string] | Нет | Массив ID реальных участников события (только для `event`, заполняется заказчиком при закрытии события). **Важно:** Все ID должны быть UUID из базы данных (поле `id` из таблицы `users`), не Firebase UID. |
@@ -283,7 +284,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `expires_at` | datetime | Нет | Дата истечения заявки (только для `wasteLocation`, автоматически устанавливается при создании: `created_at + 7 дней`, только чтение) |
 | `extended_count` | integer | Нет | Количество продлений заявки (только для `wasteLocation`, максимум 1, только чтение) |
 | `completion_comment` | string | Нет | Комментарий при завершении (только чтение) |
-| `participant_completions` | object | Нет | JSON объект с данными закрытия работы участниками (только для `wasteLocation` и `event`, только чтение). Ключ - `userId` (UUID), значение - объект с полями:<br>- `status`: `"inProgress"` | `"pending"` | `"rejected"` | `"approved"`<br>- `photos_after`: array[string] - массив URL фотографий "после" работы<br>- `completion_comment`: string - комментарий участника<br>- `completion_latitude`: number - широта координат при закрытии<br>- `completion_longitude`: number - долгота координат при закрытии<br>- `rejection_reason`: string - причина отказа (только для `rejected`)<br>- `completed_at`: datetime - дата и время закрытия работы |
+| `participant_completions` | object | Нет | JSON объект с данными закрытия работы участниками (только для `wasteLocation` и `event`, только чтение). Ключ - `userId` (UUID), значение - объект с полями:<br>- `status`: `"inProgress"` \| `"pending"` \| `"rejected"` \| `"approved"`<br>- `photos_after`: array[string] - массив URL фотографий "после" работы<br>- `completion_comment`: string - комментарий участника<br>- `completion_latitude`: number - широта координат при закрытии<br>- `completion_longitude`: number - долгота координат при закрытии<br>- `rejection_reason`: string - причина отказа (только для `rejected`)<br>- `completed_at`: datetime - дата и время закрытия работы<br>- `work_duration_minutes`: integer \| null — целые минуты с клиента при **POST** `/participant-completion` (**event**: от `start_date` до сдачи; **waste**: фикс с клиента, напр. 15) |
 | `group_chat_id` | string (UUID) | Нет | ID группового чата заявки (автоматически создается при создании заявки, только чтение). Групповой чат создается сразу при создании заявки, в него автоматически добавляется создатель. |
 | `private_chats` | array[object] | Нет | Массив приватных чатов для event заявок (только для `event`, только чтение). Каждый элемент содержит:<br>- `chat_id`: string (UUID) - ID приватного чата<br>- `user_id`: string (UUID) - ID участника, с которым создан приватный чат (между участником и создателем заявки)<br><br>**Важно:** Приватные чаты создаются автоматически при участии в event заявке (POST /api/requests/:id/participate) и удаляются при отмене участия (DELETE /api/requests/:id/participate). |
 | `created_at` | datetime | Нет | Дата создания (только чтение) |
@@ -1337,6 +1338,58 @@ Future<Map<String, dynamic>> getUsersList({
 
 ---
 
+### Сводка засчитанного времени работы (текущий пользователь)
+
+**GET** `/users/me/work-duration`
+
+**Требует аутентификации**
+
+Список заявок, по которым для **текущего** пользователя на бэкенде засчитаны минуты работы, плюс **общая сумма минут** по всем таким заявкам (сумма считается по полному набору, не только по текущей странице).
+
+**Query-параметры:**
+- `page` (integer, опционально) — страница, по умолчанию `1`
+- `limit` (integer, опционально) — размер страницы, по умолчанию `20`, максимум `100`
+
+**Правила «засчитано» (бэкенд):**
+- **`speedCleanup`:** заявка в статусе `approved` или `archived`; пользователь — `created_by` или `joined_user_id`; в заявке задано **`work_duration_minutes`** (колонка в `requests`).
+- **`wasteLocation`:** заявка `approved` или `archived`; пользователь — исполнитель (`joined_user_id`); минуты в **`participant_completions[userId].work_duration_minutes`**.
+- **`event`:** заявка `approved` или `archived`; пользователь среди участников; в **`participant_completions[userId]`** статус **`approved`** и задано **`work_duration_minutes`**.
+
+**Ответ (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "request_id": "550e8400-e29b-41d4-a716-446655440000",
+        "category": "event",
+        "status": "approved",
+        "name": "Экологическое событие",
+        "work_duration_minutes": 90,
+        "start_date": "2025-12-01T10:00:00.000Z",
+        "end_date": "2025-12-01T18:00:00.000Z",
+        "updated_at": "2025-12-02T12:00:00.000Z",
+        "source": "participant_completion"
+      }
+    ],
+    "total_work_duration_minutes": 1234,
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 5,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+- **`source`:** `request` — значение с колонки заявки (**speed**); `participant_completion` — из JSON участника (**event** / **waste**).
+
+**Ошибки:** `401` — не авторизован; `500` — ошибка сервера.
+
+---
+
 ### Получение пользователя по ID
 
 **GET** `/users/:id`
@@ -1724,6 +1777,7 @@ Authorization: Bearer <jwt_token>
   "reward_amount": 50,
   "start_date": "2024-02-01T10:00:00.000Z",
   "end_date": "2024-02-01T10:25:00.000Z",
+  "work_duration_minutes": 25,
   // photos_before и photos_after отправляются как файлы через multipart/form-data
   "waste_types": ["plastic"]
 }
@@ -1733,6 +1787,7 @@ Authorization: Bearer <jwt_token>
 - Поля `start_date` и `end_date` **обязательны** для заявок типа `speedCleanup`
 - Разница между `start_date` и `end_date` должна быть минимум 20 минут для начисления коина создателю при одобрении
 - Формат дат: ISO 8601 (например: `"2024-02-01T10:00:00.000Z"`)
+- **`work_duration_minutes`** (integer, опционально): целые минуты работы с клиента (длительность по таймеру между `start_date` и `end_date`). Допустимый диапазон на сервере: **0…10080** (7 суток). Для других категорий заявки не передавать (иначе **400**).
 
 **Для Event:**
 ```json
@@ -1777,6 +1832,7 @@ Authorization: Bearer <jwt_token>
 - `plant_tree` (boolean, опционально) - посадить дерево
 - `trash_pickup_only` (boolean, опционально) - только сбор мусора
 - `from_external_source` (boolean, опционально) - пометка «из внешнего источника»; значение **`true`** / **`1`** допустимо **только у суперадмина**, иначе **403**
+- `work_duration_minutes` (integer, опционально) — только для **`speedCleanup`**: см. блок «Важно для Speed Cleanup» выше
 - `earthday_cleanup_objectid` (integer, опционально) - **`earthday_cleanups.objectid`** при создании из парсинга Earth Day; только с **`from_external_source: true`** и суперадмина; при удалении заявки соответствующая строка импорта снова становится доступной для создания заявок (если нет другой заявки с тем же id)
 - `photos_before` (file[], опционально) - массив файлов для фото "до" уборки
 - `photos_after` (file[], опционально) - массив файлов для фото "после" уборки
@@ -2133,7 +2189,7 @@ Future<void> createRequestWithPayment({
 
 **PUT** `/requests/:id`
 
-**Требует аутентификации** (только создатель или админ)
+**Требует аутентификации** (создатель заявки, исполнитель `joined_user_id` или админ)
 
 **Описание:**
 Обновление заявки. При изменении статуса автоматически выполняются соответствующие действия (начисление коинов, перевод денег, отправка push-уведомлений).
@@ -2152,9 +2208,12 @@ Future<void> createRequestWithPayment({
   "actual_participants": ["550e8400-e29b-41d4-a716-446655440000", "660e8400-e29b-41d4-a716-446655440001"],
   "joined_user_id": "550e8400-e29b-41d4-a716-446655440000",
   "join_date": "2024-01-01T10:00:00.000Z",
-  "waste_types": ["plastic", "glass"]
+  "waste_types": ["plastic", "glass"],
+  "work_duration_minutes": 30
 }
 ```
+
+**`work_duration_minutes` (integer \| null):** только для заявок категории **`speedCleanup`**. Обновить могут создатель, исполнитель (`joined_user_id`) или админ (как и остальное тело **PUT**). Целое **0…10080**; `null` или пустое значение — сброс поля в БД. Для других категорий передача поля → **400**.
 
 **Важно - ID пользователей:**
 - Все ID пользователей (`joined_user_id`, элементы в `actual_participants`) должны быть **UUID из базы данных** (поле `id` из таблицы `users`)
@@ -2197,6 +2256,7 @@ Future<void> createRequestWithPayment({
      - В `participant_completions` создается запись для исполнителя со статусом `"inProgress"`
    - Исполнитель закрывает свою работу через `POST /api/requests/:requestId/participant-completion`:
      - Статус участника в `participant_completions` меняется на `"pending"`
+     - Опционально сохраняются **`work_duration_minutes`** (целые минуты с клиента)
      - **Статус заявки сразу меняется на `pending`** (отправка на модерацию)
      - **НЕ отправляется push-уведомление создателю** (создатель не должен ничего делать)
      - Отправляется push-уведомление админам о новой заявке на модерации
@@ -2213,6 +2273,7 @@ Future<void> createRequestWithPayment({
 
 2. **Для заявок типа `speedCleanup`:**
    - При создании: статус `new` или `inProgress` (если передано явно)
+   - Длительность работы в минутах для статистики: колонка **`work_duration_minutes`** (передаётся при **POST/PUT** заявки с клиента; закрытие через `/participant-completion` для speed не используется)
    - При отправке на рассмотрение: статус меняется на `pending`
    - При одобрении (`approved`):
      - Проверяется разница между `start_date` и `end_date`
@@ -2241,7 +2302,7 @@ Future<void> createRequestWithPayment({
      - Добавляются в `registered_participants`
      - В `participant_completions` создается запись для участника со статусом `"inProgress"`
    - Автоматические push-уведомления отправляются всем из `registered_participants` (24ч, 2ч до события, начало события)
-   - Каждый участник может закрыть свою работу через `POST /api/requests/:requestId/participant-completion` (после начала события):
+   - Каждый участник может закрыть свою работу через `POST /api/requests/:requestId/participant-completion` (после начала события), передав при необходимости **`work_duration_minutes`** (целые минуты с клиента):
      - Статус участника в `participant_completions` меняется на `"pending"`
      - Отправляется push-уведомление создателю
    - Создатель одобряет/отклоняет закрытие каждого участника через `PATCH /api/requests/:requestId/participant-completion/:userId`:
@@ -2514,6 +2575,7 @@ Future<void> createRequestWithPayment({
 - `completion_comment` (string, опционально) - комментарий участника при закрытии работы
 - `completion_latitude` (number, обязательно) - широта координат пользователя в момент закрытия
 - `completion_longitude` (number, обязательно) - долгота координат пользователя в момент закрытия
+- `work_duration_minutes` (integer, опционально) - целые минуты работы с клиента (**waste**: фикс, напр. 15; **event**: от `start_date` события до сдачи на ревью). Диапазон на сервере: **0…10080**. Если не передать, поле в JSON участника можно не менять (остаётся как было / `null` у новой записи).
 
 **Ответ (200):**
 ```json
@@ -2534,7 +2596,8 @@ Future<void> createRequestWithPayment({
           "completion_latitude": 56.4962847,
           "completion_longitude": 84.9802779,
           "rejection_reason": null,
-          "completed_at": "2025-12-21T13:35:00.000Z"
+          "completed_at": "2025-12-21T13:35:00.000Z",
+          "work_duration_minutes": 15
         }
       },
       ...
@@ -2551,6 +2614,7 @@ Future<void> createRequestWithPayment({
 - `400` - Событие еще не началось (только для event)
 - `400` - Необходимо загрузить минимум одно фото
 - `400` - Необходимо указать координаты
+- `400` - Некорректное `work_duration_minutes` (ожидается целое 0…10080)
 
 ---
 

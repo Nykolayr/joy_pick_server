@@ -62,8 +62,8 @@ async function createEventRequestFromExternalSource(pool, opts) {
       created_at, updated_at, rejection_reason, rejection_message, actual_participants,
       photos_before, photos_after, registered_participants, waste_types, expires_at,
       extended_count, participant_completions, group_chat_id, private_chats, from_external_source,
-      earthday_cleanup_objectid
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      earthday_cleanup_objectid, work_duration_minutes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       requestId,
       userId,
@@ -106,7 +106,8 @@ async function createEventRequestFromExternalSource(pool, opts) {
       null,
       privateChats,
       1,
-      earthdayCleanupObjectid
+      earthdayCleanupObjectid,
+      null
     ]
   );
 

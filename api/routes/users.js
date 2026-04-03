@@ -6,6 +6,8 @@ const { authenticate, requireAdmin, requireSuperAdmin } = require('../middleware
 const { generateId } = require('../utils/uuid');
 const { uploadUserAvatar, getFileUrlFromPath } = require('../middleware/upload');
 const stripeRouter = require('./stripe.js');
+const { getCreditedWorkDurationItemsForUser } = require('../utils/workDurationStats');
+const { normalizeDatesInObject } = require('../utils/datetime');
 
 const router = express.Router();
 
@@ -100,6 +102,37 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
     success(res, { users, total: users.length });
   } catch (err) {
     error(res, 'Error fetching all users list', 500, err);
+  }
+});
+
+/**
+ * GET /api/users/me/work-duration
+ * Список заявок с засчитанными work_duration_minutes и общая сумма (только approved/archived по правилам бэка).
+ * Query: page, limit (по умолчанию 1 и 20, макс. limit 100).
+ */
+router.get('/me/work-duration', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const allItems = await getCreditedWorkDurationItemsForUser(pool, userId);
+    const total = allItems.length;
+    const totalWorkDurationMinutes = allItems.reduce((s, it) => s + it.work_duration_minutes, 0);
+    const offset = (pageNum - 1) * limitNum;
+    const pageItems = allItems.slice(offset, offset + limitNum).map((it) => normalizeDatesInObject(it));
+    success(res, {
+      items: pageItems,
+      total_work_duration_minutes: totalWorkDurationMinutes,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum) || 0
+      }
+    });
+  } catch (err) {
+    console.error('Ошибка work-duration:', err);
+    error(res, 'Error fetching work duration summary', 500, err);
   }
 });
 

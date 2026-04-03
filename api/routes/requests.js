@@ -19,6 +19,7 @@ const { createGroupChatForRequest } = require('../utils/chatHelpers');
 const { insertTransferPayoutCheck } = require('../utils/transferPayoutCheck.js');
 const stripe = require('../config/stripe.js');
 const { deleteInactiveRequests, checkEventAfterStartDate } = require('../../scripts/cronTasks');
+const { parseWorkDurationMinutesInput, normalizeRequestRowWorkDuration } = require('../utils/workDurationStats');
 
 const router = express.Router();
 
@@ -151,6 +152,8 @@ function processRequestListItem(request) {
   } else {
     result.earthday_cleanup_objectid = null;
   }
+
+  normalizeRequestRowWorkDuration(result);
 
   return normalizeDatesInObject(result);
 }
@@ -543,6 +546,8 @@ router.get('/:id', async (req, res) => {
     request.trash_pickup_only = Boolean(request.trash_pickup_only);
     request.from_external_source = Boolean(request.from_external_source);
 
+    normalizeRequestRowWorkDuration(request);
+
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
     
@@ -680,6 +685,25 @@ router.post('/', authenticate, uploadRequestPhotos, [
       earthdayCleanupObjectid = e;
     }
 
+    const hasWorkDuration =
+      bodyData.work_duration_minutes !== undefined &&
+      bodyData.work_duration_minutes !== null &&
+      bodyData.work_duration_minutes !== '';
+    if (hasWorkDuration && category !== 'speedCleanup') {
+      return error(res, 'work_duration_minutes допустимо только для speedCleanup', 400);
+    }
+    let workDurationMinutesForInsert = null;
+    if (category === 'speedCleanup' && hasWorkDuration) {
+      try {
+        workDurationMinutesForInsert = parseWorkDurationMinutesInput(bodyData.work_duration_minutes);
+      } catch (e) {
+        if (e.code === 'INVALID_WORK_DURATION') {
+          return error(res, 'work_duration_minutes: ожидается целое от 0 до 10080', 400);
+        }
+        throw e;
+      }
+    }
+
     // Обработка waste_types - может быть массивом или строкой
     let processedWasteTypes = [];
     if (waste_types) {
@@ -749,8 +773,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         created_at, updated_at, rejection_reason, rejection_message, actual_participants,
         photos_before, photos_after, registered_participants, waste_types, expires_at,
         extended_count, participant_completions, group_chat_id, private_chats, from_external_source,
-        earthday_cleanup_objectid
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        earthday_cleanup_objectid, work_duration_minutes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         requestId,
         userId,
@@ -793,7 +817,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         null, // group_chat_id пока NULL, обновим после создания чата
         privateChats,
         fromExternalSource ? 1 : 0,
-        earthdayCleanupObjectid
+        earthdayCleanupObjectid,
+        workDurationMinutesForInsert
       ]
     );
 
@@ -923,6 +948,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
     request.trash_pickup_only = Boolean(request.trash_pickup_only);
     request.from_external_source = Boolean(request.from_external_source);
 
+    normalizeRequestRowWorkDuration(request);
+
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
@@ -952,7 +979,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       errorCode: err.code || null,
       
       // Информация о структуре запроса
-      insertColumnsCount: 44, // ожидаемое количество колонок
+      insertColumnsCount: 45, // ожидаемое количество колонок
       insertColumns: [
         'id', 'user_id', 'category', 'name', 'description', 'latitude', 'longitude', 'city',
         'garbage_size', 'only_foot', 'possible_by_car', 'reward_amount', 'is_open',
@@ -962,13 +989,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
         'created_at', 'updated_at', 'rejection_reason', 'rejection_message', 'actual_participants',
         'photos_before', 'photos_after', 'registered_participants', 'waste_types', 'expires_at',
         'extended_count', 'participant_completions', 'group_chat_id', 'private_chats', 'from_external_source',
-        'earthday_cleanup_objectid'
+        'earthday_cleanup_objectid', 'work_duration_minutes'
       ],
       
       // Информация о параметрах
-      valuesCount: 42, // количество ? плейсхолдеров + 2 NOW()
+      valuesCount: 43, // количество ? плейсхолдеров + 2 NOW()
       nowCount: 2,
-      totalParams: 44
+      totalParams: 45
     };
     
     // Возвращаем детальную ошибку клиенту
@@ -1010,7 +1037,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     // Проверка прав доступа
     const [existingRequests] = await pool.execute(
-      'SELECT created_by, joined_user_id FROM requests WHERE id = ?',
+      'SELECT created_by, joined_user_id, category FROM requests WHERE id = ?',
       [id]
     );
 
@@ -1102,6 +1129,26 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     const updates = [];
     const params = [];
+
+    if (bodyData.work_duration_minutes !== undefined) {
+      const cat = String(existingRequests[0].category || '').toLowerCase();
+      if (cat !== 'speedcleanup') {
+        return error(res, 'work_duration_minutes допустимо только для speedCleanup', 400);
+      }
+      let wDm = null;
+      if (bodyData.work_duration_minutes !== null && bodyData.work_duration_minutes !== '') {
+        try {
+          wDm = parseWorkDurationMinutesInput(bodyData.work_duration_minutes);
+        } catch (e) {
+          if (e.code === 'INVALID_WORK_DURATION') {
+            return error(res, 'work_duration_minutes: ожидается целое от 0 до 10080', 400);
+          }
+          throw e;
+        }
+      }
+      updates.push('work_duration_minutes = ?');
+      params.push(wDm);
+    }
 
     if (name !== undefined && name !== null && name !== '') {
       updates.push('name = ?');
@@ -3053,6 +3100,24 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     // Сохраняем фото и получаем URL
     const photosAfterUrls = uploadedPhotosAfter.map(file => getFileUrlFromPath(file.path));
 
+    let workDurationMinutesPayload = {};
+    if (
+      req.body.work_duration_minutes !== undefined &&
+      req.body.work_duration_minutes !== null &&
+      req.body.work_duration_minutes !== ''
+    ) {
+      try {
+        workDurationMinutesPayload.work_duration_minutes = parseWorkDurationMinutesInput(
+          req.body.work_duration_minutes
+        );
+      } catch (e) {
+        if (e.code === 'INVALID_WORK_DURATION') {
+          return error(res, 'work_duration_minutes: ожидается целое от 0 до 10080', 400);
+        }
+        throw e;
+      }
+    }
+
     // Обновляем participant_completions
     const { updateParticipantCompletion } = require('../utils/participantCompletions');
     await updateParticipantCompletion(requestId, userId, {
@@ -3061,7 +3126,8 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
       completion_comment: completionComment,
       completion_latitude: completionLatitude,
       completion_longitude: completionLongitude,
-      completed_at: new Date().toISOString()
+      completed_at: new Date().toISOString(),
+      ...workDurationMinutesPayload
     });
 
     // Для wasteLocation: сразу меняем статус заявки на pending и отправляем уведомление админам

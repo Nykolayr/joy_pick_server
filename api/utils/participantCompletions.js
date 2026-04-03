@@ -81,7 +81,8 @@ async function initializeParticipantCompletion(requestId, userId, isCreator = fa
       completion_latitude: null,
       completion_longitude: null,
       rejection_reason: null,
-      completed_at: null
+      completed_at: null,
+      work_duration_minutes: null
     };
 
     await saveParticipantCompletions(requestId, completions);
