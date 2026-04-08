@@ -1060,6 +1060,50 @@ async function sendModerationNotification({ requestId, requestName, requestCateg
 }
 
 /**
+ * Напоминание модераторам: заявка в pending дольше положенного (нужен апрув или архив по SLA).
+ */
+async function sendModerationStaleReminderNotification({
+  requestId,
+  requestName,
+  requestCategory,
+  daysWaiting = 7
+}) {
+  try {
+    const adminIds = await getAllAdminIds();
+    if (adminIds.length === 0) {
+      return { successCount: 0, failureCount: 0 };
+    }
+    const categoryDisplayNames = {
+      wasteLocation: 'Waste Location',
+      speedCleanup: 'Speed Cleanup',
+      event: 'Event'
+    };
+    const categoryDisplayName = categoryDisplayNames[requestCategory] || 'Request';
+    const deeplink = `https://garbagedev-9c240.web.app/admin/requests/${requestId}`;
+    const title = 'Moderation: request waiting too long';
+    const body = `${categoryDisplayName}: "${(requestName || '').slice(0, 80)}" — ${daysWaiting}+ days in pending. Approve or it will auto-archive with refunds.`;
+
+    return await sendNotificationToUsers({
+      title,
+      body,
+      userIds: adminIds,
+      sound: 'default',
+      data: {
+        type: 'moderation_stale',
+        requestId,
+        requestCategory,
+        initialPageName: 'AdminRequestDetails',
+        parameterData: JSON.stringify({ requestId, category: requestCategory }),
+        deeplink
+      }
+    });
+  } catch (error) {
+    console.error('❌ Ошибка sendModerationStaleReminderNotification:', error);
+    return { successCount: 0, failureCount: 0 };
+  }
+}
+
+/**
  * Отправка push-уведомления волонтёру о получении выплаты
  * @param {Object} options - Параметры уведомления
  * @param {Array<string>} options.userIds - Массив ID пользователей
@@ -1231,6 +1275,7 @@ module.exports = {
   sendEventTimeNotification,
   sendEventCompletionReminderNotification,
   sendModerationNotification,
+  sendModerationStaleReminderNotification,
   sendTransferPaidNotification,
   sendTransferFailedNotification,
   sendTransferAvailableToUserNotification,

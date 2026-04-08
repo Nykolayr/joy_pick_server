@@ -1256,7 +1256,14 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(statusNormalized);
       if (statusNormalized === 'approved') {
         updates.push('approved_at = NOW()');
+        updates.push('submitted_for_review_at = NULL');
       }
+      if (statusNormalized === 'rejected') {
+        updates.push('submitted_for_review_at = NULL');
+      }
+    }
+    if (statusChangedToPending) {
+      updates.push('submitted_for_review_at = NOW()');
     }
     if (priority !== undefined && priority !== null && priority !== '') {
       updates.push('priority = ?');
@@ -2782,61 +2789,98 @@ async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
 }
 
 /**
- * Обработка отклонения заявки
+ * Вернуть донаты по заявке (Stripe refund/cancel). Не меняет статус заявки и не трогает jcoins.
+ * @returns {Promise<string[]>} уникальные user_id донатеров
  */
-async function handleRequestRejection(requestId, category, creatorId, rejectionReason, rejectionMessage) {
-  // 1. Определяем сообщение об отклонении
-  const finalMessage = rejectionMessage || rejectionReason || 'Request was rejected by moderator';
-
-  // 2. Возвращаем деньги всем донатерам (включая создателя, если он делал донат)
-  // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
+async function refundDonationsForRequest(requestId) {
   const [donations] = await pool.execute(
     'SELECT DISTINCT user_id, amount, payment_intent_id FROM donations WHERE request_id = ?',
     [requestId]
   );
-  const donorUserIds = [];
+  const donorUserIdSet = new Set();
   for (const donation of donations) {
     if (donation.amount && donation.amount > 0 && donation.payment_intent_id) {
       try {
         const paymentIntent = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
-        
+
         if (paymentIntent.status === 'succeeded') {
-          // Платеж захвачен - делаем refund
           const charges = await stripe.charges.list({
             payment_intent: donation.payment_intent_id,
             limit: 1
           });
-          
+
           if (charges.data.length > 0) {
             await stripe.refunds.create({
               charge: charges.data[0].id,
               reason: 'requested_by_customer'
             });
-            
-            // Обновляем статус в БД
+
             await pool.execute(
               'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
               ['refunded', donation.payment_intent_id]
             );
           }
         } else if (paymentIntent.status !== 'canceled') {
-          // Платеж не захвачен - отменяем
           await stripe.paymentIntents.cancel(donation.payment_intent_id);
-          
-          // Обновляем статус в БД
+
           await pool.execute(
             'UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE payment_intent_id = ?',
             ['canceled', donation.payment_intent_id]
           );
         }
-        
-        donorUserIds.push(donation.user_id);
+
+        if (donation.user_id) donorUserIdSet.add(donation.user_id);
       } catch (stripeErr) {
-        // Игнорируем ошибки Stripe (возможно, уже отменен или refunded)
-        donorUserIds.push(donation.user_id);
+        if (donation.user_id) donorUserIdSet.add(donation.user_id);
       }
     }
   }
+  return [...donorUserIdSet];
+}
+
+/**
+ * Таймаут модерации: деньги донатам назад, статус archived, без отката коинов и без удаления group chat
+ * (participant_completions / work_duration_minutes сохраняются).
+ */
+async function archivePendingModerationTimeout(requestId, category, creatorId) {
+  const finalMessage =
+    'Заявка снята с модерации (нет апрува в срок). Донаты возвращены. Данные о работе и начисления сохранены.';
+
+  const donorUserIds = await refundDonationsForRequest(requestId);
+
+  if (creatorId) {
+    sendRequestRejectedNotification({
+      userIds: [creatorId],
+      requestId,
+      messageType: 'creator',
+      rejectionMessage: finalMessage,
+      requestCategory: category
+    }).catch(() => {});
+  }
+  if (donorUserIds.length > 0) {
+    sendRequestRejectedNotification({
+      userIds: donorUserIds,
+      requestId,
+      messageType: 'donor',
+      rejectionMessage: finalMessage,
+      requestCategory: category
+    }).catch(() => {});
+  }
+
+  await pool.execute(
+    'UPDATE requests SET status = ?, submitted_for_review_at = NULL, updated_at = NOW() WHERE id = ?',
+    ['archived', requestId]
+  );
+}
+
+/**
+ * Обработка отклонения заявки
+ */
+async function handleRequestRejection(requestId, category, creatorId, rejectionReason, rejectionMessage) {
+  // 1. Определяем сообщение об отклонении
+  const finalMessage = rejectionMessage || rejectionReason || 'Request was rejected by moderator';
+
+  const donorUserIds = await refundDonationsForRequest(requestId);
 
   // 4. Отправляем push-уведомления
   if (creatorId) {
@@ -3135,7 +3179,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     if (request.category === 'wasteLocation') {
       // Меняем статус заявки на pending (отправка на модерацию)
       await pool.execute(
-        'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+        'UPDATE requests SET status = ?, submitted_for_review_at = NOW(), updated_at = NOW() WHERE id = ?',
         ['pending', requestId]
       );
 
@@ -3352,7 +3396,7 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     }
 
     // Обновляем статус заявки на pending
-    const updates = ['status = ?', 'updated_at = NOW()'];
+    const updates = ['status = ?', 'submitted_for_review_at = NOW()', 'updated_at = NOW()'];
     const params = ['pending'];
 
     if (completion_comment) {
@@ -3417,3 +3461,5 @@ module.exports.handleRequestRejection = handleRequestRejection;
 module.exports.handleEventApproval = handleEventApproval;
 module.exports.handleSpeedCleanupApproval = handleSpeedCleanupApproval;
 module.exports.payoutSpeedCleanupNewDonationsBeforeArchive = payoutSpeedCleanupNewDonationsBeforeArchive;
+module.exports.refundDonationsForRequest = refundDonationsForRequest;
+module.exports.archivePendingModerationTimeout = archivePendingModerationTimeout;

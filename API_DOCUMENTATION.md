@@ -263,7 +263,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `reward_amount` | integer | Нет | Награда в Joycoin (для Speed Clean-up) |
 | `start_date` | datetime | **Да (для speedCleanup)** | Дата начала работы. **Обязательно для `speedCleanup`**, опционально для `event` |
 | `end_date` | datetime | **Да (для speedCleanup)** | Дата окончания работы. **Обязательно для `speedCleanup`**, опционально для `event` |
-| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `archived` - архивирована (после выплат и окончания срока)<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Через 7 дней с создания заявка переводится в `archived` (после выплат по донатам)<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники<br><br>**ВАЖНО:** Статус `pending_payment` удален. Теперь все платежи идут через донаты, заявка создается сразу со стандартным статусом |
+| `status` | string | Нет | Статус заявки. **Важно:** Статус по умолчанию зависит от типа заявки:<br>- `wasteLocation`: `new` (по умолчанию)<br>- `speedCleanup`: `new` (по умолчанию) или `inProgress` (если передано явно при создании)<br>- `event`: `inProgress` (автоматически при создании)<br><br>**Возможные статусы:**<br>- `new` - создана, ожидает присоединения<br>- `inProgress` - в процессе выполнения<br>- `pending` - ожидает рассмотрения модератором<br>- `approved` - одобрена модератором<br>- `rejected` - отклонена модератором<br>- `archived` - архивирована (после выплат и окончания срока)<br><br>**Логика статусов:**<br>- Для `wasteLocation`: при присоединении исполнителя статус меняется на `inProgress`<br>- Для `speedCleanup`: при одобрении (`approved`) проверяется разница между `start_date` и `end_date`. Если >= 20 минут, начисляется коин создателю. Автоархив по срокам и крону — см. [Автоматические сроки (SLA) и cron](#автоматические-сроки-sla-и-cron).<br>- Для `event`: при создании статус сразу `inProgress`, создатель автоматически добавляется в участники<br><br>**ВАЖНО:** Статус `pending_payment` удален. Теперь все платежи идут через донаты, заявка создается сразу со стандартным статусом |
 | `priority` | string | Нет | Приоритет: `low`, `medium`, `high`, `urgent` (по умолчанию: `medium`) |
 | `target_amount` | integer | Нет | Целевая сумма для выполнения заявки |
 | `plant_tree` | boolean | Нет | Флаг "посадить дерево" (для Event, по умолчанию: `false`) |
@@ -287,6 +287,8 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 | `participant_completions` | object | Нет | JSON объект с данными закрытия работы участниками (только для `wasteLocation` и `event`, только чтение). Ключ - `userId` (UUID), значение - объект с полями:<br>- `status`: `"inProgress"` \| `"pending"` \| `"rejected"` \| `"approved"`<br>- `photos_after`: array[string] - массив URL фотографий "после" работы<br>- `completion_comment`: string - комментарий участника<br>- `completion_latitude`: number - широта координат при закрытии<br>- `completion_longitude`: number - долгота координат при закрытии<br>- `rejection_reason`: string - причина отказа (только для `rejected`)<br>- `completed_at`: datetime - дата и время закрытия работы<br>- `work_duration_minutes`: integer \| null — целые минуты с клиента при **POST** `/participant-completion` (**event**: от `start_date` до сдачи; **waste**: фикс с клиента, напр. 15) |
 | `group_chat_id` | string (UUID) | Нет | ID группового чата заявки (автоматически создается при создании заявки, только чтение). Групповой чат создается сразу при создании заявки, в него автоматически добавляется создатель. |
 | `private_chats` | array[object] | Нет | Массив приватных чатов для event заявок (только для `event`, только чтение). Каждый элемент содержит:<br>- `chat_id`: string (UUID) - ID приватного чата<br>- `user_id`: string (UUID) - ID участника, с которым создан приватный чат (между участником и создателем заявки)<br><br>**Важно:** Приватные чаты создаются автоматически при участии в event заявке (POST /api/requests/:id/participate) и удаляются при отмене участия (DELETE /api/requests/:id/participate). |
+| `approved_at` | datetime или null | Нет | Время перевода в **`approved`** (сервер выставляет **`NOW()`** при одобрении модератором). Используется для выплат и пост-апрув логики. **Только чтение.** |
+| `submitted_for_review_at` | datetime или null | Нет | Момент отправки на модерацию (**переход в `pending`**): **waste** — при `POST …/participant-completion`; **event** — при `POST …/close-by-creator`; **speedCleanup** — при **PUT**, если статус меняется на `pending`. Сбрасывается в **`null`** при **`approved`** / **`rejected`**. Для записей **pending**, созданных до появления колонки, при миграции может быть проставлено из **`updated_at`**. **Только чтение.** См. [Автоматические сроки (SLA) и cron](#автоматические-сроки-sla-и-cron). |
 | `created_at` | datetime | Нет | Дата создания (только чтение) |
 | `updated_at` | datetime | Нет | Дата обновления (только чтение) |
 
@@ -2284,11 +2286,7 @@ Future<void> createRequestWithPayment({
        - Коин не начисляется
        - Отправляется push-уведомление создателю: "Thank you! Try to work a bit longer next time to earn a coin."
      - Заявка **НЕ переводится** в статус `completed` автоматически, остается в `approved`
-   - **Через 24 часа после одобрения (updated_at):**
-     - Заявка автоматически переводится в статус `completed` (через cron job)
-     - Начисляется по 1 коину **всем донатерам** (из таблицы `donations`, если они есть)
-     - Отправляется push-уведомление донатерам
-     - Все донаты (за вычетом комиссии) переводятся исполнителю
+   - **Крон `autoCompleteSpeedCleanup`:** для **`speedCleanup`** в **`approved`**, если с **`created_at`** прошло **≥ 7 суток**, перед переводом в **`archived`** выполняется дополнительная выплата по донатам после одобрения (`payoutSpeedCleanupNewDonationsBeforeArchive`), затем статус **`archived`** и пуш создателю. Основная выплата при **`approved`** делается в **PUT** заявки.
    - При отклонении (`rejected`):
      - Возвращаются деньги донатерам (если были)
      - Отправляются push-уведомления с причиной отклонения
@@ -2319,13 +2317,40 @@ Future<void> createRequestWithPayment({
      - Возвращаются деньги заказчику и донатерам
      - Отправляются push-уведомления с причиной отклонения
 
-**Автоматические задачи (Cron Jobs):**
-- Проверка напоминаний для waste (за 2 часа до окончания срока) - каждые 5-10 минут
-- Проверка истекших присоединений для waste (24 часа) - каждые 5-10 минут
-- Уведомление о скором удалении неактивных waste заявок (через 7 дней) - каждые 5-10 минут
-- Удаление неактивных waste заявок (через 8 дней, если не продлены) - каждые 24 часа
-- Проверка времени до события для event (24 часа, 2 часа, начало) - каждые 5-10 минут
-- Автоматический перевод speedCleanup в completed (24 часа после одобрения) - каждые 5-10 минут
+### Автоматические сроки (SLA) и cron
+
+Задачи выполняются при **POST `/api/cron/run`** (админ), по расписанию на сервере и при части вызовов списка заявок (без тяжёлых веток). Ниже — бизнес-правила, реализованные в **`scripts/cronTasks.js`**.
+
+#### 1. Исполнитель не сдал работу: **7 суток предупреждение → +1 сутки архив**
+
+| Категория | От чего считаем | Условие |
+|-----------|------------------|--------|
+| **wasteLocation** | **`created_at`** | Статус **`inProgress`**, есть **`joined_user_id`**. |
+| **speedCleanup** | **`created_at`** | Статус **`inProgress`** (в т.ч. только создатель). |
+| **event** | **`start_date`** | Статус **`inProgress`**, событие уже началось (`start_date <= сейчас`). **Перенос даты** = новое **`start_date`** в БД — отсчёт от актуальной даты. |
+
+- **На отметке 7 суток:** один раз пуш **создателю** (лог `cron_actions`: `executorStaleWarnCreator`).
+- **На отметке 8 суток:** статус **`archived`**, пуши создателю / исполнителю (если есть) / донатерам; **автоматический рефанд донатов не выполняется** в этой ветке (как у мягкого архива «истёк срок» для waste).
+
+#### 2. На модерации (`pending`): **7 суток пуш модераторам → +1 сутки архив с рефандом**
+
+Опорное время: **`submitted_for_review_at`** (при отсутствии — ориентир **`updated_at`** для старых записей).
+
+- **7 суток** в `pending`: пуш **всем админам** (`admin = true`, есть FCM), лог `moderationStaleWarnAdmins`.
+- **8 суток** в `pending`: **рефанд донатов** (Stripe), статус **`archived`**, поле **`submitted_for_review_at`** сбрасывается; **`participant_completions`** и **`work_duration_minutes`** **не** удаляются; **групповой чат не** удаляется; **jcoins на пользователях не** уменьшаются (отдельного отката начислений нет).
+
+#### 3. Прочее (кратко)
+
+- **wasteLocation `new`**, никто не присоединился: сутки после **`expires_at`** → **`archived`**.
+- **speedCleanup / event**, статусы **`new` / `inProgress`**, **8 суток** с **`created_at`** без ухода в **`pending`**: автоотклонение через **`handleRequestRejection`** (рефанды по донатам, как при отклонении).
+- Напоминания waste (2 ч / 24 ч), **checkEventAfterStartDate** (event после `start_date`), выплаты, **cleanupUnpaidRequests** (legacy `pending_payment`) и др. — по-прежнему в том же cron-скрипте.
+
+**Ответ POST `/api/cron/run`** может содержать блоки результатов, например **`checkExecutorStaleness`**, **`checkModerationReviewStale`**, **`deleteInactiveRequests`** (архив без исполнителя / автоотклонение speed-event и т.д.).
+
+---
+
+**Устаревший краткий список (для ориентира по частоте):**
+- Напоминания waste, истечение join 24 ч, уведомления о неактивных waste, проверка времени event, прочие задачи — как настроен интервал крона на хостинге (часто 5–15 минут или по ручному запуску).
 
 ---
 
@@ -5494,49 +5519,28 @@ Cron задачи выполняются автоматически через `
 
 **Требует аутентификации и прав администратора**
 
-**Ответ (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Cron задачи запущены",
-    "note": "Задачи выполняются в фоновом режиме. Проверьте статус через /api/cron/status"
-  }
-}
-```
+Запуск **синхронный**: сервер дожидается `runAllCronTasks()` и возвращает объект **`results`** (см. [Автоматические сроки (SLA) и cron](#автоматические-сроки-sla-и-cron)).
 
 **Ответ (200):**
 ```json
 {
   "success": true,
+  "message": "Success",
   "data": {
-    "message": "Cron задачи выполнены",
+    "message": "Cron tasks completed",
     "results": {
-      "autoCompleteSpeedCleanup": {
-        "processed": 2,
-        "errors": 0,
-        "total": 2
-      },
-      "checkWasteReminders": {
-        "processed": 1,
-        "errors": 0,
-        "total": 1
-      },
-      "checkExpiredWasteJoins": {
-        "processed": 0,
-        "errors": 0,
-        "total": 0
-      },
-      "checkEventTimes": {
-        "processed": 3,
-        "errors": 0,
-        "total": 3
-      },
-      "deleteInactiveRequests": {
-        "processed": 0,
-        "errors": 0,
-        "skipped": true
-      }
+      "autoCompleteSpeedCleanup": { "processed": 0, "errors": 0, "total": 0 },
+      "checkWasteReminders": { "processed": 0, "errors": 0, "total": 0 },
+      "checkExpiredWasteJoins": { "processed": 0, "errors": 0, "total": 0 },
+      "checkEventTimes": { "processed": 0, "errors": 0, "total": 0 },
+      "checkEventAfterStartDate": { "processed": 0, "warnings": 0, "errors": 0, "total": 0 },
+      "checkTransferPayoutAvailability": { "processed": 0, "errors": 0, "total": 0 },
+      "notifyInactiveWasteRequests": { "processed": 0, "errors": 0, "total": 0 },
+      "notifySuperadminsRequestNotClosed": { "processed": 0, "errors": 0, "total": 0 },
+      "cleanupUnpaidRequests": { "processed": 0, "errors": 0, "total": 0 },
+      "checkExecutorStaleness": { "warned": 0, "archived": 0, "errors": 0 },
+      "checkModerationReviewStale": { "warned": 0, "archived": 0, "errors": 0 },
+      "deleteInactiveRequests": { "processed": 0, "errors": 0, "total": 0 }
     }
   }
 }
@@ -5574,7 +5578,7 @@ Cron задачи выполняются автоматически через `
         "action_type": "autoCompleteSpeedCleanup",
         "request_id": "request-uuid",
         "request_category": "speedCleanup",
-        "action_description": "Автоматическое завершение заявки [id] через 24 часа после одобрения",
+        "action_description": "speedCleanup [id]: перевод в archived через 7 суток с created_at (выплата новых донатов перед архивом)",
         "status": "completed",
         "executed_at": "2025-12-01T10:30:00.000Z",
         "metadata": {
@@ -5604,7 +5608,7 @@ Cron задачи выполняются автоматически через `
         "request_id": "request-uuid",
         "request_category": "speedCleanup",
         "request_name": "Название заявки",
-        "action_description": "Автоматическое завершение заявки \"Название заявки\" через 24 часа после одобрения",
+        "action_description": "speedCleanup \"Название заявки\": архив через 7 суток с created_at при статусе approved",
         "scheduled_at": "2025-12-02T10:30:00.000Z",
         "time_until": 24.0
       },
@@ -5635,14 +5639,17 @@ Cron задачи выполняются автоматически через `
 
 **Типы действий:**
 
-1. **autoCompleteSpeedCleanup** - автоматическое завершение `speedCleanup` заявок через 24 часа после одобрения
+1. **autoCompleteSpeedCleanup** — `speedCleanup` в **`approved`**, **≥ 7 суток** с **`created_at`**: выплата новых донатов, затем **`archived`**
 2. **checkWasteReminders** - напоминание исполнителю `wasteLocation` заявки за 2 часа до окончания срока
 3. **checkExpiredWasteJoins** - проверка истечения срока для `wasteLocation` заявок (24 часа после присоединения)
 4. **checkEventTimes** - уведомления для `event` заявок:
    - За 24 часа до начала
    - За 2 часа до начала
    - Начало события
-5. **deleteInactiveRequests** - удаление неактивных заявок (7 дней без присоединения)
+5. **checkEventAfterStartDate**, **checkTransferPayoutAvailability**, **notifyInactiveWasteRequests**, **notifySuperadminsRequestNotClosed**, **cleanupUnpaidRequests** — вспомогательные задачи из `runAllCronTasks()` (см. `scripts/cronTasks.js`)
+6. **checkExecutorStaleness** / **executorStaleWarnCreator**, **executorStaleArchive** — SLA исполнителя **7+1** (см. [SLA и cron](#автоматические-сроки-sla-и-cron))
+7. **checkModerationReviewStale** / **moderationStaleWarnAdmins**, **moderationTimeoutArchive** — SLA модерации **`pending`** **7+1**
+8. **deleteInactiveRequests** — waste **`new`** после **`expires_at` + 1 день** → **`archived`**; speed/event **`new`/`inProgress`**, **8 суток** с **`created_at`** без **`pending`** → автоотклонение (**не** удаление строки)
 
 **Поля выполненных действий:**
 - `id` - ID действия
@@ -5686,30 +5693,10 @@ Cron задачи выполняются автоматически через `
 
 ### Текущие cron задачи
 
-1. **autoCompleteSpeedCleanup** - автоматический перевод `speedCleanup` заявок в `completed` через 24 часа после одобрения (`updated_at`)
-   - Начисление коинов донатерам (по 1 коину каждому)
-   - Отправка push-уведомлений донатерам
-   - Получение донатеров из таблицы `donations`
+Порядок вызовов в **`runAllCronTasks()`** (`scripts/cronTasks.js`):  
+**autoCompleteSpeedCleanup** → **checkWasteReminders** → **checkExpiredWasteJoins** → **checkEventTimes** → **checkEventAfterStartDate** → **checkTransferPayoutAvailability** → **notifyInactiveWasteRequests** → **notifySuperadminsRequestNotClosed** → **cleanupUnpaidRequests** → **checkExecutorStaleness** → **checkModerationReviewStale** → **deleteInactiveRequests**.
 
-2. **checkWasteReminders** - напоминание исполнителю `wasteLocation` заявки за 2 часа до окончания срока
-   - Находит заявки, где `join_date + 22 часа ≈ текущее время`
-   - Отправляет push-уведомление исполнителю
-
-3. **checkExpiredWasteJoins** - проверка истекших присоединений для `wasteLocation` заявок
-   - Находит заявки, где `join_date + 24 часа < текущее время`
-   - Отправляет push-уведомления исполнителю и создателю
-   - Меняет статус на `new` и обнуляет `joined_user_id` и `join_date`
-
-4. **checkEventTimes** - проверка времени до события для `event` заявок
-   - Уведомление за 24 часа до начала (всем из `registered_participants`)
-   - Уведомление за 2 часа до начала (всем из `registered_participants`)
-   - Уведомление о начале события (создателю)
-
-5. **deleteInactiveRequests** - удаление неактивных заявок
-   - Находит заявки со статусом `new`, где `created_at + 7 дней < текущее время`
-   - Отправляет push-уведомления создателю и донатерам
-   - Удаляет заявку из базы данных
-   - Выполняется только в полночь (00:00)
+Подробные сроки (**7+1** исполнитель и модерация, waste `expires_at`, автоотклонение speed/event) — в разделе [Автоматические сроки (SLA) и cron](#автоматические-сроки-sla-и-cron). Итог ручного запуска — в **`POST /api/cron/run`** (`data.results`).
 
 **Расписание:** Настраивается через переменную окружения `CRON_SCHEDULE` в `.env`:
 ```env
