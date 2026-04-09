@@ -248,6 +248,14 @@ async function commonsItemsToGalleryUrls(pool, userId, items, maxDownloads) {
   return urls;
 }
 
+async function markCleanupAsUsed(pool, objectid) {
+  const [result] = await pool.execute(
+    'UPDATE earthday_cleanups SET used_for_internal_request = 1 WHERE objectid = ?',
+    [objectid]
+  );
+  return (result && result.affectedRows ? Number(result.affectedRows) : 0) > 0;
+}
+
 function itemsSlurp(items, max) {
   const copy = items.slice();
   shuffleArrayInPlace(copy);
@@ -363,12 +371,18 @@ async function runEarthdayBulkCreateRequests(pool, userId, body) {
         photosBeforeUrls: [photoUrl],
         earthdayCleanupObjectid: j.objectid
       });
-      await pool.execute(
-        'UPDATE earthday_cleanups SET used_for_internal_request = 1 WHERE objectid = ?',
-        [j.objectid]
-      );
+      await markCleanupAsUsed(pool, j.objectid);
       created.push({ objectid: j.objectid, request_id: requestId });
     } catch (e) {
+      try {
+        await markCleanupAsUsed(pool, j.objectid);
+      } catch (markErr) {
+        errors.push({
+          objectid: j.objectid,
+          code: 'MARK_USED_FAILED',
+          message: markErr.message || 'Не удалось пометить запись как used_for_internal_request после ошибки создания'
+        });
+      }
       errors.push({
         objectid: j.objectid,
         code: 'CREATE_REQUEST',

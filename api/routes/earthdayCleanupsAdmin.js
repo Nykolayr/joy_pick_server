@@ -417,24 +417,11 @@ router.post('/sync', async (req, res) => {
  *
  * Тело: до 5 objectid за запрос (чанк с фронта): { "objectids": [...] } или object_ids.
  * Дубликаты удаляются; лимит: EARTHDAY_BULK_CHUNK_MAX (по умолчанию 5).
- * Если в батче не создано ни одной заявки — ответ 422 (детали в errorDetails).
+ * Даже если в батче не создано ни одной заявки — возвращаем успех с деталями ошибок.
  */
 router.post('/bulk-create-requests', async (req, res) => {
   try {
     const data = await runEarthdayBulkCreateRequests(pool, req.user.userId, req.body);
-    if (data.batch_all_failed) {
-      return error(
-        res,
-        'В этом батче не создано ни одной заявки',
-        422,
-        {
-          requested_count: data.requested_count,
-          created_count: data.created_count,
-          errors_count: data.errors_count,
-          errors: data.errors
-        }
-      );
-    }
     return success(res, data, 'Пакетное создание заявок из Earth Day выполнено');
   } catch (e) {
     if (e && e.code === 'VALIDATION') {
