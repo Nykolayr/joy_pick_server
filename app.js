@@ -11,6 +11,7 @@ require('dotenv').config();
 // Импорт API (явно index.js — иначе на части хостингов "Cannot find module './api'" )
 const apiApp = require('./api/index');
 const { runAllCronTasks } = require('./scripts/cronTasks');
+const { renderAppOpenLandingPage } = require('./api/utils/deeplinkLanding');
 
 const app = express();
 
@@ -87,7 +88,7 @@ app.get('/email-logo.png', (req, res) => {
   res.sendFile(path.join(__dirname, 'app_logo.png'));
 });
 
-// Диплинки: редирект 302 на joypick:// (кастомная схема приложения)
+// Диплинки: HTML-страница — пробуем joypick:// + кнопки App Store / Google Play (см. api/utils/deeplinkLanding.js)
 const DEEPLINK_CATEGORIES = ['waste_location', 'speed_cleanup', 'event'];
 app.get('/request/:category/:requestId', (req, res) => {
   const { category, requestId } = req.params;
@@ -97,14 +98,26 @@ app.get('/request/:category/:requestId', (req, res) => {
   if (!DEEPLINK_CATEGORIES.includes(category)) {
     return res.redirect(302, '/');
   }
-  res.redirect(302, `joypick://request/${encodeURIComponent(category)}/${encodeURIComponent(requestId)}`);
+  const appScheme = `joypick://request/${encodeURIComponent(category)}/${encodeURIComponent(requestId)}`;
+  const html = renderAppOpenLandingPage({
+    appScheme,
+    acceptLanguage: req.get('accept-language'),
+    page: 'request'
+  });
+  res.type('html').send(html);
 });
 app.get('/news/:newsId', (req, res) => {
   const { newsId } = req.params;
   if (!newsId) {
     return res.redirect(302, '/');
   }
-  res.redirect(302, `joypick://news/${encodeURIComponent(newsId)}`);
+  const appScheme = `joypick://news/${encodeURIComponent(newsId)}`;
+  const html = renderAppOpenLandingPage({
+    appScheme,
+    acceptLanguage: req.get('accept-language'),
+    page: 'news'
+  });
+  res.type('html').send(html);
 });
 
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
