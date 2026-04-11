@@ -15,6 +15,11 @@ const {
   fetchWikimediaPreviewByAttempts
 } = require('../utils/wikimediaCommonsEarthday');
 const { runEarthdayBulkCreateRequests } = require('../services/earthdayBulkCreateRequests');
+const {
+  createEarthdayBulkCreateJob,
+  getEarthdayBulkCreateJob,
+  listEarthdayBulkCreateJobs
+} = require('../services/earthdayBulkCreateJobs');
 
 const router = express.Router();
 
@@ -428,6 +433,56 @@ router.post('/bulk-create-requests', async (req, res) => {
       return error(res, e.message, 400);
     }
     return error(res, e.message || 'Ошибка пакетного создания заявок', 500, e);
+  }
+});
+
+/**
+ * POST /earthday-cleanups-admin/bulk-create-requests-async
+ * Поставить в очередь массовое создание (до EARTHDAY_ASYNC_BULK_MAX_IDS objectid).
+ * Ответ сразу: job_id + total; выполнение — в cron (processEarthdayBulkCreateJobsTick).
+ */
+router.post('/bulk-create-requests-async', async (req, res) => {
+  try {
+    const data = await createEarthdayBulkCreateJob(pool, req.user.userId, req.body);
+    return success(res, data, 'Задача массового создания заявок принята');
+  } catch (e) {
+    if (e && e.code === 'VALIDATION') {
+      return error(res, e.message, 400);
+    }
+    return error(res, e.message || 'Ошибка постановки задачи', 500, e);
+  }
+});
+
+/**
+ * GET /earthday-cleanups-admin/bulk-create-jobs
+ * Последние задачи текущего суперадмина (для восстановления после перезагрузки вкладки).
+ */
+router.get('/bulk-create-jobs', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const data = await listEarthdayBulkCreateJobs(pool, req.user.userId, limit);
+    return success(res, { items: data }, 'Список задач');
+  } catch (e) {
+    return error(res, e.message || 'Ошибка списка задач', 500, e);
+  }
+});
+
+/**
+ * GET /earthday-cleanups-admin/bulk-create-jobs/:jobId
+ * Статус и накопленные created/errors.
+ */
+router.get('/bulk-create-jobs/:jobId', async (req, res) => {
+  try {
+    const data = await getEarthdayBulkCreateJob(pool, req.params.jobId, req.user.userId);
+    if (!data) {
+      return error(res, 'Задача не найдена', 404);
+    }
+    return success(res, data, 'Статус задачи');
+  } catch (e) {
+    if (e && e.code === 'FORBIDDEN') {
+      return error(res, e.message, 403);
+    }
+    return error(res, e.message || 'Ошибка статуса задачи', 500, e);
   }
 });
 

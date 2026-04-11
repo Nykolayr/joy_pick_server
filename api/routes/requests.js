@@ -2697,13 +2697,17 @@ async function handleSpeedCleanupApproval(requestId, creatorId, earnedCoin) {
 /**
  * Перед переводом speedCleanup в archived: выплата только по донатам после одобрения (деньги — создателю, коины — только новым донатерам).
  * Вызывается из крона в autoCompleteSpeedCleanup. Идемпотентно по cron_actions.
+ *
+ * @returns {Promise<{ done: boolean, skipped?: boolean, paid?: number, hadPostApprovalDonations: boolean }>}
  */
 async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
   const [reqRows] = await pool.execute(
     'SELECT id, created_by, approved_at FROM requests WHERE id = ? AND category = ? AND status = ?',
     [requestId, 'speedCleanup', 'approved']
   );
-  if (reqRows.length === 0 || !reqRows[0].approved_at) return { done: false };
+  if (reqRows.length === 0 || !reqRows[0].approved_at) {
+    return { done: false, hadPostApprovalDonations: false };
+  }
   const creatorId = reqRows[0].created_by;
   const approvedAt = reqRows[0].approved_at;
 
@@ -2711,13 +2715,17 @@ async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
     `SELECT id FROM cron_actions WHERE action_type = 'payoutSpeedCleanupBeforeArchive' AND request_id = ? AND status = 'completed' LIMIT 1`,
     [requestId]
   );
-  if (alreadyDone.length > 0) return { done: true, skipped: true };
+  if (alreadyDone.length > 0) {
+    return { done: true, skipped: true, hadPostApprovalDonations: true };
+  }
 
   const [donations] = await pool.execute(
     'SELECT id, user_id, amount, payment_intent_id, created_at FROM donations WHERE request_id = ? AND created_at > ?',
     [requestId, approvedAt]
   );
-  if (donations.length === 0) return { done: true, paid: 0 };
+  if (donations.length === 0) {
+    return { done: true, paid: 0, hadPostApprovalDonations: false };
+  }
 
   const coinsToAward = 1;
   for (const d of donations) {
@@ -2785,7 +2793,7 @@ async function payoutSpeedCleanupNewDonationsBeforeArchive(requestId) {
   if (donorIds.length > 0) {
     sendRequestApprovedNotification({ userIds: donorIds, requestId, messageType: 'donor', requestCategory: 'speedCleanup' }).catch(() => {});
   }
-  return { done: true, paid: donations.length };
+  return { done: true, paid: donations.length, hadPostApprovalDonations: true };
 }
 
 /**

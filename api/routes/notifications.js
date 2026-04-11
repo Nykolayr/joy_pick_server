@@ -5,6 +5,8 @@ const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendNotificationToUsers } = require('../services/pushNotification');
 const { normalizeDatesInObject } = require('../utils/datetime');
+const { generateId } = require('../utils/uuid');
+const { resolveRequestIdFromSendPayload } = require('../utils/adminNotificationSendContext');
 
 const router = express.Router();
 
@@ -24,7 +26,10 @@ const router = express.Router();
  *     "initialPageName": "SomePage",
  *     "parameterData": "{\"key\":\"value\"}",
  *     "deeplink": "https://..."
- *   }
+ *   },
+ *   "trigger": "admin_request_reminder", // Опционально: тип/источник триггера
+ *   "send_reason": "Напоминание модератору", // Опционально; можно передать как "reason"
+ *   "request_id": "uuid" // Опционально; иначе подставится из data (request_id, deeplink, parameterData)
  * }
  */
 router.post('/send', authenticate, requireAdmin, [
@@ -35,6 +40,10 @@ router.post('/send', authenticate, requireAdmin, [
   body('image_url').optional().isURL().withMessage('Image URL must be valid'),
   body('sound').optional().isString(),
   body('data').optional().isObject(),
+  body('trigger').optional().isString().isLength({ max: 255 }).withMessage('trigger must be at most 255 chars'),
+  body('send_reason').optional().isString().isLength({ max: 8000 }).withMessage('send_reason too long'),
+  body('reason').optional().isString().isLength({ max: 8000 }).withMessage('reason too long'),
+  body('request_id').optional().isUUID().withMessage('request_id must be a valid UUID'),
 ], async (req, res) => {
   try {
     const validationErrors = validationResult(req);
@@ -42,7 +51,27 @@ router.post('/send', authenticate, requireAdmin, [
       return error(res, 'Validation error', 400, validationErrors.array());
     }
 
-    const { title, body: bodyText, user_ids, image_url, sound, data } = req.body;
+    const {
+      title,
+      body: bodyText,
+      user_ids,
+      image_url,
+      sound,
+      data,
+      trigger,
+      send_reason: sendReasonBody,
+      reason,
+      request_id: requestIdBody,
+    } = req.body;
+
+    const dataObj = data && typeof data === 'object' ? data : {};
+    const sendReason = sendReasonBody || reason || null;
+    const pushTrigger = trigger || null;
+    const resolvedRequestId = resolveRequestIdFromSendPayload({
+      request_id: requestIdBody,
+      data: dataObj,
+    });
+    const payloadJson = JSON.stringify(dataObj);
 
     // Отправляем уведомления
     const result = await sendNotificationToUsers({
@@ -75,6 +104,33 @@ router.post('/send', authenticate, requireAdmin, [
       });
     }
 
+    try {
+      const rowId = generateId();
+      await pool.execute(
+        `INSERT INTO admin_notification_sends (
+          id, title, body, push_trigger, send_reason, request_id, payload_json,
+          image_url, sent_by_user_id,
+          recipient_count, success_count, failed_count, sent_at
+        ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, NOW())`,
+        [
+          rowId,
+          title,
+          bodyText,
+          pushTrigger,
+          sendReason,
+          resolvedRequestId,
+          payloadJson,
+          image_url || null,
+          req.user.userId || null,
+          user_ids.length,
+          result.successCount,
+          result.failureCount,
+        ]
+      );
+    } catch (logErr) {
+      console.error('Ошибка записи истории admin_notification_sends:', logErr);
+    }
+
     // Если хотя бы одно уведомление отправилось, возвращаем успех
     success(res, {
       sent: result.successCount,
@@ -84,6 +140,80 @@ router.post('/send', authenticate, requireAdmin, [
   } catch (err) {
     console.error('Ошибка массовой рассылки уведомлений:', err);
     error(res, 'Error sending notifications', 500, err);
+  }
+});
+
+/**
+ * GET /api/notifications/admin/sent
+ * История массовых рассылок из админки (успешные POST /send).
+ */
+router.get('/admin/sent', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const [[{ total: totalRaw }]] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM admin_notification_sends'
+    );
+    const total = Number(totalRaw) || 0;
+
+    const [rows] = await pool.execute(
+      `SELECT id, title, body, push_trigger, send_reason, request_id, payload_json,
+              image_url, sent_by_user_id,
+              recipient_count, success_count, failed_count, sent_at
+       FROM admin_notification_sends
+       ORDER BY sent_at DESC
+       LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+    );
+
+    const items = rows.map((row) => {
+      let payloadData = {};
+      if (row.payload_json != null) {
+        if (typeof row.payload_json === 'string') {
+          try {
+            payloadData = JSON.parse(row.payload_json);
+          } catch (_) {
+            payloadData = {};
+          }
+        } else if (typeof row.payload_json === 'object') {
+          payloadData = { ...row.payload_json };
+        }
+      }
+
+      const normalized = normalizeDatesInObject(
+        {
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          trigger: row.push_trigger ?? null,
+          send_reason: row.send_reason ?? null,
+          request_id: row.request_id ?? null,
+          data: payloadData,
+          sent_at: row.sent_at,
+          recipient_count: row.recipient_count,
+          success_count: row.success_count,
+          failed_count: row.failed_count,
+          sent_by_user_id: row.sent_by_user_id || undefined,
+          image_url: row.image_url || undefined,
+        },
+        ['sent_at']
+      );
+      return normalized;
+    });
+
+    success(res, {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: limit > 0 ? Math.ceil(total / limit) : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Ошибка получения истории admin_notification_sends:', err);
+    error(res, 'Error fetching notification send history', 500, err);
   }
 });
 

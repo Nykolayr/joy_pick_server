@@ -81,7 +81,7 @@ async function autoCompleteSpeedCleanup() {
       try {
         const requestId = request.id;
         // Сначала выплата по донатам после одобрения (деньги создателю, коины только новым донатерам)
-        await payoutSpeedCleanupNewDonationsBeforeArchive(requestId);
+        const payoutResult = await payoutSpeedCleanupNewDonationsBeforeArchive(requestId);
 
         // Перевод в archived (после выплат и окончания срока)
         await pool.execute(
@@ -91,9 +91,10 @@ async function autoCompleteSpeedCleanup() {
 
         if (request.created_by) {
           try {
+            const hadDonations = Boolean(payoutResult.hadPostApprovalDonations);
             await sendSpeedCleanupNotification({
               userIds: [request.created_by],
-              messageType: 'executor',
+              messageType: hadDonations ? 'executor' : 'executorArchiveNoDonations',
               requestId: requestId,
             });
           } catch (pushError) {}
@@ -1501,6 +1502,13 @@ async function runAllCronTasks() {
     // заявки месяцами оставались активными. Запускаем при каждом проходе крона.
     results.deleteInactiveRequests = await deleteInactiveRequests();
 
+    try {
+      const { processEarthdayBulkCreateJobsTick } = require('../api/services/earthdayBulkCreateJobs');
+      results.earthdayBulkCreateJobs = await processEarthdayBulkCreateJobsTick(pool);
+    } catch (earthdayJobErr) {
+      results.earthdayBulkCreateJobs = { error: earthdayJobErr.message || 'earthdayBulkCreateJobs failed' };
+    }
+
   } catch (error) {
     // Сохраняем ошибку в файл
     try {
@@ -1592,6 +1600,10 @@ if (require.main === module) {
 
 module.exports = { 
   runAllCronTasks, 
+  earthdayBulkCreateJobsTick: async () => {
+    const { processEarthdayBulkCreateJobsTick } = require('../api/services/earthdayBulkCreateJobs');
+    return processEarthdayBulkCreateJobsTick(pool);
+  },
   autoCompleteSpeedCleanup,
   checkWasteReminders,
   checkExpiredWasteJoins,

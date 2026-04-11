@@ -639,8 +639,8 @@ async function sendDonationNotification({ requestId, requestName, requestCategor
  * @param {Object} options - Параметры уведомления
  * @param {Array<string>} options.userIds - Массив ID пользователей
  * @param {boolean} options.earnedCoin - Заработан ли коин (для донатеров)
- * @param {string} options.messageType - Тип сообщения: 'donor' (донатерам), 'executor' (исполнителю о получении донатов)
- * @param {string} options.requestId - ID заявки (для deeplink, если messageType = 'executor')
+ * @param {string} options.messageType - 'donor' | 'executor' (донаты после одобрения при архиве) | 'executorArchiveNoDonations' (архив без таких донатов)
+ * @param {string} options.requestId - ID заявки (для deeplink у исполнителя)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
 async function sendSpeedCleanupNotification({ userIds, earnedCoin, messageType = 'donor', requestId = null }) {
@@ -650,6 +650,9 @@ async function sendSpeedCleanupNotification({ userIds, earnedCoin, messageType =
     // Уведомление исполнителю о получении донатов
     title = 'Donations Received';
     body = 'You have received donations for your cleanup work!';
+  } else if (messageType === 'executorArchiveNoDonations') {
+    title = 'Request completed';
+    body = 'Your speed cleanup request has been archived.';
   } else {
     // Уведомление донатерам о коинах
     title = 'Thank you!';
@@ -664,8 +667,10 @@ async function sendSpeedCleanupNotification({ userIds, earnedCoin, messageType =
     messageType: messageType,
   };
 
-  // Добавляем deeplink для исполнителя
-  if (messageType === 'executor' && requestId) {
+  if (
+    requestId &&
+    (messageType === 'executor' || messageType === 'executorArchiveNoDonations')
+  ) {
     data.deeplink = `joypick://speed_cleanup/${requestId}`;
   }
 
