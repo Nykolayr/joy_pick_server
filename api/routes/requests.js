@@ -375,25 +375,22 @@ router.get('/my', authenticate, async (req, res) => {
 });
 
 /**
- * GET /api/requests/:id
- * Получение заявки по ID
+ * Собрать объект заявки как в GET /api/requests/:id (поле request).
+ * @returns {Promise<{ request: object }|null>}
  */
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
+async function buildRequestDetailForApi(pool, id) {
+  const [requests] = await pool.execute(
+    `SELECT r.*
+    FROM requests r
+    WHERE r.id = ?`,
+    [id]
+  );
 
-    const [requests] = await pool.execute(
-      `SELECT r.*
-      FROM requests r
-      WHERE r.id = ?`,
-      [id]
-    );
+  if (requests.length === 0) {
+    return null;
+  }
 
-    if (requests.length === 0) {
-      return error(res, 'Request not found', 404);
-    }
-
-    const request = requests[0];
+  const request = requests[0];
     
     // Участники для event хранятся в JSON поле actual_participants (только реальные участники)
     // Для получения всех участников (включая зарегистрированных) нужно использовать таблицу donations или другой механизм
@@ -558,7 +555,20 @@ router.get('/:id', async (req, res) => {
       );
     }
 
-    success(res, { request: normalizedRequest });
+    return { request: normalizedRequest };
+}
+
+/**
+ * GET /api/requests/:id
+ * Получение заявки по ID
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const result = await buildRequestDetailForApi(pool, req.params.id);
+    if (!result) {
+      return error(res, 'Request not found', 404);
+    }
+    success(res, result);
   } catch (err) {
     error(res, 'Error fetching request', 500, err);
   }
@@ -3465,6 +3475,7 @@ router.post('/create-with-payment', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildRequestDetailForApi = buildRequestDetailForApi;
 module.exports.handleRequestRejection = handleRequestRejection;
 module.exports.handleEventApproval = handleEventApproval;
 module.exports.handleSpeedCleanupApproval = handleSpeedCleanupApproval;

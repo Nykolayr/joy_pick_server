@@ -6,9 +6,47 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendNotificationToUsers } = require('../services/pushNotification');
 const { normalizeDatesInObject } = require('../utils/datetime');
 const { generateId } = require('../utils/uuid');
-const { resolveRequestIdFromSendPayload } = require('../utils/adminNotificationSendContext');
+const {
+  resolveRequestIdFromSendPayload,
+  isUuid,
+} = require('../utils/adminNotificationSendContext');
+const { buildRequestDetailForApi } = require('./requests');
 
 const router = express.Router();
+
+function mapAdminNotificationSendRow(row) {
+  let payloadData = {};
+  if (row.payload_json != null) {
+    if (typeof row.payload_json === 'string') {
+      try {
+        payloadData = JSON.parse(row.payload_json);
+      } catch (_) {
+        payloadData = {};
+      }
+    } else if (typeof row.payload_json === 'object') {
+      payloadData = { ...row.payload_json };
+    }
+  }
+
+  return normalizeDatesInObject(
+    {
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      trigger: row.push_trigger ?? null,
+      send_reason: row.send_reason ?? null,
+      request_id: row.request_id ?? null,
+      data: payloadData,
+      sent_at: row.sent_at,
+      recipient_count: row.recipient_count,
+      success_count: row.success_count,
+      failed_count: row.failed_count,
+      sent_by_user_id: row.sent_by_user_id || undefined,
+      image_url: row.image_url || undefined,
+    },
+    ['sent_at']
+  );
+}
 
 /**
  * POST /api/notifications/send
@@ -167,40 +205,7 @@ router.get('/admin/sent', authenticate, requireAdmin, async (req, res) => {
        LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
     );
 
-    const items = rows.map((row) => {
-      let payloadData = {};
-      if (row.payload_json != null) {
-        if (typeof row.payload_json === 'string') {
-          try {
-            payloadData = JSON.parse(row.payload_json);
-          } catch (_) {
-            payloadData = {};
-          }
-        } else if (typeof row.payload_json === 'object') {
-          payloadData = { ...row.payload_json };
-        }
-      }
-
-      const normalized = normalizeDatesInObject(
-        {
-          id: row.id,
-          title: row.title,
-          body: row.body,
-          trigger: row.push_trigger ?? null,
-          send_reason: row.send_reason ?? null,
-          request_id: row.request_id ?? null,
-          data: payloadData,
-          sent_at: row.sent_at,
-          recipient_count: row.recipient_count,
-          success_count: row.success_count,
-          failed_count: row.failed_count,
-          sent_by_user_id: row.sent_by_user_id || undefined,
-          image_url: row.image_url || undefined,
-        },
-        ['sent_at']
-      );
-      return normalized;
-    });
+    const items = rows.map((row) => mapAdminNotificationSendRow(row));
 
     success(res, {
       items,
@@ -214,6 +219,43 @@ router.get('/admin/sent', authenticate, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Ошибка получения истории admin_notification_sends:', err);
     error(res, 'Error fetching notification send history', 500, err);
+  }
+});
+
+/**
+ * GET /api/notifications/admin/sent/:id
+ * Одна запись истории рассылки + заявка (если есть request_id).
+ */
+router.get('/admin/sent/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) {
+      return error(res, 'Invalid id', 400);
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT id, title, body, push_trigger, send_reason, request_id, payload_json,
+              image_url, sent_by_user_id,
+              recipient_count, success_count, failed_count, sent_at
+       FROM admin_notification_sends WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return error(res, 'Notification send not found', 404);
+    }
+
+    const send = mapAdminNotificationSendRow(rows[0]);
+    let request = null;
+    if (send.request_id) {
+      const detail = await buildRequestDetailForApi(pool, send.request_id);
+      request = detail ? detail.request : null;
+    }
+
+    success(res, { send, request });
+  } catch (err) {
+    console.error('Ошибка получения записи admin_notification_sends:', err);
+    error(res, 'Error fetching notification send', 500, err);
   }
 });
 
