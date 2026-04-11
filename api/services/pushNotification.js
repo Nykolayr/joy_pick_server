@@ -1,6 +1,7 @@
 const { admin } = require('../config/firebase');
 const pool = require('../config/database');
 const { generateId } = require('../utils/uuid');
+const { resolveRequestIdFromSendPayload } = require('../utils/adminNotificationSendContext');
 
 /**
  * Сохранение push-уведомления в базу данных
@@ -20,6 +21,65 @@ async function saveNotificationToDatabase(userId, title, body, data = {}) {
   } catch (error) {
     console.error(`❌ Ошибка сохранения уведомления в БД для пользователя ${userId}:`, error);
     // Не прерываем выполнение, только логируем ошибку
+  }
+}
+
+/**
+ * Журнал исходящих push (админка GET /notifications/admin/sent): ручные + системные/cron.
+ */
+async function insertOutboundNotificationSendRow({
+  title,
+  body,
+  imageUrl = null,
+  data = {},
+  recipientCount,
+  successCount,
+  failedCount,
+  outboundLog = null,
+}) {
+  try {
+    const sendSource =
+      outboundLog && outboundLog.send_source === 'admin_manual'
+        ? 'admin_manual'
+        : 'system';
+    const sentByUserId =
+      sendSource === 'admin_manual' ? outboundLog.sent_by_user_id || null : null;
+    const pushTrigger =
+      (outboundLog && outboundLog.push_trigger) ||
+      (data && data.type != null ? String(data.type) : null) ||
+      'system_push';
+    const sendReason =
+      (outboundLog && outboundLog.send_reason) || null;
+    const requestId =
+      (outboundLog && outboundLog.request_id) ||
+      resolveRequestIdFromSendPayload({ request_id: null, data: data || {} }) ||
+      null;
+    const dataObj = data && typeof data === 'object' ? data : {};
+    const rowId = generateId();
+    await pool.execute(
+      `INSERT INTO admin_notification_sends (
+        id, title, body, push_trigger, send_reason, request_id, payload_json,
+        image_url, sent_by_user_id, send_source,
+        recipient_count, success_count, failed_count, sent_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        rowId,
+        title,
+        body,
+        pushTrigger,
+        sendReason,
+        requestId,
+        JSON.stringify(dataObj),
+        imageUrl || null,
+        sentByUserId,
+        sendSource,
+        recipientCount,
+        successCount,
+        failedCount,
+      ]
+    );
+  } catch (err) {
+    console.error('❌ Ошибка записи журнала admin_notification_sends:', err.message || err);
   }
 }
 
@@ -344,19 +404,36 @@ async function sendRequestCreatedNotification(requestData) {
     const notificationBody = `${name}\nCreated by: ${creatorName}`;
 
     // Отправляем уведомления
+    const pushData = {
+      initialPageName: 'RequestDetails',
+      parameterData: JSON.stringify({
+        requestId: id,
+        category: category,
+      }),
+      deeplink: deeplink,
+    };
+
     const result = await sendPushNotifications({
       title: notificationTitle,
       body: notificationBody,
       tokens,
       imageUrl: firstPhoto,
       sound: 'default',
-      data: {
-        initialPageName: 'RequestDetails',
-        parameterData: JSON.stringify({
-          requestId: id,
-          category: category,
-        }),
-        deeplink: deeplink,
+      data: pushData,
+    });
+
+    await insertOutboundNotificationSendRow({
+      title: notificationTitle,
+      body: notificationBody,
+      imageUrl: firstPhoto,
+      data: pushData,
+      recipientCount: tokens.length,
+      successCount: result.successCount,
+      failedCount: result.failureCount,
+      outboundLog: {
+        send_source: 'system',
+        push_trigger: 'request_created_nearby',
+        request_id: id,
       },
     });
 
@@ -376,9 +453,18 @@ async function sendRequestCreatedNotification(requestData) {
  * @param {string} options.imageUrl - URL изображения (опционально)
  * @param {string} options.sound - Звук уведомления (опционально)
  * @param {Object} options.data - Дополнительные данные (опционально)
+ * @param {Object} [options.outboundLog] - Журнал admin_notification_sends: для POST /send — send_source admin_manual и sent_by_user_id; иначе системный пуш.
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, sound = 'default', data = {} }) {
+async function sendNotificationToUsers({
+  title,
+  body,
+  userIds,
+  imageUrl = null,
+  sound = 'default',
+  data = {},
+  outboundLog = null,
+}) {
   if (!userIds || userIds.length === 0) {
     console.log('ℹ️ Нет пользователей для отправки уведомлений');
     return { 
@@ -388,6 +474,8 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
       reason: 'userIds is empty or not specified'
     };
   }
+
+  const recipientCount = userIds.length;
 
   try {
     // Получаем токены пользователей
@@ -413,6 +501,17 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
         const emails = usersWithoutTokens.map(u => u.email || u.id).join(', ');
         reason += `. Users without tokens: ${emails}`;
       }
+
+      await insertOutboundNotificationSendRow({
+        title,
+        body,
+        imageUrl,
+        data,
+        recipientCount,
+        successCount: 0,
+        failedCount: recipientCount,
+        outboundLog,
+      });
       
       return { 
         successCount: 0, 
@@ -446,9 +545,30 @@ async function sendNotificationToUsers({ title, body, userIds, imageUrl = null, 
       result.reason = result.reason || 'Error sending via FCM';
     }
 
+    await insertOutboundNotificationSendRow({
+      title,
+      body,
+      imageUrl,
+      data,
+      recipientCount,
+      successCount: result.successCount,
+      failedCount: result.failureCount,
+      outboundLog,
+    });
+
     return result;
   } catch (error) {
     console.error('❌ Ошибка отправки уведомлений пользователям:', error);
+    await insertOutboundNotificationSendRow({
+      title,
+      body,
+      imageUrl,
+      data,
+      recipientCount,
+      successCount: 0,
+      failedCount: recipientCount,
+      outboundLog,
+    });
     return { 
       successCount: 0, 
       failureCount: userIds.length,

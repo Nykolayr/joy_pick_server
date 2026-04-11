@@ -4973,9 +4973,13 @@ Future<Map<String, dynamic>> sendNotificationToUsers({
 }
 ```
 
-#### История массовых рассылок (админка)
+#### Журнал исходящих push (админка)
 
-После **успешного** ответа `POST /api/notifications/send` (когда отправилось хотя бы одно уведомление) сервер записывает одну строку в таблицу `admin_notification_sends`: текст (`title`, `body`), `trigger`, `send_reason`, `request_id` (явный или выведенный из `data`), полная копия `data` в JSON, счётчики и отправитель. Отдельно в `push_notifications` пишется запись в инбокс **каждого** получателя.
+В таблицу `admin_notification_sends` пишется **каждая** отправка через `sendNotificationToUsers` (модерация, закрытие заявки, донаты, напоминания, крон и т.д.) и отдельно пуш «новая заявка рядом» по координатам. Ручной массовый `POST /api/notifications/send` помечается **`source`: `admin_manual`** и `sent_by_user_id`; остальное — **`source`: `system`**, `sent_by_user_id` обычно отсутствует. Поле **`trigger`** для системных чаще берётся из `data.type`, иначе служебная метка (например `system_push`, `request_created_nearby`). Для ручной рассылки по-прежнему можно передать `trigger` / `send_reason` / `request_id` в теле `POST /send`.
+
+Требуется миграция **`036_admin_notification_sends_source.sql`** (поле `send_source` в БД).
+
+Отдельно в `push_notifications` по-прежнему пишется инбокс **каждого** получателя (если логика сохранения включена для этого сценария).
 
 **Эндпоинт:** `GET /api/notifications/admin/sent`
 
@@ -4999,6 +5003,7 @@ Future<Map<String, dynamic>> sendNotificationToUsers({
         "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "title": "Заголовок",
         "body": "Текст",
+        "source": "admin_manual",
         "trigger": "admin_request_reminder",
         "send_reason": "Напоминание перед датой мероприятия",
         "request_id": "353f958d-8796-44c7-a877-3e376eca6784",
@@ -5023,7 +5028,7 @@ Future<Map<String, dynamic>> sendNotificationToUsers({
 }
 ```
 
-Поля `sent_by_user_id`, `image_url`, `trigger`, `send_reason`, `request_id` могут быть `null`, если не передавали или не удалось вывести заявку. `data` — объект из тела `POST /send` (пустой `{}`, если не было). Список от новых к старым. При отсутствии записей: `items: []`, `total: 0`.
+Поле **`source`**: `admin_manual` | `system`. Поля `sent_by_user_id`, `image_url`, `trigger`, `send_reason`, `request_id` могут быть `null`. `data` — payload push (для ручной рассылки — из тела `POST /send`). Список от новых к старым. При отсутствии записей: `items: []`, `total: 0`.
 
 **Ошибки:** `401`, `403` (не админ), `500`.
 
@@ -5046,6 +5051,7 @@ Future<Map<String, dynamic>> sendNotificationToUsers({
       "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       "title": "Заголовок",
       "body": "Текст",
+      "source": "admin_manual",
       "trigger": "admin_request_reminder",
       "send_reason": "Напоминание перед датой мероприятия",
       "request_id": "353f958d-8796-44c7-a877-3e376eca6784",

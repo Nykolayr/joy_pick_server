@@ -5,7 +5,6 @@ const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendNotificationToUsers } = require('../services/pushNotification');
 const { normalizeDatesInObject } = require('../utils/datetime');
-const { generateId } = require('../utils/uuid');
 const {
   resolveRequestIdFromSendPayload,
   isUuid,
@@ -28,11 +27,19 @@ function mapAdminNotificationSendRow(row) {
     }
   }
 
+  const source =
+    row.send_source != null && String(row.send_source).trim() !== ''
+      ? String(row.send_source).trim()
+      : row.sent_by_user_id
+        ? 'admin_manual'
+        : 'system';
+
   return normalizeDatesInObject(
     {
       id: row.id,
       title: row.title,
       body: row.body,
+      source,
       trigger: row.push_trigger ?? null,
       send_reason: row.send_reason ?? null,
       request_id: row.request_id ?? null,
@@ -109,7 +116,6 @@ router.post('/send', authenticate, requireAdmin, [
       request_id: requestIdBody,
       data: dataObj,
     });
-    const payloadJson = JSON.stringify(dataObj);
 
     // Отправляем уведомления
     const result = await sendNotificationToUsers({
@@ -119,6 +125,13 @@ router.post('/send', authenticate, requireAdmin, [
       imageUrl: image_url || null,
       sound: sound || 'default',
       data: data || {},
+      outboundLog: {
+        send_source: 'admin_manual',
+        sent_by_user_id: req.user.userId || null,
+        push_trigger: pushTrigger,
+        send_reason: sendReason,
+        request_id: resolvedRequestId,
+      },
     });
 
     // Проверяем результат отправки
@@ -142,33 +155,6 @@ router.post('/send', authenticate, requireAdmin, [
       });
     }
 
-    try {
-      const rowId = generateId();
-      await pool.execute(
-        `INSERT INTO admin_notification_sends (
-          id, title, body, push_trigger, send_reason, request_id, payload_json,
-          image_url, sent_by_user_id,
-          recipient_count, success_count, failed_count, sent_at
-        ) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, NOW())`,
-        [
-          rowId,
-          title,
-          bodyText,
-          pushTrigger,
-          sendReason,
-          resolvedRequestId,
-          payloadJson,
-          image_url || null,
-          req.user.userId || null,
-          user_ids.length,
-          result.successCount,
-          result.failureCount,
-        ]
-      );
-    } catch (logErr) {
-      console.error('Ошибка записи истории admin_notification_sends:', logErr);
-    }
-
     // Если хотя бы одно уведомление отправилось, возвращаем успех
     success(res, {
       sent: result.successCount,
@@ -183,7 +169,7 @@ router.post('/send', authenticate, requireAdmin, [
 
 /**
  * GET /api/notifications/admin/sent
- * История массовых рассылок из админки (успешные POST /send).
+ * Журнал исходящих push: POST /send и все вызовы sendNotificationToUsers (модерация, закрытие заявки и т.д.).
  */
 router.get('/admin/sent', authenticate, requireAdmin, async (req, res) => {
   try {
@@ -198,7 +184,7 @@ router.get('/admin/sent', authenticate, requireAdmin, async (req, res) => {
 
     const [rows] = await pool.execute(
       `SELECT id, title, body, push_trigger, send_reason, request_id, payload_json,
-              image_url, sent_by_user_id,
+              image_url, sent_by_user_id, send_source,
               recipient_count, success_count, failed_count, sent_at
        FROM admin_notification_sends
        ORDER BY sent_at DESC
@@ -235,7 +221,7 @@ router.get('/admin/sent/:id', authenticate, requireAdmin, async (req, res) => {
 
     const [rows] = await pool.execute(
       `SELECT id, title, body, push_trigger, send_reason, request_id, payload_json,
-              image_url, sent_by_user_id,
+              image_url, sent_by_user_id, send_source,
               recipient_count, success_count, failed_count, sent_at
        FROM admin_notification_sends WHERE id = ? LIMIT 1`,
       [id]
