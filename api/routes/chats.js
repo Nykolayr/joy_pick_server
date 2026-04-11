@@ -50,6 +50,18 @@ function safeParseJsonArray(value) {
   return [];
 }
 
+function senderFromMessageRow(msg) {
+  const name =
+    msg.sender_display_name != null && String(msg.sender_display_name).trim() !== ''
+      ? msg.sender_display_name
+      : 'Удалённый аккаунт';
+  return {
+    id: msg.sender_id,
+    display_name: name,
+    photo_url: msg.sender_photo_url != null ? msg.sender_photo_url : null
+  };
+}
+
 /**
  * Автоматически добавляет участников в приватный чат, если они не добавлены
  * @param {string} chatId - ID чата
@@ -961,13 +973,13 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
       }
     }
 
-    // Получаем сообщения
+    // Получаем сообщения (LEFT JOIN: сообщение не пропадает, если строка отправителя в users удалена)
     let query = `
       SELECT m.*, 
         u.display_name as sender_display_name,
         u.photo_url as sender_photo_url
       FROM messages m
-      INNER JOIN users u ON m.sender_id = u.id
+      LEFT JOIN users u ON m.sender_id = u.id
       WHERE m.chat_id = ? AND m.deleted_at IS NULL
     `;
     const params = [chatId];
@@ -1009,15 +1021,11 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     const total = countResult[0].total;
 
     // Формируем ответ с данными отправителя
-    const formattedMessages = messages.map(msg => ({
+    const formattedMessages = messages.map((msg) => ({
       id: msg.id,
       chat_id: msg.chat_id,
       sender_id: msg.sender_id,
-      sender: {
-        id: msg.sender_id,
-        display_name: msg.sender_display_name,
-        photo_url: msg.sender_photo_url
-      },
+      sender: senderFromMessageRow(msg),
       message: msg.message,
       message_type: msg.message_type,
       created_at: msg.created_at,
@@ -1178,41 +1186,51 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       .map(p => p.user_id)
       .filter(id => id !== userId); // Все остальные участники
 
-    // Сохраняем сообщение с JSON полями
+    // INSERT + обновление чата + выборка — в одной транзакции на одном соединении (меньше гонок с пулом, откат при сбое до commit)
     const messageId = generateId();
-    await pool.execute(
-      `INSERT INTO messages (id, chat_id, sender_id, message, message_type, created_at, read_by, unread_by)
-       VALUES (?, ?, ?, ?, ?, NOW(), ?, ?)`,
-      [
-        messageId,
-        chatId,
-        userId,
-        message,
-        message_type,
-        JSON.stringify(readBy),
-        unreadBy.length > 0 ? JSON.stringify(unreadBy) : null
-      ]
-    );
-    
+    let messageData;
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.execute(
+        `INSERT INTO messages (id, chat_id, sender_id, message, message_type, created_at, read_by, unread_by)
+         VALUES (?, ?, ?, ?, ?, NOW(), ?, ?)`,
+        [
+          messageId,
+          chatId,
+          userId,
+          message,
+          message_type,
+          JSON.stringify(readBy),
+          unreadBy.length > 0 ? JSON.stringify(unreadBy) : null
+        ]
+      );
+      await conn.execute(`UPDATE chats SET last_message_at = NOW() WHERE id = ?`, [chatId]);
+      const [insertedRows] = await conn.execute(
+        `SELECT m.*, 
+          u.display_name as sender_display_name,
+          u.photo_url as sender_photo_url
+        FROM messages m
+        LEFT JOIN users u ON m.sender_id = u.id
+        WHERE m.id = ?`,
+        [messageId]
+      );
+      await conn.commit();
+      messageData = insertedRows[0];
+    } catch (txErr) {
+      try {
+        await conn.rollback();
+      } catch (_) {
+        /* ignore */
+      }
+      throw txErr;
+    } finally {
+      conn.release();
+    }
 
-    // Обновляем last_message_at в чате
-    await pool.execute(
-      `UPDATE chats SET last_message_at = NOW() WHERE id = ?`,
-      [chatId]
-    );
-
-    // Получаем сохраненное сообщение
-    const [messages] = await pool.execute(
-      `SELECT m.*, 
-        u.display_name as sender_display_name,
-        u.photo_url as sender_photo_url
-      FROM messages m
-      INNER JOIN users u ON m.sender_id = u.id
-      WHERE m.id = ?`,
-      [messageId]
-    );
-
-    const messageData = messages[0];
+    if (!messageData) {
+      return error(res, 'Сообщение не удалось прочитать после сохранения', 500);
+    }
     
     // Безопасный парсинг JSON полей
     messageData.read_by = safeParseJsonArray(messageData.read_by);
@@ -1326,7 +1344,7 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       }
     }
 
-    // Получаем все непрочитанные сообщения для этого пользователя
+    // Все непрочитанные для пользователя — одна транзакция на одном соединении (меньше round-trip к пулу при серии UPDATE)
     const [messages] = await pool.execute(
       `SELECT id, read_by, unread_by FROM messages 
        WHERE chat_id = ? 
@@ -1335,30 +1353,43 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       [chatId, userId]
     );
 
-    // Обновляем каждое сообщение: перемещаем userId из unread_by в read_by
-    for (const message of messages) {
-      let readBy = safeParseJsonArray(message.read_by);
-      let unreadBy = safeParseJsonArray(message.unread_by);
+    if (messages.length > 0) {
+      const readConn = await pool.getConnection();
+      try {
+        await readConn.beginTransaction();
+        for (const message of messages) {
+          let readBy = safeParseJsonArray(message.read_by);
+          let unreadBy = safeParseJsonArray(message.unread_by);
 
-      // Перемещаем userId из unread_by в read_by
-      if (unreadBy.includes(userId)) {
-        unreadBy = unreadBy.filter(id => id !== userId);
-        if (!readBy.includes(userId)) {
-          readBy.push(userId);
+          if (unreadBy.includes(userId)) {
+            unreadBy = unreadBy.filter((id) => id !== userId);
+            if (!readBy.includes(userId)) {
+              readBy.push(userId);
+            }
+          }
+
+          await readConn.execute(
+            `UPDATE messages 
+             SET read_by = ?, unread_by = ? 
+             WHERE id = ?`,
+            [
+              JSON.stringify(readBy),
+              unreadBy.length > 0 ? JSON.stringify(unreadBy) : null,
+              message.id
+            ]
+          );
         }
+        await readConn.commit();
+      } catch (readTxErr) {
+        try {
+          await readConn.rollback();
+        } catch (_) {
+          /* ignore */
+        }
+        throw readTxErr;
+      } finally {
+        readConn.release();
       }
-
-      // Обновляем сообщение
-      await pool.execute(
-        `UPDATE messages 
-         SET read_by = ?, unread_by = ? 
-         WHERE id = ?`,
-        [
-          JSON.stringify(readBy),
-          unreadBy.length > 0 ? JSON.stringify(unreadBy) : null,
-          message.id
-        ]
-      );
     }
 
     // Отправляем через SSE (Server-Sent Events)
@@ -1580,13 +1611,13 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
       return error(res, 'Chat not found', 404);
     }
 
-    // Получаем сообщения (аналогично обычному endpoint)
+    // Получаем сообщения (аналогично обычному endpoint; LEFT JOIN — не теряем сообщения без users)
     let query = `
       SELECT m.*, 
         u.display_name as sender_display_name,
         u.photo_url as sender_photo_url
       FROM messages m
-      INNER JOIN users u ON m.sender_id = u.id
+      LEFT JOIN users u ON m.sender_id = u.id
       WHERE m.chat_id = ? AND m.deleted_at IS NULL
     `;
     const params = [chatId];
@@ -1627,15 +1658,11 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
     const [countResult] = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
-    const formattedMessages = messages.map(msg => ({
+    const formattedMessages = messages.map((msg) => ({
       id: msg.id,
       chat_id: msg.chat_id,
       sender_id: msg.sender_id,
-      sender: {
-        id: msg.sender_id,
-        display_name: msg.sender_display_name,
-        photo_url: msg.sender_photo_url
-      },
+      sender: senderFromMessageRow(msg),
       message: msg.message,
       message_type: msg.message_type,
       created_at: msg.created_at,
