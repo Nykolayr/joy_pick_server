@@ -18,6 +18,7 @@ const { runEarthdayBulkCreateRequests } = require('../services/earthdayBulkCreat
 const {
   createEarthdayBulkCreateJob,
   getEarthdayBulkCreateJob,
+  getActiveEarthdayBulkCreateJobSnapshot,
   listEarthdayBulkCreateJobs
 } = require('../services/earthdayBulkCreateJobs');
 
@@ -475,6 +476,23 @@ router.post('/bulk-create-requests-async', async (req, res) => {
     if (e && e.code === 'VALIDATION') {
       return error(res, e.message, 400);
     }
+    if (e && e.code === 'EARTHDAY_BULK_ALREADY_RUNNING') {
+      return res.status(409).json({
+        success: false,
+        message: e.message,
+        code: 'EARTHDAY_BULK_ALREADY_RUNNING',
+        timestamp: new Date().toISOString(),
+        data: e.existing_job_id ? { existing_job_id: e.existing_job_id } : null
+      });
+    }
+    if (e && (e.code === 'EARTHDAY_BULK_LOCK_TIMEOUT' || e.code === 'EARTHDAY_BULK_LOCK_ERROR')) {
+      return res.status(503).json({
+        success: false,
+        message: e.message,
+        code: e.code,
+        timestamp: new Date().toISOString()
+      });
+    }
     return error(res, e.message || 'Ошибка постановки задачи', 500, e);
   }
 });
@@ -494,20 +512,30 @@ router.get('/bulk-create-jobs', async (req, res) => {
 });
 
 /**
+ * GET /earthday-cleanups-admin/bulk-create-jobs/active
+ * Текущая активная задача (pending/running) на весь сервис, если есть — любой суперадмин с доступом к bulk.
+ */
+router.get('/bulk-create-jobs/active', async (req, res) => {
+  try {
+    const data = await getActiveEarthdayBulkCreateJobSnapshot(pool);
+    return success(res, data, data ? 'Активная задача' : 'Нет активной задачи');
+  } catch (e) {
+    return error(res, e.message || 'Ошибка запроса активной задачи', 500, e);
+  }
+});
+
+/**
  * GET /earthday-cleanups-admin/bulk-create-jobs/:jobId
- * Статус и накопленные created/errors.
+ * Статус и накопленные created/errors; любой суперадмин с доступом к bulk (не только создатель).
  */
 router.get('/bulk-create-jobs/:jobId', async (req, res) => {
   try {
-    const data = await getEarthdayBulkCreateJob(pool, req.params.jobId, req.user.userId);
+    const data = await getEarthdayBulkCreateJob(pool, req.params.jobId);
     if (!data) {
       return error(res, 'Задача не найдена', 404);
     }
     return success(res, data, 'Статус задачи');
   } catch (e) {
-    if (e && e.code === 'FORBIDDEN') {
-      return error(res, e.message, 403);
-    }
     return error(res, e.message || 'Ошибка статуса задачи', 500, e);
   }
 });

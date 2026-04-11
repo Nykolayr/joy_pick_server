@@ -4,6 +4,10 @@ const { runEarthdayBulkCreateRequests, CHUNK_MAX } = require('./earthdayBulkCrea
 const ASYNC_MAX_IDS = Math.min(5000, Math.max(1, parseInt(process.env.EARTHDAY_ASYNC_BULK_MAX_IDS, 10) || 2000));
 const CHUNKS_PER_TICK = Math.min(50, Math.max(1, parseInt(process.env.EARTHDAY_ASYNC_JOB_CHUNKS_PER_TICK, 10) || 10));
 
+/** Имя MySQL GET_LOCK: одна активная async-задача Earth Day bulk на весь сервис (все инстансы с общей БД). */
+const ASYNC_ACTIVE_LOCK_NAME = 'joypick:earthday_bulk_async_active';
+const GET_LOCK_TIMEOUT_SEC = Math.min(120, Math.max(5, parseInt(process.env.EARTHDAY_ASYNC_CREATE_LOCK_SEC, 10) || 30));
+
 function parseJsonArray(raw) {
   if (raw == null) return { error: 'Пустой список objectid' };
   if (Array.isArray(raw)) return { ids: raw };
@@ -63,14 +67,52 @@ async function createEarthdayBulkCreateJob(pool, userId, body) {
     throw err;
   }
   const ids = parsed.ids;
-  const jobId = generateId();
-  await pool.execute(
-    `INSERT INTO earthday_bulk_create_jobs
-      (id, created_by, status, objectids_json, progress_offset, total, created_summary, errors_summary, message)
-     VALUES (?, ?, 'pending', ?, 0, ?, NULL, NULL, NULL)`,
-    [jobId, userId, JSON.stringify(ids), ids.length]
-  );
-  return { job_id: jobId, total: ids.length, chunk_size: CHUNK_MAX };
+  const conn = await pool.getConnection();
+  let lockHeld = false;
+  try {
+    const [lockRows] = await conn.query('SELECT GET_LOCK(?, ?) AS got', [ASYNC_ACTIVE_LOCK_NAME, GET_LOCK_TIMEOUT_SEC]);
+    const got = lockRows && lockRows[0] && lockRows[0].got;
+    if (got !== 1) {
+      const err = new Error(
+        got === 0
+          ? 'Не удалось занять блокировку для постановки задачи за отведённое время. Повторите запрос.'
+          : 'Ошибка блокировки при постановке задачи.'
+      );
+      err.code = got === 0 ? 'EARTHDAY_BULK_LOCK_TIMEOUT' : 'EARTHDAY_BULK_LOCK_ERROR';
+      throw err;
+    }
+    lockHeld = true;
+
+    const [active] = await conn.execute(
+      `SELECT id FROM earthday_bulk_create_jobs WHERE status IN ('pending', 'running') LIMIT 1`
+    );
+    if (active.length > 0) {
+      const err = new Error(
+        'Уже выполняется другая задача массового создания заявок Earth Day. Дождитесь её завершения или обновите страницу.'
+      );
+      err.code = 'EARTHDAY_BULK_ALREADY_RUNNING';
+      err.existing_job_id = active[0].id;
+      throw err;
+    }
+
+    const jobId = generateId();
+    await conn.execute(
+      `INSERT INTO earthday_bulk_create_jobs
+        (id, created_by, status, objectids_json, progress_offset, total, created_summary, errors_summary, message)
+       VALUES (?, ?, 'pending', ?, 0, ?, NULL, NULL, NULL)`,
+      [jobId, userId, JSON.stringify(ids), ids.length]
+    );
+    return { job_id: jobId, total: ids.length, chunk_size: CHUNK_MAX };
+  } finally {
+    if (lockHeld) {
+      try {
+        await conn.query('SELECT RELEASE_LOCK(?)', [ASYNC_ACTIVE_LOCK_NAME]);
+      } catch {
+        /* ignore */
+      }
+    }
+    conn.release();
+  }
 }
 
 function safeJsonParse(val, fallback) {
@@ -168,20 +210,21 @@ async function processEarthdayBulkCreateJobsTick(pool) {
   return { chunks_processed: chunks, last };
 }
 
-async function getEarthdayBulkCreateJob(pool, jobId, userId) {
+/**
+ * Полный статус задачи. Любой суперадмин с доступом к earthday-cleanups-admin bulk может читать любую задачу этого типа.
+ * @param {import('mysql2/promise').Pool} pool
+ * @param {string} jobId
+ */
+async function getEarthdayBulkCreateJob(pool, jobId) {
   const [rows] = await pool.execute(
-    `SELECT id, created_by, status, objectids_json, progress_offset, total, created_summary, errors_summary, message, created_at, updated_at
+    `SELECT id, status, objectids_json, progress_offset, total, created_summary, errors_summary, message, created_at, updated_at
      FROM earthday_bulk_create_jobs WHERE id = ? LIMIT 1`,
     [jobId]
   );
   if (!rows || rows.length === 0) return null;
   const row = rows[0];
-  if (String(row.created_by) !== String(userId)) {
-    const err = new Error('Доступ к задаче запрещён');
-    err.code = 'FORBIDDEN';
-    throw err;
-  }
   const ids = safeJsonParse(row.objectids_json, []);
+  const objectids = Array.isArray(ids) ? ids : [];
   return {
     job_id: row.id,
     status: row.status,
@@ -197,7 +240,35 @@ async function getEarthdayBulkCreateJob(pool, jobId, userId) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     chunk_size: CHUNK_MAX,
-    objectids_preview: ids.length > 20 ? ids.slice(0, 20).concat(['…']) : ids
+    objectids
+  };
+}
+
+/**
+ * Единственная активная задача (pending/running) на сервис, если есть.
+ * @param {import('mysql2/promise').Pool} pool
+ * @returns {Promise<object|null>}
+ */
+async function getActiveEarthdayBulkCreateJobSnapshot(pool) {
+  const [rows] = await pool.execute(
+    `SELECT id, status, objectids_json, progress_offset, total, updated_at
+     FROM earthday_bulk_create_jobs
+     WHERE status IN ('pending', 'running')
+     ORDER BY created_at ASC
+     LIMIT 1`
+  );
+  if (!rows || rows.length === 0) return null;
+  const row = rows[0];
+  const ids = safeJsonParse(row.objectids_json, []);
+  const objectids = Array.isArray(ids) ? ids : [];
+  return {
+    job_id: row.id,
+    status: row.status,
+    total: Number(row.total),
+    progress_offset: Number(row.progress_offset),
+    progress_done: Number(row.progress_offset),
+    updated_at: row.updated_at,
+    objectids
   };
 }
 
@@ -226,6 +297,7 @@ module.exports = {
   createEarthdayBulkCreateJob,
   processEarthdayBulkCreateJobsTick,
   getEarthdayBulkCreateJob,
+  getActiveEarthdayBulkCreateJobSnapshot,
   listEarthdayBulkCreateJobs,
   ASYNC_MAX_IDS,
   CHUNKS_PER_TICK
