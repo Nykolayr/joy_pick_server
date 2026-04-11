@@ -159,7 +159,8 @@ function parseStringEqFilter(raw, maxLen, paramName) {
  * GET /earthday-cleanups-admin
  * Список с пагинацией; опционально cleanup_date_from / cleanup_date_to, exclude_used,
  * continent / country (точное совпадение с полями в БД, англ. названия),
- * sort_by (cleanup_date | continent | country), sort_dir (asc | desc).
+ * sort_by (cleanup_date | continent | country), sort_dir (asc | desc),
+ * search (подстрока по текстовым полям и objectid, AND с остальными фильтрами).
  */
 router.get('/', async (req, res) => {
   try {
@@ -234,6 +235,30 @@ router.get('/', async (req, res) => {
       conditions.push('country = ?');
       params.push(countryFilter.value);
     }
+
+    const searchRaw = req.query.search;
+    let searchApplied = null;
+    if (searchRaw !== undefined && searchRaw !== null && String(searchRaw).trim() !== '') {
+      searchApplied = String(searchRaw).trim();
+      if (searchApplied.length > 50) {
+        return error(res, 'search: максимум 50 символов', 400);
+      }
+      const low = searchApplied.toLowerCase();
+      conditions.push(`(
+        LOCATE(?, LOWER(COALESCE(GeoCodedAddress, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(name_of_cleanup_location, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(country, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(email_address_, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(name_of_the_cleanup_event, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(who_is_holding_the_cleanup, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(cleanup_event_location, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(first_name_, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(last_name_, ''))) > 0
+        OR LOCATE(?, LOWER(CAST(objectid AS CHAR))) > 0
+      )`);
+      params.push(low, low, low, low, low, low, low, low, low, low);
+    }
+
     // Не показывать записи без адреса парсинга (GeoCodedAddress пустой/NULL)
     conditions.push("TRIM(COALESCE(GeoCodedAddress, '')) <> ''");
     // Не показывать заглушку 0,0 (нет реальных координат); пагинация считается без них
@@ -268,13 +293,13 @@ router.get('/', async (req, res) => {
       params
     );
 
-    const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+    const totalPages = limitInt > 0 ? Math.ceil(total / limitInt) : 0;
 
     return success(res, {
       items,
       pagination: {
         page,
-        limit,
+        limit: limitInt,
         total,
         totalPages
       },
@@ -285,7 +310,8 @@ router.get('/', async (req, res) => {
         continent: continentFilter.value,
         country: countryFilter.value,
         sort_by: sortColumn,
-        sort_dir: sortDir.toLowerCase()
+        sort_dir: sortDir.toLowerCase(),
+        search: searchApplied
       }
     });
   } catch (e) {

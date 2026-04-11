@@ -1600,10 +1600,16 @@ Future<void> updateUserAvatar({
 - `user_id` (string) - фильтр по пользователю
 - `created_by` (string) - фильтр по создателю
 - `taken_by` (string) - фильтр по исполнителю
+- `search` (string, опционально) — подстрока **без учёта регистра** (регистронезависимое сравнение на стороне БД): совпадение **хотя бы** по полям **`name`**, **`description`**, **`city`** или по **`id`** (UUID в БД с дефисами; ввод **с дефисами или без** — ищется и в «разжатых» символах id). Условие **AND** с остальными фильтрами (`category`, `status`, `city`, гео и т.д.). Пустая строка или отсутствие параметра — как раньше. Максимум **50** символов; иначе **400**. Пагинация (`total`, `totalPages`) считается **после** применения `search`.
 
 **Пример запроса:**
 ```
 GET /api/requests?category=wasteLocation&city=Москва&page=1&limit=20
+```
+
+**С поиском:**
+```
+GET /api/requests?search=томск&page=1&limit=20
 ```
 
 **Ответ (200):**
@@ -6775,6 +6781,7 @@ title[|||]short_description[|||]text
 | `country` | Опционально. **Точное совпадение** с колонкой **`country`** (`United States`, `Japan`, …). Пустое — без фильтра. Записи с **`country IS NULL`** при **`country=…`** не попадают; чтобы получить только «без страны», отдельного параметра нет (можно доработать по запросу). |
 | `sort_by` | Опционально. **`cleanup_date`** (по умолчанию) — ведущая сортировка по дате события; **`continent`** — по полю **`continent`** (англ.); **`country`** — по **`country`**. За один запрос задаётся **одна** из этих осей; даты по-прежнему задаются **`cleanup_date_from` / `cleanup_date_to`**. |
 | `sort_dir` | Опционально. **`asc`** (по умолчанию) или **`desc`**. Для **`sort_by=continent`** или **`country`**: строки с **NULL** в этом поле идут **в конце**, внутри группы с известным значением — порядок по имени; затем всегда **`cleanup_date` ASC**, **`objectid` ASC** для стабильности. Для **`sort_by=cleanup_date`** — только **`cleanup_date`** и **`objectid`** в указанном направлении по дате. |
+| `search` | Опционально. Подстрока **без учёта регистра**: совпадение **хотя бы** по **`GeoCodedAddress`**, **`name_of_cleanup_location`**, **`country`**, **`email_address_`**, **`name_of_the_cleanup_event`**, **`who_is_holding_the_cleanup`**, **`cleanup_event_location`**, **`first_name_`**, **`last_name_`**, строковому представлению **`objectid`**. Условие **AND** с **`cleanup_date_*`**, **`continent`**, **`country`**, **`exclude_used`** и прочими ограничениями списка. Пусто / не передан — без изменений. Максимум **50** символов; иначе **400**. **`pagination.total`** / **`totalPages`** считаются после фильтра. |
 
 Сортировка по умолчанию (без **`sort_by`**): **`cleanup_date` ASC**, **`objectid` ASC**.
 
@@ -6785,7 +6792,10 @@ title[|||]short_description[|||]text
 **Пример (экран парсинга / только неиспользованные):**
 `GET /api/earthday-cleanups-admin?page=1&limit=20&cleanup_date_from=2025-04-01&cleanup_date_to=2025-04-30&exclude_used=true`
 
-**Ответ `data`:** `items`, `pagination`: `{ page, limit, total, totalPages }`, `filters`: `cleanup_date_from` / `cleanup_date_to` в **ms** или `null`, **`exclude_used`**: boolean, **`continent`** / **`country`**: применённое значение фильтра или **`null`** (фильтр не задан), **`sort_by`**: строка (`cleanup_date` \| `continent` \| `country`), **`sort_dir`**: `asc` \| `desc`. При **`exclude_used=true`** поля **`pagination.total`** и **`pagination.totalPages`** считаются **только по отфильтрованным** строкам (неиспользованным), поэтому **`items.length`** на странице согласован с **`limit`** (кроме последней страницы), и пагинация в админке корректна без догрузки «лишних» записей на клиент.
+**С текстовым поиском (AND с датами и `exclude_used`):**
+`GET /api/earthday-cleanups-admin?search=Louisiana&exclude_used=true&page=1&limit=20`
+
+**Ответ `data`:** `items`, `pagination`: `{ page, limit, total, totalPages }`, `filters`: `cleanup_date_from` / `cleanup_date_to` в **ms** или `null`, **`exclude_used`**: boolean, **`continent`** / **`country`**: применённое значение фильтра или **`null`** (фильтр не задан), **`sort_by`**: строка (`cleanup_date` \| `continent` \| `country`), **`sort_dir`**: `asc` \| `desc`, **`search`**: переданная подстрока или **`null`**. При **`exclude_used=true`** поля **`pagination.total`** и **`pagination.totalPages`** считаются **только по отфильтрованным** строкам (неиспользованным), поэтому **`items.length`** на странице согласован с **`limit`** (кроме последней страницы), и пагинация в админке корректна без догрузки «лишних» записей на клиент.
 
 ### POST `/earthday-cleanups-admin/sync`
 

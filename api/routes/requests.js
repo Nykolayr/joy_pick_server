@@ -160,7 +160,8 @@ function processRequestListItem(request) {
 
 /**
  * GET /api/requests
- * Получение списка заявок с фильтрацией
+ * Получение списка заявок с фильтрацией.
+ * Query search: подстрока (без учёта регистра) по name, description, city, id (с дефисами и без).
  */
 router.get('/', async (req, res) => {
   try {
@@ -183,7 +184,8 @@ router.get('/', async (req, res) => {
       isOpen,
       userId,
       createdBy,
-      takenBy
+      takenBy,
+      search: searchRaw,
     } = req.query;
 
     // Валидация и преобразование параметров пагинации
@@ -236,6 +238,28 @@ router.get('/', async (req, res) => {
       params.push(takenBy);
     }
 
+    if (searchRaw !== undefined && searchRaw !== null && String(searchRaw).trim() !== '') {
+      const searchTerm = String(searchRaw).trim();
+      if (searchTerm.length > 50) {
+        return error(res, 'search: максимум 50 символов', 400);
+      }
+      const low = searchTerm.toLowerCase();
+      const idCompact = low.replace(/-/g, '');
+      const idConds = ['LOCATE(?, LOWER(r.id)) > 0'];
+      const idParams = [low];
+      if (idCompact.length > 0) {
+        idConds.push("LOCATE(?, REPLACE(LOWER(r.id), '-', '')) > 0");
+        idParams.push(idCompact);
+      }
+      conditions.push(`(
+        LOCATE(?, LOWER(COALESCE(r.name, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(r.description, ''))) > 0
+        OR LOCATE(?, LOWER(COALESCE(r.city, ''))) > 0
+        OR ${idConds.join(' OR ')}
+      )`);
+      params.push(low, low, low, ...idParams);
+    }
+
     // Фильтр по радиусу (если указаны координаты)
     if (latitude && longitude) {
       conditions.push(`
@@ -248,42 +272,17 @@ router.get('/', async (req, res) => {
       params.push(parseFloat(latitude), parseFloat(longitude), parseFloat(latitude), parseFloat(radius));
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
+    const whereClause =
+      conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
-    // Используем прямой ввод чисел для LIMIT и OFFSET (безопасно, так как значения валидированы)
-    query += ` ORDER BY r.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
+    query += `${whereClause} ORDER BY r.created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
     const [requests] = await pool.execute(query, params);
 
     const processedRequests = requests.map(processRequestListItem);
 
-    // Получение общего количества
-    let countQuery = 'SELECT COUNT(DISTINCT r.id) as total FROM requests r';
-    const countParams = [];
-    const countConditions = [];
-    
-    // Строим условия для COUNT запроса. Условия без '?' (например r.status != 'rejected') не добавляют параметр.
-    if (conditions.length > 0) {
-      let paramIndex = 0;
-      for (let i = 0; i < conditions.length; i++) {
-        const condition = conditions[i];
-        if (!condition.includes('6371000')) {
-          countConditions.push(condition);
-          if (condition.includes('?')) {
-            countParams.push(params[paramIndex]);
-            paramIndex++;
-          }
-        } else {
-          paramIndex += 4;
-        }
-      }
-      if (countConditions.length > 0) {
-        countQuery += ' WHERE ' + countConditions.join(' AND ');
-      }
-    }
-    const [countResult] = await pool.execute(countQuery, countParams);
+    const countQuery = `SELECT COUNT(DISTINCT r.id) as total FROM requests r${whereClause}`;
+    const [countResult] = await pool.execute(countQuery, params);
     const total = countResult[0].total;
 
     success(res, {
