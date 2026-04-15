@@ -55,14 +55,15 @@ function escapeHtml(s) {
 }
 
 /**
- * @param {{ appScheme: string, acceptLanguage?: string, page?: 'request' | 'news' }} opts
+ * @param {{ appScheme: string, acceptLanguage?: string, page?: 'request' | 'news', pageUrl?: string }} opts
  */
 function renderAppOpenLandingPage(opts) {
-  const { appScheme, acceptLanguage, page = 'request' } = opts;
+  const { appScheme, acceptLanguage, page = 'request', pageUrl } = opts;
   const locale = pickLocaleFromAcceptLanguage(acceptLanguage);
   const t = COPY[locale];
   const headline = page === 'news' ? t.headlineNews : t.headline;
   const htmlLang = locale === 'ru' ? 'ru' : 'en';
+  const safePageUrl = pageUrl ? escapeHtml(pageUrl) : '';
 
   const cfg = {
     app: appScheme,
@@ -79,6 +80,9 @@ function renderAppOpenLandingPage(opts) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(headline)}</title>
+  ${safePageUrl ? `<link rel="canonical" href="${safePageUrl}" />` : ''}
+  ${safePageUrl ? `<meta property="og:url" content="${safePageUrl}" />` : ''}
+  <meta property="og:title" content="${escapeHtml(headline)}" />
   <style>
     body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:24px;max-width:420px;margin:0 auto;background:#f6f7f9;color:#111;}
     h1{font-size:1.25rem;margin:0 0 8px;}

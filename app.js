@@ -38,7 +38,7 @@ let io;
 // КРИТИЧЕСКИ ВАЖНО: Для Passenger на Beget
 // Passenger сам создает HTTP сервер и передает его через app.listen
 // НО: app.listen возвращает сервер, который Passenger использует
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 300
 server = app.listen(port);
 
 // Инициализация Socket.io
@@ -104,19 +104,49 @@ app.get('/email-logo.png', (req, res) => {
 
 // Диплинки: HTML-страница — пробуем joypick:// + кнопки App Store / Google Play (см. api/utils/deeplinkLanding.js)
 const DEEPLINK_CATEGORIES = ['waste_location', 'speed_cleanup', 'event'];
+const DEEPLINK_CATEGORY_ALIASES = {
+  clean: 'speed_cleanup',
+  speedcleanup: 'speed_cleanup',
+  'speed-cleanup': 'speed_cleanup'
+};
 app.get('/request/:category/:requestId', (req, res) => {
   const { category, requestId } = req.params;
-  if (!category || !requestId) {
-    return res.redirect(302, '/');
+  const rawCategory = String(category || '').trim().toLowerCase();
+  const normalizedCategory = DEEPLINK_CATEGORY_ALIASES[rawCategory] || rawCategory;
+  const safeRequestId = String(requestId || '').trim();
+  if (!normalizedCategory || !safeRequestId) {
+    console.warn('[deeplink][request] invalid params', {
+      originalUrl: req.originalUrl,
+      path: req.path,
+      category: rawCategory,
+      requestId
+    });
+    return res.status(404).type('text/plain').send('Not found');
   }
-  if (!DEEPLINK_CATEGORIES.includes(category)) {
-    return res.redirect(302, '/');
+  if (!DEEPLINK_CATEGORIES.includes(normalizedCategory)) {
+    console.warn('[deeplink][request] unsupported category', {
+      originalUrl: req.originalUrl,
+      path: req.path,
+      rawCategory,
+      category: normalizedCategory,
+      requestId: safeRequestId
+    });
+    return res.status(404).type('text/plain').send('Not found');
   }
-  const appScheme = `joypick://request/${encodeURIComponent(category)}/${encodeURIComponent(requestId)}`;
+  const appScheme = `joypick://request/${encodeURIComponent(normalizedCategory)}/${encodeURIComponent(safeRequestId)}`;
+  console.info('[deeplink][request] render', {
+    originalUrl: req.originalUrl,
+    path: req.path,
+    rawCategory,
+    category: normalizedCategory,
+    requestId: safeRequestId,
+    appScheme
+  });
   const html = renderAppOpenLandingPage({
     appScheme,
     acceptLanguage: req.get('accept-language'),
-    page: 'request'
+    page: 'request',
+    pageUrl: `${req.protocol}://${req.get('host')}${req.originalUrl}`
   });
   res.type('html').send(html);
 });

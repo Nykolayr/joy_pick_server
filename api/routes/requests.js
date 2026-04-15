@@ -69,6 +69,46 @@ function normalizeExternalPhotoUrls(input) {
   return uniqueUrls(merged);
 }
 
+function parseBooleanToDbInt(value, fallback = 0) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'number') {
+    if (value === 1) return 1;
+    if (value === 0) return 0;
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return 1;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return 0;
+    return null;
+  }
+  return null;
+}
+
+function formatDateTimeForMySql(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return null;
+    // Уже в формате MySQL DATETIME
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
+      return raw;
+    }
+  }
+
+  const dateObj = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(dateObj.getTime())) return null;
+
+  const yyyy = dateObj.getUTCFullYear();
+  const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+  const hh = String(dateObj.getUTCHours()).padStart(2, '0');
+  const mi = String(dateObj.getUTCMinutes()).padStart(2, '0');
+  const ss = String(dateObj.getUTCSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
 function processRequestListItem(request) {
   const result = Object.assign({}, request);
 
@@ -651,6 +691,34 @@ router.post('/', authenticate, uploadRequestPhotos, [
       trash_pickup_only = false,
       from_external_source: rawFromExternal
     } = bodyData;
+    const startDateForDb = formatDateTimeForMySql(start_date);
+    const endDateForDb = formatDateTimeForMySql(end_date);
+    if ((start_date !== undefined && start_date !== null && start_date !== '' && !startDateForDb) ||
+      (end_date !== undefined && end_date !== null && end_date !== '' && !endDateForDb)) {
+      return error(res, 'start_date/end_date: некорректный формат даты', 400);
+    }
+
+    const onlyFootForDb = parseBooleanToDbInt(only_foot, 0);
+    const possibleByCarForDb = parseBooleanToDbInt(possible_by_car, 0);
+    const plantTreeForDb = parseBooleanToDbInt(plant_tree, 0);
+    const trashPickupOnlyForDb = parseBooleanToDbInt(trash_pickup_only, 0);
+    if (process.env.REQUESTS_DEBUG_BOOL_PARSING === '1') {
+      console.info('[requests][create][bool-parse]', {
+        originalUrl: req.originalUrl,
+        category,
+        only_foot: { raw: only_foot, parsed: onlyFootForDb, type: typeof only_foot },
+        possible_by_car: { raw: possible_by_car, parsed: possibleByCarForDb, type: typeof possible_by_car },
+        plant_tree: { raw: plant_tree, parsed: plantTreeForDb, type: typeof plant_tree },
+        trash_pickup_only: { raw: trash_pickup_only, parsed: trashPickupOnlyForDb, type: typeof trash_pickup_only }
+      });
+    }
+    if (onlyFootForDb === null || possibleByCarForDb === null || plantTreeForDb === null || trashPickupOnlyForDb === null) {
+      return error(
+        res,
+        'only_foot/possible_by_car/plant_tree/trash_pickup_only: ожидаются boolean или 0/1',
+        400
+      );
+    }
 
     let fromExternalSource = false;
     if (
@@ -794,12 +862,12 @@ router.post('/', authenticate, uploadRequestPhotos, [
         longitude || null,
         city || null,
         garbage_size || null,
-        only_foot,
-        possible_by_car,
+        onlyFootForDb,
+        possibleByCarForDb,
         reward_amount || null,
         true, // is_open по умолчанию true
-        start_date || null,
-        end_date || null,
+        startDateForDb,
+        endDateForDb,
         defaultStatus,
         priority,
         null, // assigned_to
@@ -811,8 +879,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
         null, // joined_user_id
         null, // join_date
         null, // completion_comment
-        plant_tree,
-        trash_pickup_only,
+        plantTreeForDb,
+        trashPickupOnlyForDb,
         null, // rejection_reason
         null, // rejection_message
         null, // actual_participants
@@ -1095,10 +1163,11 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     const parseValue = (value, type) => {
       if (value === undefined || value === null || value === '') return undefined;
       if (type === 'boolean') {
-        if (typeof value === 'string') {
-          return value === 'true' || value === '1';
+        const parsed = parseBooleanToDbInt(value, null);
+        if (parsed === null) {
+          return undefined;
         }
-        return Boolean(value);
+        return parsed;
       }
       if (type === 'number') {
         const num = parseFloat(value);
@@ -1184,12 +1253,20 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(parseValue(garbage_size, 'number'));
     }
     if (only_foot !== undefined && only_foot !== null && only_foot !== '') {
+      const parsedOnlyFoot = parseValue(only_foot, 'boolean');
+      if (parsedOnlyFoot === undefined) {
+        return error(res, 'only_foot: ожидается boolean или 0/1', 400);
+      }
       updates.push('only_foot = ?');
-      params.push(parseValue(only_foot, 'boolean'));
+      params.push(parsedOnlyFoot);
     }
     if (possible_by_car !== undefined && possible_by_car !== null && possible_by_car !== '') {
+      const parsedPossibleByCar = parseValue(possible_by_car, 'boolean');
+      if (parsedPossibleByCar === undefined) {
+        return error(res, 'possible_by_car: ожидается boolean или 0/1', 400);
+      }
       updates.push('possible_by_car = ?');
-      params.push(parseValue(possible_by_car, 'boolean'));
+      params.push(parsedPossibleByCar);
     }
     // cost удален - теперь все платежи через донаты
     if (reward_amount !== undefined && reward_amount !== null && reward_amount !== '') {
@@ -1197,12 +1274,20 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(parseValue(reward_amount, 'number'));
     }
     if (start_date !== undefined) {
+      const normalizedStartDate = formatDateTimeForMySql(start_date);
+      if (start_date !== null && start_date !== '' && !normalizedStartDate) {
+        return error(res, 'start_date: некорректный формат даты', 400);
+      }
       updates.push('start_date = ?');
-      params.push(start_date);
+      params.push(normalizedStartDate);
     }
     if (end_date !== undefined) {
+      const normalizedEndDate = formatDateTimeForMySql(end_date);
+      if (end_date !== null && end_date !== '' && !normalizedEndDate) {
+        return error(res, 'end_date: некорректный формат даты', 400);
+      }
       updates.push('end_date = ?');
-      params.push(end_date);
+      params.push(normalizedEndDate);
     }
     // Переменные для обработки изменения статуса
     let requestCategory = null;
@@ -1279,20 +1364,32 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(priority);
     }
     if (is_open !== undefined) {
+      const parsedIsOpen = parseValue(is_open, 'boolean');
+      if (parsedIsOpen === undefined) {
+        return error(res, 'is_open: ожидается boolean или 0/1', 400);
+      }
       updates.push('is_open = ?');
-      params.push(is_open);
+      params.push(parsedIsOpen);
     }
     if (target_amount !== undefined && target_amount !== null && target_amount !== '') {
       updates.push('target_amount = ?');
       params.push(parseValue(target_amount, 'number'));
     }
     if (plant_tree !== undefined && plant_tree !== null && plant_tree !== '') {
+      const parsedPlantTree = parseValue(plant_tree, 'boolean');
+      if (parsedPlantTree === undefined) {
+        return error(res, 'plant_tree: ожидается boolean или 0/1', 400);
+      }
       updates.push('plant_tree = ?');
-      params.push(parseValue(plant_tree, 'boolean'));
+      params.push(parsedPlantTree);
     }
     if (trash_pickup_only !== undefined && trash_pickup_only !== null && trash_pickup_only !== '') {
+      const parsedTrashPickupOnly = parseValue(trash_pickup_only, 'boolean');
+      if (parsedTrashPickupOnly === undefined) {
+        return error(res, 'trash_pickup_only: ожидается boolean или 0/1', 400);
+      }
       updates.push('trash_pickup_only = ?');
-      params.push(parseValue(trash_pickup_only, 'boolean'));
+      params.push(parsedTrashPickupOnly);
     }
     if (completion_comment !== undefined && completion_comment !== null && completion_comment !== '') {
       updates.push('completion_comment = ?');
@@ -1383,7 +1480,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     if (join_date !== undefined) {
       // Приравниваем пустую строку к null
-      const normalizedJoinDate = (join_date === '' || join_date === null) ? null : join_date;
+      const normalizedJoinDate = formatDateTimeForMySql(join_date);
+      if (join_date !== null && join_date !== '' && !normalizedJoinDate) {
+        return error(res, 'join_date: некорректный формат даты', 400);
+      }
       updates.push('join_date = ?');
       params.push(normalizedJoinDate);
     }
