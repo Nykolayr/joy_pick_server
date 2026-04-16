@@ -67,12 +67,16 @@ router.get('/contributors', async (req, res) => {
 
     // Вкладчики теперь хранятся только в таблице donations
     const [contributors] = await pool.execute(
-      `SELECT d.user_id, SUM(d.amount) as amount, u.display_name, u.photo_url, u.email
-      FROM donations d
-      LEFT JOIN users u ON d.user_id = u.id
-      WHERE d.request_id = ?
-      GROUP BY d.user_id
-      ORDER BY amount DESC`,
+      `SELECT d.user_id,
+              SUM(d.amount) AS amount,
+              MAX(u.display_name) AS display_name,
+              MAX(u.photo_url) AS photo_url,
+              MAX(u.email) AS email
+       FROM donations d
+       LEFT JOIN users u ON d.user_id = u.id
+       WHERE d.request_id = ?
+       GROUP BY d.user_id
+       ORDER BY amount DESC`,
       [requestId]
     );
 

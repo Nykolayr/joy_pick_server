@@ -1177,16 +1177,21 @@ router.get('/requests/active', async (req, res) => {
   try {
     // Получаем активные заявки, которые платные или имеют донаты
     const [requests] = await pool.execute(`
-      SELECT r.*, 
-             u.email as creator_email, u.display_name as creator_name,
-             COUNT(d.id) as donations_count,
-             COALESCE(SUM(d.amount), 0) as total_donations
+      SELECT r.*,
+             u.email AS creator_email,
+             u.display_name AS creator_name,
+             s.donations_count,
+             s.total_donations
       FROM requests r
+      INNER JOIN (
+        SELECT request_id,
+               COUNT(id) AS donations_count,
+               COALESCE(SUM(amount), 0) AS total_donations
+        FROM donations
+        GROUP BY request_id
+      ) s ON s.request_id = r.id
       LEFT JOIN users u ON r.created_by = u.id
-      LEFT JOIN donations d ON r.id = d.request_id
       WHERE r.status IN ('new', 'inProgress', 'pending')
-        AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
-      GROUP BY r.id
       ORDER BY r.created_at DESC
     `);
 
@@ -1295,16 +1300,21 @@ router.get('/requests/active', async (req, res) => {
 router.get('/requests/closed', async (req, res) => {
   try {
     const [requests] = await pool.execute(`
-      SELECT r.*, 
-             u.email as creator_email, u.display_name as creator_name,
-             COUNT(d.id) as donations_count,
-             COALESCE(SUM(d.amount), 0) as total_donations
+      SELECT r.*,
+             u.email AS creator_email,
+             u.display_name AS creator_name,
+             s.donations_count,
+             s.total_donations
       FROM requests r
+      INNER JOIN (
+        SELECT request_id,
+               COUNT(id) AS donations_count,
+               COALESCE(SUM(amount), 0) AS total_donations
+        FROM donations
+        GROUP BY request_id
+      ) s ON s.request_id = r.id
       LEFT JOIN users u ON r.created_by = u.id
-      LEFT JOIN donations d ON r.id = d.request_id
       WHERE r.status IN ('approved', 'rejected', 'archived')
-        AND EXISTS(SELECT 1 FROM donations WHERE request_id = r.id)
-      GROUP BY r.id
       ORDER BY r.updated_at DESC
     `);
 

@@ -1,13 +1,18 @@
-// КРИТИЧЕСКИ ВАЖНО: Указываем путь к Node.js для Passenger (должно быть ПЕРВОЙ строкой!)
-process.env.PASSENGER_NODEJS = '/home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node';
+require('dotenv').config();
+
+// Passenger (Beget): путь к node можно задать через PASSENGER_NODEJS_BIN в .env.
+// Жёсткий путь оставляем только как fallback для старого окружения.
+if (process.env.PASSENGER_NODEJS_BIN) {
+  process.env.PASSENGER_NODEJS = process.env.PASSENGER_NODEJS_BIN;
+} else if (!process.env.PASSENGER_NODEJS) {
+  process.env.PASSENGER_NODEJS = '/home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node';
+}
 
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
 const { Server } = require('socket.io');
-require('dotenv').config();
-
 // Импорт API (явно index.js — иначе на части хостингов "Cannot find module './api'" )
 const apiApp = require('./api/index');
 const { runAllCronTasks } = require('./scripts/cronTasks');

@@ -11,6 +11,21 @@ const connectionLimit = Number.isFinite(parsedPoolLimit)
   ? Math.min(100, Math.max(5, parsedPoolLimit))
   : 30;
 
+function buildMysqlSslOption() {
+  const raw = process.env.DB_SSL;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return undefined;
+  }
+  const v = String(raw).trim().toLowerCase();
+  if (v === '0' || v === 'false' || v === 'off' || v === 'no') {
+    return false;
+  }
+  if (v === '1' || v === 'true' || v === 'on' || v === 'yes') {
+    return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' };
+  }
+  return undefined;
+}
+
 // Создание пула соединений с базой данных
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -22,7 +37,8 @@ const pool = mysql.createPool({
   connectionLimit,
   queueLimit: 0,
   charset: 'utf8mb4',
-  timezone: '+00:00' // Устанавливаем UTC для всех подключений
+  timezone: '+00:00', // Устанавливаем UTC для всех подключений
+  ssl: buildMysqlSslOption()
 });
 
 // Тест подключения
