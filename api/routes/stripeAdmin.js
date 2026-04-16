@@ -29,6 +29,7 @@ router.use(requireSuperAdmin);
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/payment-intents', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { request_id, user_id, type, status, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -101,9 +102,13 @@ router.get('/payment-intents', async (req, res) => {
 
     success(res, {
       payment_intents: detailedPaymentIntents,
-      total: detailedPaymentIntents.length
+      total: detailedPaymentIntents.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching PaymentIntent', 500, err);
   }
 });
@@ -206,6 +211,7 @@ router.get('/payment-intents/:payment_intent_id', async (req, res) => {
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/transfers', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { request_id, performer_user_id, status, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -294,9 +300,13 @@ router.get('/transfers', async (req, res) => {
 
     success(res, {
       transfers: detailedTransfers,
-      total: detailedTransfers.length
+      total: detailedTransfers.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Ошибка при получении Transfers', 500, err);
   }
 });
@@ -404,6 +414,7 @@ router.get('/transfers/:transfer_id', async (req, res) => {
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/accounts', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { user_id, charges_enabled, payouts_enabled, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -482,9 +493,13 @@ router.get('/accounts', async (req, res) => {
 
     success(res, {
       accounts: detailedAccounts,
-      total: detailedAccounts.length
+      total: detailedAccounts.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching Accounts', 500, err);
   }
 });
@@ -575,6 +590,7 @@ router.get('/accounts/:account_id', async (req, res) => {
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/charges', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { payment_intent_id, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -651,9 +667,13 @@ router.get('/charges', async (req, res) => {
 
     success(res, {
       charges: detailedCharges,
-      total: detailedCharges.length
+      total: detailedCharges.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching Charges', 500, err);
   }
 });
@@ -766,6 +786,7 @@ router.get('/charges/:charge_id', async (req, res) => {
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/balance-transactions', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { payment_intent_id, type, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -881,9 +902,13 @@ router.get('/balance-transactions', async (req, res) => {
 
     success(res, {
       balance_transactions: detailedTransactions,
-      total: detailedTransactions.length
+      total: detailedTransactions.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching Balance Transactions', 500, err);
   }
 });
@@ -979,6 +1004,7 @@ router.get('/balance-transactions/:transaction_id', async (req, res) => {
  * - limit - количество (по умолчанию 10, максимум 100)
  */
 router.get('/refunds', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const { payment_intent_id, limit = 10 } = req.query;
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
@@ -1087,9 +1113,13 @@ router.get('/refunds', async (req, res) => {
 
     success(res, {
       refunds: detailedRefunds,
-      total: detailedRefunds.length
+      total: detailedRefunds.length,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching Refunds', 500, err);
   }
 });
@@ -1103,6 +1133,7 @@ router.get('/refunds', async (req, res) => {
  * Получение общей статистики по Stripe
  */
 router.get('/summary', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     // Получаем статистику из БД
     const [paymentIntentsStats] = await pool.execute(
@@ -1156,9 +1187,13 @@ router.get('/summary', async (req, res) => {
       payment_intents: paymentIntentsStats[0],
       transfers: transfersStats[0],
       accounts: accountsStats[0],
-      balance
+      balance,
+      metrics: {
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error fetching statistics', 500, err);
   }
 });
@@ -1174,6 +1209,7 @@ router.get('/summary', async (req, res) => {
  * Активные заявки: new, inProgress, pending
  */
 router.get('/requests/active', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     // Получаем активные заявки, которые платные или имеют донаты
     const [requests] = await pool.execute(`
@@ -1284,9 +1320,15 @@ router.get('/requests/active', async (req, res) => {
 
     success(res, {
       requests: detailedRequests,
-      total: detailedRequests.length
+      total: detailedRequests.length,
+      metrics: {
+        requestsCount: requests.length,
+        donationsCount: allDonations.length,
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error retrieving active requests', 500, err);
   }
 });
@@ -1298,6 +1340,7 @@ router.get('/requests/active', async (req, res) => {
  * Закрытые заявки: approved, rejected, archived
  */
 router.get('/requests/closed', async (req, res) => {
+  const startedAtMs = Date.now();
   try {
     const [requests] = await pool.execute(`
       SELECT r.*,
@@ -1431,9 +1474,15 @@ router.get('/requests/closed', async (req, res) => {
 
     success(res, {
       requests: detailedRequests,
-      total: detailedRequests.length
+      total: detailedRequests.length,
+      metrics: {
+        requestsCount: requests.length,
+        donationsCount: allDonations.length,
+        durationMs: Date.now() - startedAtMs
+      }
     });
   } catch (err) {
+    err.durationMs = Date.now() - startedAtMs;
     return error(res, 'Error retrieving closed requests', 500, err);
   }
 });
@@ -1454,27 +1503,32 @@ router.get('/requests/closed', async (req, res) => {
  * Если у доната есть payment_intent не в статусе succeeded — в Stripe он не отменяется (можно отменить отдельно при необходимости).
  */
 router.delete('/requests/:request_id/donations/:donation_id', async (req, res) => {
+  let connection;
   try {
     const { request_id, donation_id } = req.params;
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    const [donations] = await pool.execute(
+    const [donations] = await connection.execute(
       'SELECT id, request_id, amount, payment_intent_id FROM donations WHERE id = ? AND request_id = ?',
       [donation_id, request_id]
     );
 
     if (donations.length === 0) {
+      await connection.rollback();
       return error(res, 'Donation not found or does not belong to this request', 404);
     }
 
     const donation = donations[0];
     const amount = parseFloat(donation.amount) || 0;
 
-    await pool.execute('DELETE FROM donations WHERE id = ? AND request_id = ?', [donation_id, request_id]);
+    await connection.execute('DELETE FROM donations WHERE id = ? AND request_id = ?', [donation_id, request_id]);
 
-    await pool.execute(
+    await connection.execute(
       'UPDATE requests SET total_contributed = GREATEST(0, COALESCE(total_contributed, 0) - ?), updated_at = NOW() WHERE id = ?',
       [amount, request_id]
     );
+    await connection.commit();
 
     return success(res, {
       removed_donation_id: donation_id,
@@ -1483,7 +1537,16 @@ router.delete('/requests/:request_id/donations/:donation_id', async (req, res) =
       message: 'Donation removed from request. total_contributed updated. You can create transfer for remaining donations.'
     });
   } catch (err) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackErr) {}
+    }
     return error(res, 'Error removing donation from request', 500, err);
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 });
 
@@ -1632,7 +1695,9 @@ router.post('/create-transfer', [
       } catch (e) {}
     }
 
-    // Создаем Transfer в Stripe (source_transaction = charge id ch_xxx)
+    // Создаем Transfer в Stripe (source_transaction = charge id ch_xxx).
+    // Стабильный idempotencyKey защищает от дублей при ретраях/повторных нажатиях.
+    const transferIdempotencyKey = `manual_transfer:${request_id}:${performer_user_id}:${transferAmountCents}`;
     let transfer;
     try {
       transfer = await stripe.transfers.create({
@@ -1645,6 +1710,8 @@ router.post('/create-transfer', [
           performer_user_id: performer_user_id,
           created_by: 'admin_manual'
         }
+      }, {
+        idempotencyKey: transferIdempotencyKey
       });
     } catch (transferErr) {
       const code = transferErr.code || transferErr.raw?.code;
@@ -1677,24 +1744,48 @@ router.post('/create-transfer', [
       return error(res, userMessage, isBalanceInsufficient ? 402 : 500, errorPayload);
     }
 
-    // Сохраняем transfer в базу данных
-    const transferId = generateId();
-    await pool.execute(
-      `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        transferId,
-        transfer.id,
-        request_id,
-        performer_user_id,
-        transferAmountCents,
-        platformFeeCents,
-        stripeFeeCents,
-        'usd',
-        'pending',
-        paymentIntents[0]?.payment_intent_id || null
-      ]
+    // Сохраняем transfer в БД. Если запись уже есть (гонка/повтор), переиспользуем её.
+    let transferId = generateId();
+    let dbTransferStatus = 'pending';
+    const [existingTransferByStripeId] = await pool.execute(
+      'SELECT id, status FROM transfers WHERE transfer_id = ? LIMIT 1',
+      [transfer.id]
     );
+
+    if (existingTransferByStripeId.length > 0) {
+      transferId = existingTransferByStripeId[0].id;
+      dbTransferStatus = existingTransferByStripeId[0].status || dbTransferStatus;
+    } else {
+      try {
+        await pool.execute(
+          `INSERT INTO transfers (id, transfer_id, request_id, performer_user_id, amount_cents, platform_fee_cents, stripe_fee_cents, currency, status, source_payment_intent_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            transferId,
+            transfer.id,
+            request_id,
+            performer_user_id,
+            transferAmountCents,
+            platformFeeCents,
+            stripeFeeCents,
+            'usd',
+            'pending',
+            paymentIntents[0]?.payment_intent_id || null
+          ]
+        );
+      } catch (insertErr) {
+        const [recoveredTransferByStripeId] = await pool.execute(
+          'SELECT id, status FROM transfers WHERE transfer_id = ? LIMIT 1',
+          [transfer.id]
+        );
+        if (recoveredTransferByStripeId.length > 0) {
+          transferId = recoveredTransferByStripeId[0].id;
+          dbTransferStatus = recoveredTransferByStripeId[0].status || dbTransferStatus;
+        } else {
+          throw insertErr;
+        }
+      }
+    }
 
     insertTransferPayoutCheck(transferId, performer_user_id, transferAmountCents).catch(() => {});
 
@@ -1714,7 +1805,7 @@ router.post('/create-transfer', [
         stripe_fee_cents: stripeFeeCents,
         stripe_fee_dollars: (stripeFeeCents / 100).toFixed(2),
         currency: 'usd',
-        status: stripeTransfer.status,
+        status: dbTransferStatus || stripeTransfer.status,
         created: stripeTransfer.created,
         stripe_data: {
           destination: stripeTransfer.destination,

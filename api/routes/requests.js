@@ -6,6 +6,14 @@ const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { uploadRequestPhotos, getFileUrlFromPath } = require('../middleware/upload');
 const { normalizeDatesInObject } = require('../utils/datetime');
+const {
+  parseBooleanToDbInt,
+  formatDateTimeForMySql,
+  parseMultipartScalar,
+  parseWasteTypesFromField,
+  parseWasteTypesFromBodyData,
+  parseJsonFieldSafe
+} = require('../utils/requestPayloadParsers');
 const { 
   sendRequestCreatedNotification, 
   sendJoinNotification, 
@@ -18,7 +26,6 @@ const {
 const { createGroupChatForRequest } = require('../utils/chatHelpers');
 const { insertTransferPayoutCheck } = require('../utils/transferPayoutCheck.js');
 const stripe = require('../config/stripe.js');
-const { deleteInactiveRequests, checkEventAfterStartDate } = require('../../scripts/cronTasks');
 const { parseWorkDurationMinutesInput, normalizeRequestRowWorkDuration } = require('../utils/workDurationStats');
 
 const router = express.Router();
@@ -69,46 +76,6 @@ function normalizeExternalPhotoUrls(input) {
   return uniqueUrls(merged);
 }
 
-function parseBooleanToDbInt(value, fallback = 0) {
-  if (value === undefined || value === null || value === '') return fallback;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (typeof value === 'number') {
-    if (value === 1) return 1;
-    if (value === 0) return 0;
-    return null;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return 1;
-    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return 0;
-    return null;
-  }
-  return null;
-}
-
-function formatDateTimeForMySql(value) {
-  if (value === undefined || value === null || value === '') return null;
-  if (typeof value === 'string') {
-    const raw = value.trim();
-    if (!raw) return null;
-    // Уже в формате MySQL DATETIME
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
-      return raw;
-    }
-  }
-
-  const dateObj = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(dateObj.getTime())) return null;
-
-  const yyyy = dateObj.getUTCFullYear();
-  const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(dateObj.getUTCDate()).padStart(2, '0');
-  const hh = String(dateObj.getUTCHours()).padStart(2, '0');
-  const mi = String(dateObj.getUTCMinutes()).padStart(2, '0');
-  const ss = String(dateObj.getUTCSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-
 function processRequestListItem(request) {
   const result = Object.assign({}, request);
 
@@ -117,67 +84,23 @@ function processRequestListItem(request) {
   const directPhotos = parseJsonArraySafe(request.photos);
   result.photos = uniqueUrls(directPhotos.length > 0 ? directPhotos : [...result.photos_before, ...result.photos_after]);
 
-  if (request.waste_types) {
-    try {
-      result.waste_types = typeof request.waste_types === 'string' ? JSON.parse(request.waste_types) : request.waste_types;
-    } catch (e) {
-      result.waste_types = [];
-    }
-  } else {
-    result.waste_types = [];
-  }
-
-  if (request.actual_participants) {
-    try {
-      result.actual_participants = typeof request.actual_participants === 'string' ? JSON.parse(request.actual_participants) : request.actual_participants;
-    } catch (e) {
-      result.actual_participants = [];
-    }
-  } else {
-    result.actual_participants = [];
-  }
-
-  if (request.registered_participants) {
-    try {
-      result.registered_participants = typeof request.registered_participants === 'string' ? JSON.parse(request.registered_participants) : request.registered_participants;
-    } catch (e) {
-      result.registered_participants = [];
-    }
-  } else {
-    result.registered_participants = [];
-  }
+  result.waste_types = parseJsonFieldSafe(request.waste_types, []);
+  result.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
+  result.registered_participants = parseJsonFieldSafe(request.registered_participants, []);
 
   if (request.category === 'event' && request.created_by) {
     if (!result.registered_participants.includes(request.created_by)) {
       result.registered_participants.push(request.created_by);
     }
   }
-
-  if (request.participant_completions) {
-    try {
-      result.participant_completions = typeof request.participant_completions === 'string' ? JSON.parse(request.participant_completions) : request.participant_completions;
-    } catch (e) {
-      result.participant_completions = {};
-    }
-  } else {
-    result.participant_completions = {};
-  }
-
+  result.participant_completions = parseJsonFieldSafe(request.participant_completions, {});
   if (request.group_chat_id) {
     result.group_chat_id = request.group_chat_id;
   } else {
     result.group_chat_id = null;
   }
 
-  if (request.private_chats) {
-    try {
-      result.private_chats = typeof request.private_chats === 'string' ? JSON.parse(request.private_chats) : request.private_chats;
-    } catch (e) {
-      result.private_chats = [];
-    }
-  } else {
-    result.private_chats = [];
-  }
+  result.private_chats = parseJsonFieldSafe(request.private_chats, []);
 
   result.only_foot = Boolean(result.only_foot);
   result.possible_by_car = Boolean(result.possible_by_car);
@@ -204,13 +127,6 @@ function processRequestListItem(request) {
  * Query search: подстрока (без учёта регистра) по name, description, city, id (с дефисами и без).
  */
 router.get('/', async (req, res) => {
-  try {
-    await deleteInactiveRequests({ skipSpeedEventReject: true });
-    // checkEventAfterStartDate не вызываем из списка: Stripe refunds и удаление чатов — тяжёлые, только в кроне
-  } catch (cleanupErr) {
-    // не прерываем запрос при ошибке очистки
-  }
-
   try {
     const {
       page = 1,
@@ -351,12 +267,6 @@ router.get('/my', authenticate, async (req, res) => {
   }
 
   try {
-    await deleteInactiveRequests({ skipSpeedEventReject: true });
-  } catch (cleanupErr) {
-    // не прерываем запрос
-  }
-
-  try {
     const { page = 1, limit = 20, category, status } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
@@ -485,50 +395,11 @@ async function buildRequestDetailForApi(pool, id) {
       request.photos_after = [];
     }
     // Стабильный контракт для клиента: photos всегда присутствует.
-    request.photos = uniqueUrls([
-      ...parseJsonArraySafe(request.photos),
-      ...request.photos_before,
-      ...request.photos_after
-    ]);
     request.photos = uniqueUrls([...(request.photos_before || []), ...(request.photos_after || [])]);
     
-    // Обработка waste_types из JSON поля
-    if (request.waste_types) {
-      try {
-        request.waste_types = typeof request.waste_types === 'string' 
-          ? JSON.parse(request.waste_types) 
-          : request.waste_types;
-      } catch (e) {
-        request.waste_types = [];
-      }
-    } else {
-      request.waste_types = [];
-    }
-    // Обработка actual_participants из JSON поля
-    if (request.actual_participants) {
-      try {
-        request.actual_participants = typeof request.actual_participants === 'string' 
-          ? JSON.parse(request.actual_participants) 
-          : request.actual_participants;
-      } catch (e) {
-        request.actual_participants = [];
-      }
-    } else {
-      request.actual_participants = [];
-    }
-    
-    // Обработка registered_participants из JSON поля (для event)
-    if (request.registered_participants) {
-      try {
-        request.registered_participants = typeof request.registered_participants === 'string' 
-          ? JSON.parse(request.registered_participants) 
-          : request.registered_participants;
-      } catch (e) {
-        request.registered_participants = [];
-      }
-    } else {
-      request.registered_participants = [];
-    }
+    request.waste_types = parseJsonFieldSafe(request.waste_types, []);
+    request.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
+    request.registered_participants = parseJsonFieldSafe(request.registered_participants, []);
     
     // КРИТИЧЕСКИ ВАЖНО: Для event заявок создатель всегда должен быть в списке участников
     if (request.category === 'event' && request.created_by) {
@@ -541,20 +412,7 @@ async function buildRequestDetailForApi(pool, id) {
         );
       }
     }
-    
-    // Обработка participant_completions из JSON поля
-    if (request.participant_completions) {
-      try {
-        request.participant_completions = typeof request.participant_completions === 'string' 
-          ? JSON.parse(request.participant_completions) 
-          : request.participant_completions;
-      } catch (e) {
-        request.participant_completions = {};
-      }
-    } else {
-      request.participant_completions = {};
-    }
-
+    request.participant_completions = parseJsonFieldSafe(request.participant_completions, {});
     // Обработка group_chat_id
     if (request.group_chat_id) {
       request.group_chat_id = request.group_chat_id;
@@ -562,18 +420,7 @@ async function buildRequestDetailForApi(pool, id) {
       request.group_chat_id = null;
     }
 
-    // Обработка private_chats из JSON поля (для event заявок)
-    if (request.private_chats) {
-      try {
-        request.private_chats = typeof request.private_chats === 'string' 
-          ? JSON.parse(request.private_chats) 
-          : request.private_chats;
-      } catch (e) {
-        request.private_chats = [];
-      }
-    } else {
-      request.private_chats = [];
-    }
+    request.private_chats = parseJsonFieldSafe(request.private_chats, []);
     
     request.only_foot = Boolean(request.only_foot);
     request.possible_by_car = Boolean(request.possible_by_car);
@@ -781,20 +628,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       }
     }
 
-    // Обработка waste_types - может быть массивом или строкой
-    let processedWasteTypes = [];
-    if (waste_types) {
-      if (Array.isArray(waste_types)) {
-        processedWasteTypes = waste_types;
-      } else if (typeof waste_types === 'string') {
-        try {
-          processedWasteTypes = JSON.parse(waste_types);
-        } catch (e) {
-          // Если не JSON, разбиваем по запятой
-          processedWasteTypes = waste_types.split(',').map(t => t.trim()).filter(t => t);
-        }
-      }
-    }
+    const processedWasteTypes = parseWasteTypesFromField(waste_types);
 
     const externalPhotos = fromExternalSource ? normalizeExternalPhotoUrls(bodyData) : [];
 
@@ -970,30 +804,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
       request.photos_after = [];
     }
     
-    // Обработка waste_types из JSON поля
-    if (request.waste_types) {
-      try {
-        request.waste_types = typeof request.waste_types === 'string' 
-          ? JSON.parse(request.waste_types) 
-          : request.waste_types;
-      } catch (e) {
-        request.waste_types = [];
-      }
-    } else {
-      request.waste_types = [];
-    }
-    // Обработка actual_participants из JSON поля
-    if (request.actual_participants) {
-      try {
-        request.actual_participants = typeof request.actual_participants === 'string' 
-          ? JSON.parse(request.actual_participants) 
-          : request.actual_participants;
-      } catch (e) {
-        request.actual_participants = [];
-      }
-    } else {
-      request.actual_participants = [];
-    }
+    request.waste_types = parseJsonFieldSafe(request.waste_types, []);
+    request.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
     request.participants = [];
     request.contributors = [];
     request.contributions = {};
@@ -1006,17 +818,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
       request.group_chat_id = null;
     }
 
-    if (request.private_chats) {
-      try {
-        request.private_chats = typeof request.private_chats === 'string' 
-          ? JSON.parse(request.private_chats) 
-          : request.private_chats;
-      } catch (e) {
-        request.private_chats = [];
-      }
-    } else {
-      request.private_chats = [];
-    }
+    request.private_chats = parseJsonFieldSafe(request.private_chats, []);
 
     request.only_foot = Boolean(request.only_foot);
     request.possible_by_car = Boolean(request.possible_by_car);
@@ -1137,44 +939,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     // В form-data все значения приходят как строки, нужно их правильно обработать
     let bodyData = req.body;
     
-    // Обработка waste_types - может быть массивом в form-data (waste_types[])
-    let wasteTypesArray = [];
-    if (bodyData['waste_types[]']) {
-      // Если пришел массив из form-data
-      if (Array.isArray(bodyData['waste_types[]'])) {
-        wasteTypesArray = bodyData['waste_types[]'];
-      } else {
-        wasteTypesArray = [bodyData['waste_types[]']];
-      }
-    } else if (bodyData.waste_types) {
-      // Если пришел как обычное поле
-      if (Array.isArray(bodyData.waste_types)) {
-        wasteTypesArray = bodyData.waste_types;
-      } else if (typeof bodyData.waste_types === 'string') {
-        try {
-          wasteTypesArray = JSON.parse(bodyData.waste_types);
-        } catch (e) {
-          wasteTypesArray = bodyData.waste_types.split(',').map(t => t.trim()).filter(t => t);
-        }
-      }
-    }
-
-    // Преобразуем строковые значения в нужные типы
-    const parseValue = (value, type) => {
-      if (value === undefined || value === null || value === '') return undefined;
-      if (type === 'boolean') {
-        const parsed = parseBooleanToDbInt(value, null);
-        if (parsed === null) {
-          return undefined;
-        }
-        return parsed;
-      }
-      if (type === 'number') {
-        const num = parseFloat(value);
-        return isNaN(num) ? undefined : num;
-      }
-      return value;
-    };
+    const wasteTypesArray = parseWasteTypesFromBodyData(bodyData);
 
     const {
       name,
@@ -1238,11 +1003,11 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     if (latitude !== undefined && latitude !== null && latitude !== '') {
       updates.push('latitude = ?');
-      params.push(parseValue(latitude, 'number'));
+      params.push(parseMultipartScalar(latitude, 'number'));
     }
     if (longitude !== undefined && longitude !== null && longitude !== '') {
       updates.push('longitude = ?');
-      params.push(parseValue(longitude, 'number'));
+      params.push(parseMultipartScalar(longitude, 'number'));
     }
     if (city !== undefined && city !== null && city !== '') {
       updates.push('city = ?');
@@ -1250,10 +1015,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     if (garbage_size !== undefined && garbage_size !== null && garbage_size !== '') {
       updates.push('garbage_size = ?');
-      params.push(parseValue(garbage_size, 'number'));
+      params.push(parseMultipartScalar(garbage_size, 'number'));
     }
     if (only_foot !== undefined && only_foot !== null && only_foot !== '') {
-      const parsedOnlyFoot = parseValue(only_foot, 'boolean');
+      const parsedOnlyFoot = parseMultipartScalar(only_foot, 'boolean');
       if (parsedOnlyFoot === undefined) {
         return error(res, 'only_foot: ожидается boolean или 0/1', 400);
       }
@@ -1261,7 +1026,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(parsedOnlyFoot);
     }
     if (possible_by_car !== undefined && possible_by_car !== null && possible_by_car !== '') {
-      const parsedPossibleByCar = parseValue(possible_by_car, 'boolean');
+      const parsedPossibleByCar = parseMultipartScalar(possible_by_car, 'boolean');
       if (parsedPossibleByCar === undefined) {
         return error(res, 'possible_by_car: ожидается boolean или 0/1', 400);
       }
@@ -1271,7 +1036,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     // cost удален - теперь все платежи через донаты
     if (reward_amount !== undefined && reward_amount !== null && reward_amount !== '') {
       updates.push('reward_amount = ?');
-      params.push(parseValue(reward_amount, 'number'));
+      params.push(parseMultipartScalar(reward_amount, 'number'));
     }
     if (start_date !== undefined) {
       const normalizedStartDate = formatDateTimeForMySql(start_date);
@@ -1364,7 +1129,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(priority);
     }
     if (is_open !== undefined) {
-      const parsedIsOpen = parseValue(is_open, 'boolean');
+      const parsedIsOpen = parseMultipartScalar(is_open, 'boolean');
       if (parsedIsOpen === undefined) {
         return error(res, 'is_open: ожидается boolean или 0/1', 400);
       }
@@ -1373,10 +1138,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     if (target_amount !== undefined && target_amount !== null && target_amount !== '') {
       updates.push('target_amount = ?');
-      params.push(parseValue(target_amount, 'number'));
+      params.push(parseMultipartScalar(target_amount, 'number'));
     }
     if (plant_tree !== undefined && plant_tree !== null && plant_tree !== '') {
-      const parsedPlantTree = parseValue(plant_tree, 'boolean');
+      const parsedPlantTree = parseMultipartScalar(plant_tree, 'boolean');
       if (parsedPlantTree === undefined) {
         return error(res, 'plant_tree: ожидается boolean или 0/1', 400);
       }
@@ -1384,7 +1149,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       params.push(parsedPlantTree);
     }
     if (trash_pickup_only !== undefined && trash_pickup_only !== null && trash_pickup_only !== '') {
-      const parsedTrashPickupOnly = parseValue(trash_pickup_only, 'boolean');
+      const parsedTrashPickupOnly = parseMultipartScalar(trash_pickup_only, 'boolean');
       if (parsedTrashPickupOnly === undefined) {
         return error(res, 'trash_pickup_only: ожидается boolean или 0/1', 400);
       }
@@ -1653,45 +1418,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     } else {
       request.photos_after = [];
     }
-    // Обработка waste_types из JSON поля
-    if (request.waste_types) {
-      try {
-        request.waste_types = typeof request.waste_types === 'string' 
-          ? JSON.parse(request.waste_types) 
-          : request.waste_types;
-      } catch (e) {
-        request.waste_types = [];
-      }
-    } else {
-      request.waste_types = [];
-    }
-    // Обработка actual_participants из JSON поля
-    if (request.actual_participants) {
-      try {
-        request.actual_participants = typeof request.actual_participants === 'string' 
-          ? JSON.parse(request.actual_participants) 
-          : request.actual_participants;
-      } catch (e) {
-        request.actual_participants = [];
-      }
-    } else {
-      request.actual_participants = [];
-    }
-    
-    // Обработка participant_completions из JSON поля
-    if (request.participant_completions) {
-      try {
-        request.participant_completions = typeof request.participant_completions === 'string' 
-          ? JSON.parse(request.participant_completions) 
-          : request.participant_completions;
-      } catch (e) {
-        request.participant_completions = {};
-      }
-    } else {
-      request.participant_completions = {};
-    }
-
-    // Нормализация дат в UTC
+    request.waste_types = parseJsonFieldSafe(request.waste_types, []);
+    request.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
+    request.participant_completions = parseJsonFieldSafe(request.participant_completions, {});
+// Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
 
     const responseData = { request: normalizedRequest };
@@ -1995,16 +1725,7 @@ router.post('/:id/participate', authenticate, async (req, res) => {
     }
 
     // Получаем текущий список зарегистрированных участников
-    let registeredParticipants = [];
-    if (request.registered_participants) {
-      try {
-        registeredParticipants = typeof request.registered_participants === 'string'
-          ? JSON.parse(request.registered_participants)
-          : request.registered_participants;
-      } catch (e) {
-        registeredParticipants = [];
-      }
-    }
+    let registeredParticipants = parseJsonFieldSafe(request.registered_participants, []);
 
     // КРИТИЧЕСКИ ВАЖНО: Создатель всегда должен быть в списке участников
     // Если его там нет, добавляем его обратно
@@ -2265,16 +1986,7 @@ router.delete('/:id/participate', authenticate, async (req, res) => {
     }
 
     // Получаем текущий список участников
-    let registeredParticipants = [];
-    if (request.registered_participants) {
-      try {
-        registeredParticipants = typeof request.registered_participants === 'string'
-          ? JSON.parse(request.registered_participants)
-          : request.registered_participants;
-      } catch (e) {
-        registeredParticipants = [];
-      }
-    }
+    let registeredParticipants = parseJsonFieldSafe(request.registered_participants, []);
 
     // Удаляем пользователя из списка участников
     registeredParticipants = registeredParticipants.filter(p => p !== userId);
@@ -3128,41 +2840,9 @@ router.post('/:id/extend', authenticate, async (req, res) => {
       updatedRequest.photos_after = [];
     }
 
-    if (updatedRequest.waste_types) {
-      try {
-        updatedRequest.waste_types = typeof updatedRequest.waste_types === 'string' 
-          ? JSON.parse(updatedRequest.waste_types) 
-          : updatedRequest.waste_types;
-      } catch (e) {
-        updatedRequest.waste_types = [];
-      }
-    } else {
-      updatedRequest.waste_types = [];
-    }
-
-    if (updatedRequest.actual_participants) {
-      try {
-        updatedRequest.actual_participants = typeof updatedRequest.actual_participants === 'string' 
-          ? JSON.parse(updatedRequest.actual_participants) 
-          : updatedRequest.actual_participants;
-      } catch (e) {
-        updatedRequest.actual_participants = [];
-      }
-    } else {
-      updatedRequest.actual_participants = [];
-    }
-
-    if (updatedRequest.registered_participants) {
-      try {
-        updatedRequest.registered_participants = typeof updatedRequest.registered_participants === 'string' 
-          ? JSON.parse(updatedRequest.registered_participants) 
-          : updatedRequest.registered_participants;
-      } catch (e) {
-        updatedRequest.registered_participants = [];
-      }
-    } else {
-      updatedRequest.registered_participants = [];
-    }
+    updatedRequest.waste_types = parseJsonFieldSafe(updatedRequest.waste_types, []);
+    updatedRequest.actual_participants = parseJsonFieldSafe(updatedRequest.actual_participants, []);
+    updatedRequest.registered_participants = parseJsonFieldSafe(updatedRequest.registered_participants, []);
 
     // Получение донатов
     const [donations] = await pool.execute(
@@ -3171,8 +2851,6 @@ router.post('/:id/extend', authenticate, async (req, res) => {
     );
     updatedRequest.donations = donations;
 
-    // Нормализация дат
-    const { normalizeDatesInObject } = require('../utils/datetime');
     const normalizedRequest = normalizeDatesInObject(updatedRequest);
 
     success(res, normalizedRequest, 200);
@@ -3215,16 +2893,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     // Проверка, что пользователь является участником
     let isParticipant = false;
     if (request.category === 'event') {
-      let registeredParticipants = [];
-      if (request.registered_participants) {
-        try {
-          registeredParticipants = typeof request.registered_participants === 'string'
-            ? JSON.parse(request.registered_participants)
-            : request.registered_participants;
-        } catch (e) {
-          registeredParticipants = [];
-        }
-      }
+      let registeredParticipants = parseJsonFieldSafe(request.registered_participants, []);
       isParticipant = registeredParticipants.includes(userId);
     } else if (request.category === 'wasteLocation') {
       isParticipant = request.joined_user_id === userId;
@@ -3335,21 +3004,9 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     );
 
     const updatedRequest = updatedRequests[0];
-
     // Обработка JSON полей
-    if (updatedRequest.participant_completions) {
-      try {
-        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
-          ? JSON.parse(updatedRequest.participant_completions)
-          : updatedRequest.participant_completions;
-      } catch (e) {
-        updatedRequest.participant_completions = {};
-      }
-    } else {
-      updatedRequest.participant_completions = {};
-    }
-
-    const successMessage = request.category === 'wasteLocation' 
+    updatedRequest.participant_completions = parseJsonFieldSafe(updatedRequest.participant_completions, {});
+const successMessage = request.category === 'wasteLocation' 
       ? 'Request closed and sent for moderation' 
       : 'Work closed, awaiting approval';
     success(res, { request: normalizeDatesInObject(updatedRequest) }, successMessage);
@@ -3449,21 +3106,9 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
     );
 
     const updatedRequest = updatedRequests[0];
-
     // Обработка JSON полей
-    if (updatedRequest.participant_completions) {
-      try {
-        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
-          ? JSON.parse(updatedRequest.participant_completions)
-          : updatedRequest.participant_completions;
-      } catch (e) {
-        updatedRequest.participant_completions = {};
-      }
-    } else {
-      updatedRequest.participant_completions = {};
-    }
-
-    success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'approve' ? 'Work closure approved' : 'Work closure rejected');
+    updatedRequest.participant_completions = parseJsonFieldSafe(updatedRequest.participant_completions, {});
+success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'approve' ? 'Work closure approved' : 'Work closure rejected');
   } catch (err) {
     error(res, 'Error approving/rejecting work closure', 500, err);
   }
@@ -3536,21 +3181,9 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     );
 
     const updatedRequest = updatedRequests[0];
-
     // Обработка JSON полей
-    if (updatedRequest.participant_completions) {
-      try {
-        updatedRequest.participant_completions = typeof updatedRequest.participant_completions === 'string'
-          ? JSON.parse(updatedRequest.participant_completions)
-          : updatedRequest.participant_completions;
-      } catch (e) {
-        updatedRequest.participant_completions = {};
-      }
-    } else {
-      updatedRequest.participant_completions = {};
-    }
-
-    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
+    updatedRequest.participant_completions = parseJsonFieldSafe(updatedRequest.participant_completions, {});
+success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
   } catch (err) {
     error(res, 'Error closing request', 500, err);
   }

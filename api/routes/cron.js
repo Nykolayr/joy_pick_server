@@ -21,6 +21,7 @@ const router = express.Router();
 
 // Путь к файлу с информацией о последнем запуске
 const LAST_RUN_FILE = path.join(__dirname, '..', '..', 'logs', 'cron_last_run.json');
+let isManualCronRunInProgress = false;
 
 /**
  * GET /api/cron/status
@@ -76,7 +77,12 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
     return success(res, {
       status: status,
       isRunning: isRunning,
+      manualRunInProgress: isManualCronRunInProgress,
       lastRun: lastRunTime ? lastRunTime.toISOString() : null,
+      lastRunDurationMs:
+        lastRunInfo && Number.isFinite(Number(lastRunInfo.durationMs))
+          ? Number(lastRunInfo.durationMs)
+          : null,
       hoursSinceLastRun: hoursSinceLastRun ? Math.round(hoursSinceLastRun * 10) / 10 : null,
       lastRunInfo: lastRunInfo,
       fileExists: fileExists,
@@ -99,12 +105,25 @@ router.get('/status', authenticate, requireAdmin, async (req, res) => {
  * Только для админов
  */
 router.post('/run', authenticate, requireAdmin, async (req, res) => {
+  if (isManualCronRunInProgress) {
+    return error(res, 'Cron tasks are already running', 409);
+  }
+
+  const startedAt = new Date();
+  const startedAtMs = Date.now();
+
   try {
+    isManualCronRunInProgress = true;
     // Запускаем задачи и ждем результат
     const results = await runAllCronTasks();
+    const finishedAt = new Date();
+    const durationMs = Date.now() - startedAtMs;
     
     return success(res, {
       message: 'Cron tasks completed',
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs,
       results: results
     });
   } catch (err) {
@@ -128,7 +147,16 @@ router.post('/run', authenticate, requireAdmin, async (req, res) => {
     }
     
     // ВСЕГДА передаем полный объект ошибки с деталями
-    return error(res, `Error running cron tasks: ${err.message || 'Unknown error'}`, 500, err);
+    const finishedAt = new Date();
+    const durationMs = Date.now() - startedAtMs;
+    const wrappedError = new Error(err.message || 'Unknown error');
+    wrappedError.originalError = err;
+    wrappedError.startedAt = startedAt.toISOString();
+    wrappedError.finishedAt = finishedAt.toISOString();
+    wrappedError.durationMs = durationMs;
+    return error(res, `Error running cron tasks: ${err.message || 'Unknown error'}`, 500, wrappedError);
+  } finally {
+    isManualCronRunInProgress = false;
   }
 });
 

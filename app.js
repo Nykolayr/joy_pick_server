@@ -17,6 +17,7 @@ const { Server } = require('socket.io');
 const apiApp = require('./api/index');
 const { runAllCronTasks } = require('./scripts/cronTasks');
 const { renderAppOpenLandingPage } = require('./api/utils/deeplinkLanding');
+const { runRealtimeExternalPreflight } = require('./api/utils/realtimeRouting');
 
 const app = express();
 
@@ -77,6 +78,9 @@ require('./api/socket')(io);
 
 // Сохраняем io в app для доступа из роутов
 app.set('io', io);
+
+// Неблокирующий preflight внешнего realtime-emitter (если включён в env).
+runRealtimeExternalPreflight().catch(() => {});
 
 // Подключаем API ПЕРВЫМ (до статических файлов!)
 app.use('/api', apiApp);

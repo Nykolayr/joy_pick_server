@@ -144,6 +144,7 @@ alwaysApply: false
 
 ### Ключевые задачи
 
+- Убрать тяжелые side-effects из list-endpoints (`GET /api/requests`, `GET /api/requests/my`): очистка `deleteInactiveRequests` должна жить в cron/фоне, а не в user-facing чтении списка.
 - Выделить application services: create/update/close/approve/reject/request-lifecycle.
 - Вынести общие преобразователи (bool/date/json arrays).
 - Свести SQL-операции к понятным transaction-блокам там, где нужно.
@@ -197,6 +198,27 @@ alwaysApply: false
 - Стабилизация платежных сценариев и идемпотентности.
 - Снижение риска частично выполненных операций.
 
+### Статус на текущий момент
+
+- Добавлена базовая наблюдаемость `metrics.durationMs` в heavy read-endpoints `api/routes/stripeAdmin.js`:
+  - `GET /api/stripe-admin/payment-intents`
+  - `GET /api/stripe-admin/transfers`
+  - `GET /api/stripe-admin/accounts`
+  - `GET /api/stripe-admin/charges`
+  - `GET /api/stripe-admin/balance-transactions`
+  - `GET /api/stripe-admin/refunds`
+  - `GET /api/stripe-admin/summary`
+  - `GET /api/stripe-admin/requests/active`
+  - `GET /api/stripe-admin/requests/closed`
+- Для error-path в этих endpoint также логируется `err.durationMs` для ускорения диагностики.
+- Бизнес-логика и платежные ветки не менялись (только слой наблюдаемости).
+- Усилена идемпотентность ручного перевода `POST /api/stripe-admin/create-transfer`:
+  - добавлен стабильный Stripe `idempotencyKey` (`manual_transfer:{request_id}:{performer_user_id}:{amount_cents}`);
+  - добавлен recovery при сохранении в БД по `transfer_id` после Stripe-вызова (устранение риска дублей/ошибок при гонке и ретраях).
+- Усилена целостность данных для `DELETE /api/stripe-admin/requests/:request_id/donations/:donation_id`:
+  - удаление доната и пересчёт `requests.total_contributed` переведены в одну DB-транзакцию (`begin/commit/rollback`);
+  - устранён риск partial-state при сбое между операциями.
+
 ### Ключевые задачи
 
 - Проверить и усилить transaction/idempotency вокруг approve/refund/payout.
@@ -219,6 +241,20 @@ alwaysApply: false
 - Определить границы: transport, auth, room membership, event contracts.
 - Синхронизировать state через DB/Redis/очередь (по выбранному варианту).
 - Поэтапный rollout (canary) без изменения клиентского контракта.
+
+### Статус на текущий момент
+
+- Стартована backend-подготовка без изменения клиентских endpoint:
+  - добавлен `api/utils/realtimeRouting.js` для централизованного роутинга realtime-эмитов;
+  - в `api/routes/chats.js` отправка Socket.io событий переведена на единый helper (`emitSocketChatEvent`) вместо локальных дублированных блоков;
+  - `sendSSEEvent` теперь управляется флагом `REALTIME_SSE_ENABLED` (по умолчанию включен).
+- Добавлены конфигурационные флаги совместимости (все по умолчанию не меняют текущее поведение):
+  - `REALTIME_TRANSPORT_MODE=hybrid`
+  - `REALTIME_SSE_ENABLED=1`
+  - `REALTIME_SOCKET_ENABLED=1`
+- Контракт API и payload событий для приложения/админки сохранён.
+- Сформирована рабочая карта realtime-контрактов и canary-выноса:
+  - `.cursor/rules/wss-separation-event-contract.mdc`
 
 ### Exit Criteria
 

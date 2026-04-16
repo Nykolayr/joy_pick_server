@@ -815,12 +815,22 @@ async function deleteInactiveRequests(options = {}) {
 async function notifySuperadminsRequestNotClosed() {
   try {
     const [requests] = await pool.execute(
-      `SELECT id, name, category, created_by, created_at
+      `SELECT id, name, category, created_by, created_at, start_date
        FROM requests 
        WHERE category IN ('speedCleanup', 'event')
          AND status IN ('new', 'inProgress', 'pending')
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-         AND created_at > DATE_SUB(NOW(), INTERVAL 8 DAY)`
+         AND (
+           (
+             start_date IS NOT NULL
+             AND start_date <= DATE_SUB(NOW(), INTERVAL 7 DAY)
+             AND start_date > DATE_SUB(NOW(), INTERVAL 8 DAY)
+           )
+           OR (
+             start_date IS NULL
+             AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
+             AND created_at > DATE_SUB(NOW(), INTERVAL 8 DAY)
+           )
+         )`
     );
     if (requests.length === 0) {
       return { processed: 0, errors: 0 };

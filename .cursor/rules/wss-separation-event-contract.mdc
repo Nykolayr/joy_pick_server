@@ -1,0 +1,165 @@
+---
+description: Карта realtime-событий и canary-миграции WSS без изменения клиентского контракта.
+alwaysApply: false
+---
+
+# WSS Separation: Event Contract Map
+
+## Цель
+
+- Зафиксировать текущий realtime-контракт (SSE + Socket.io) перед поэтапным выносом WSS.
+- Сохранить обратную совместимость для админки и мобильного приложения.
+- Использовать canary-переключение без одновременного массового cut-over.
+
+## Текущее состояние (backend)
+
+- HTTP/SSE поток: `GET /api/chats/:chatId/events` в `api/routes/chats.js`.
+- Socket.io: `api/socket.js`, подключение через room `chat:{chatId}`.
+- Отправка realtime в HTTP-роутах чатов: `api/routes/chats.js`.
+- Централизованный роутинг транспорта: `api/utils/realtimeRouting.js`.
+
+## Контракт событий (фактический)
+
+### SSE (`/api/chats/:chatId/events`)
+
+- `connected`
+  - поля: `type`, `message`, `chatId`, `timestamp`
+- `ping`
+  - поля: `type`, `timestamp`
+- `new_message`
+  - поля: `type`, `success`, `id`, `chat_id`, `sender_id`, `message`, `message_type`, `created_at`, `read_by`, `unread_by`
+- `all_messages_read`
+  - поля: `type`, `success`, `userId`, `chatId`, `messagesCount`, `readAt`
+- `message_read`
+  - поля: `type`, `success`, `messageId`, `userId`, `readAt`
+
+### Socket.io (room `chat:{chatId}`)
+
+- входящие от клиента:
+  - `join_chat` (`{ chatId }`)
+  - `send_message` (`{ chatId, message, messageType }`)
+  - `mark_as_read` (`{ messageId, chatId }`)
+  - `typing` (`{ chatId, isTyping }`)
+- исходящие сервер -> клиент:
+  - `joined_chat`
+  - `new_message`
+  - `message_read`
+  - `user_typing`
+  - `error`
+
+## Инварианты совместимости (не нарушать)
+
+- Имена событий не менять.
+- Форматы payload не менять.
+- Модель авторизации сохранить (Bearer/JWT как сейчас).
+- Room naming сохранить: `chat:{chatId}`.
+- Порядок критичных событий сохранить: запись в БД -> emit.
+
+## Canary-стратегия выноса WSS
+
+### Шаг 1 (уже сделано)
+
+- Вынесено управление транспортом в helper `realtimeRouting`.
+- Добавлены совместимые флаги:
+  - `REALTIME_TRANSPORT_MODE=hybrid`
+  - `REALTIME_SSE_ENABLED=1`
+  - `REALTIME_SOCKET_ENABLED=1`
+
+### Шаг 2 (следующий)
+
+- Добавить абстракцию внешнего emitter-клиента (без использования по умолчанию):
+  - `REALTIME_EXTERNAL_WSS_ENABLED=0`
+  - `REALTIME_EXTERNAL_WSS_URL=...`
+  - `REALTIME_EXTERNAL_WSS_SECRET=...`
+  - `REALTIME_EXTERNAL_WSS_TIMEOUT_MS=1500`
+- В режиме `hybrid` дублировать события локально + во внешний emitter (shadow mode, без влияния на клиент).
+
+#### Фактический статус Шага 2
+
+- Реализован shadow-emitter в `api/utils/realtimeRouting.js`:
+  - отправка `POST {REALTIME_EXTERNAL_WSS_URL}/emit` с payload события;
+  - вызовы fire-and-forget (ошибки не ломают основной API путь);
+  - выключено по умолчанию через `REALTIME_EXTERNAL_WSS_ENABLED=0`.
+- Подключён к HTTP chat-событиям в `api/routes/chats.js`:
+  - `new_message`
+  - `all_messages_read`
+  - `message_read`
+
+### Шаг 3 (canary)
+
+- Включать внешний emitter по сегменту (например, тестовые `chatId`/процент).
+- Мониторить:
+  - delivery success rate,
+  - reconnect rate,
+  - message lag (created_at vs delivered_at),
+  - error rate по auth/room join.
+
+#### Фактический статус Шага 3
+
+- Добавлена canary-маршрутизация во внешний shadow-emitter (`api/utils/realtimeRouting.js`):
+  - `REALTIME_EXTERNAL_WSS_CANARY_CHAT_IDS` — явный allow-list `chatId` через запятую;
+  - `REALTIME_EXTERNAL_WSS_CANARY_PERCENT` — детерминированный процент чатов (0..100) по hash(chatId);
+  - приоритет: явный `chatId` в списке > процентный бакет.
+- По умолчанию canary выключен:
+  - `REALTIME_EXTERNAL_WSS_CANARY_PERCENT=0`
+  - `REALTIME_EXTERNAL_WSS_CANARY_CHAT_IDS=` (пусто)
+- Добавлен диагностический endpoint:
+  - `GET /api/chats/admin/realtime-routing-status` (только admin),
+  - возвращает snapshot routing-флагов и runtime-метрики эмита.
+- Добавлен ручной запуск preflight:
+  - `POST /api/chats/admin/realtime-preflight-run` (только admin),
+  - запускает проверку `GET {REALTIME_EXTERNAL_WSS_URL}/health` без рестарта backend и возвращает актуальный `preflight` snapshot.
+- Добавлена проверка готовности к canary:
+  - `GET /api/chats/admin/realtime-canary-readiness` (только admin),
+  - возвращает `ready_for_canary`, детальные `checks` и список `reasons` для go/no-go решения.
+- Добавлен объединённый validate endpoint:
+  - `POST /api/chats/admin/realtime-canary-validate` (только admin),
+  - выполняет preflight и сразу возвращает обновлённый readiness-отчёт одним вызовом.
+
+### Шаг 4 (rollout)
+
+- Постепенно расширить сегмент canary до 100%.
+- Локальный контур оставить fallback на период стабилизации.
+
+#### Технические режимы rollout
+
+- `REALTIME_TRANSPORT_MODE=hybrid` (по умолчанию):
+  - локальная доставка (SSE + Socket.io по флагам) + shadow во внешний emitter по canary-правилам.
+- `REALTIME_TRANSPORT_MODE=shadow`:
+  - поведение как `hybrid` (alias для явного режима наблюдения).
+- `REALTIME_TRANSPORT_MODE=external_preferred`:
+  - сначала попытка внешнего emitter; при неуспехе fallback на локальный контур.
+- `REALTIME_TRANSPORT_MODE=external_only`:
+  - только внешний emitter (локальные realtime-эмиты отключены).
+  - использовать только после полного подтверждения стабильности.
+
+### Базовые runtime-метрики (in-memory)
+
+- `socketEmitAttempts`, `socketEmitSuccess`
+- `externalEmitAttempts`, `externalEmitSuccess`, `externalEmitErrors`
+- `externalEmitSkippedDisabled`, `externalEmitSkippedCanary`
+- `externalPreferredFallbackToLocal`
+- `externalOnlyDrops`
+
+### Preflight-check внешнего emitter
+
+- При старте backend выполняется мягкий preflight (без падения процесса):
+  - запрос `GET {REALTIME_EXTERNAL_WSS_URL}/health`
+  - таймаут берётся из `REALTIME_EXTERNAL_WSS_TIMEOUT_MS`
+- Статус preflight доступен в:
+  - `GET /api/chats/admin/realtime-routing-status`
+  - поле `preflight` (`lastStatus`, `lastAttemptAt`, `lastSuccessAt`, `lastError`, `lastCheckedUrl`)
+
+## Rollback
+
+- Мгновенно выключить внешний путь:
+  - `REALTIME_EXTERNAL_WSS_ENABLED=0`
+- Оставить:
+  - `REALTIME_SSE_ENABLED=1`
+  - `REALTIME_SOCKET_ENABLED=1`
+- Перезапустить backend-процесс.
+
+## Что обновлять на сервере (после текущего шага)
+
+- Код backend: не обязательно для runtime (этот файл — рабочая карта).
+- Если выкатывается только документация процесса: обновить `.cursor/rules/wss-separation-event-contract.mdc`.

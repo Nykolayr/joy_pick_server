@@ -5,6 +5,16 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { addUserToChat } = require('../utils/chatHelpers');
 const {
+  emitSocketChatEvent,
+  emitExternalChatShadowEvent,
+  getRealtimeRoutingSnapshot,
+  getRealtimeMetricsSnapshot,
+  getRealtimePreflightSnapshot,
+  runRealtimeExternalPreflight,
+  markExternalPreferredFallback,
+  markExternalOnlyDrop
+} = require('../utils/realtimeRouting');
+const {
   validateChatType,
   getParticipantsCount,
   validateAndFixChatType,
@@ -50,6 +60,18 @@ function safeParseJsonArray(value) {
   return [];
 }
 
+function normalizeMessageReadState(message) {
+  const normalized = { ...message };
+  normalized.read_by = safeParseJsonArray(message.read_by);
+  normalized.unread_by = safeParseJsonArray(message.unread_by);
+
+  if (!normalized.read_by.includes(message.sender_id)) {
+    normalized.read_by.push(message.sender_id);
+  }
+  normalized.unread_by = normalized.unread_by.filter((id) => id !== message.sender_id);
+  return normalized;
+}
+
 function senderFromMessageRow(msg) {
   const name =
     msg.sender_display_name != null && String(msg.sender_display_name).trim() !== ''
@@ -60,6 +82,50 @@ function senderFromMessageRow(msg) {
     display_name: name,
     photo_url: msg.sender_photo_url != null ? msg.sender_photo_url : null
   };
+}
+
+function mapMessageForResponse(msg) {
+  return {
+    id: msg.id,
+    chat_id: msg.chat_id,
+    sender_id: msg.sender_id,
+    sender: senderFromMessageRow(msg),
+    message: msg.message,
+    message_type: msg.message_type,
+    created_at: msg.created_at,
+    read_by: msg.read_by,
+    unread_by: msg.unread_by
+  };
+}
+
+async function getChatWithUnreadCount(chatId, userId) {
+  const [rows] = await pool.execute(
+    `SELECT c.*,
+      (SELECT COUNT(*) FROM messages m
+       WHERE m.chat_id = c.id
+       AND m.deleted_at IS NULL
+       AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+      ) AS unread_count
+     FROM chats c
+     WHERE c.id = ?`,
+    [userId, chatId]
+  );
+  return rows[0] || null;
+}
+
+async function getChatByTypeAndRequestWithUnreadCount(type, requestId, userId) {
+  const [rows] = await pool.execute(
+    `SELECT c.*,
+      (SELECT COUNT(*) FROM messages m
+       WHERE m.chat_id = c.id
+       AND m.deleted_at IS NULL
+       AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
+      ) AS unread_count
+     FROM chats c
+     WHERE c.type = ? AND c.request_id = ?`,
+    [userId, type, requestId]
+  );
+  return rows[0] || null;
 }
 
 /**
@@ -135,12 +201,129 @@ async function ensurePrivateChatParticipants(chatId, userId, chat) {
   }
 }
 
+async function ensureChatAccessForUser(chatId, userId) {
+  let [chats] = await pool.execute(
+    `SELECT c.* FROM chats c
+     INNER JOIN chat_participants cp ON c.id = cp.chat_id
+     WHERE c.id = ? AND cp.user_id = ?`,
+    [chatId, userId]
+  );
+
+  if (chats.length > 0) {
+    return { chat: chats[0] };
+  }
+
+  const [chatExists] = await pool.execute(
+    `SELECT c.* FROM chats c WHERE c.id = ?`,
+    [chatId]
+  );
+  if (chatExists.length === 0) {
+    return { statusCode: 404, userMessage: 'Chat not found' };
+  }
+
+  const chat = chatExists[0];
+  const [participants] = await pool.execute(
+    `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+    [chatId]
+  );
+  const participantIds = participants.map((p) => p.user_id);
+
+  if (chat.type === 'private' && !participantIds.includes(userId)) {
+    const added = await ensurePrivateChatParticipants(chatId, userId, chat);
+    if (!added) {
+      return {
+        statusCode: 404,
+        userMessage: 'Chat not found or access denied',
+        details: {
+          message: `User ${userId} is not a participant of private chat ${chatId}`,
+          chatId,
+          userId,
+          chatType: chat.type,
+          participants: participantIds,
+          chatUserId: chat.user_id,
+          chatCreatedBy: chat.created_by
+        }
+      };
+    }
+    [chats] = await pool.execute(
+      `SELECT c.* FROM chats c
+       INNER JOIN chat_participants cp ON c.id = cp.chat_id
+       WHERE c.id = ? AND cp.user_id = ?`,
+      [chatId, userId]
+    );
+  }
+
+  if (chat.type === 'support') {
+    if (chat.user_id === userId || chat.created_by === userId) {
+      await addUserToChat(chatId, userId);
+      [chats] = await pool.execute(
+        `SELECT c.* FROM chats c
+         INNER JOIN chat_participants cp ON c.id = cp.chat_id
+         WHERE c.id = ? AND cp.user_id = ?`,
+        [chatId, userId]
+      );
+    } else if (!participantIds.includes(userId)) {
+      return {
+        statusCode: 404,
+        userMessage: 'Chat not found or access denied',
+        details: {
+          message: `User ${userId} is not a participant of support chat ${chatId}`,
+          chatId,
+          userId,
+          chatType: chat.type,
+          participants: participantIds,
+          chatUserId: chat.user_id,
+          chatCreatedBy: chat.created_by
+        }
+      };
+    }
+  }
+
+  if (chat.type === 'group' && chat.request_id) {
+    const [groupParticipants] = await pool.execute(
+      `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
+      [chatId]
+    );
+    const groupParticipantIds = groupParticipants.map((p) => p.user_id);
+    if (!groupParticipantIds.includes(userId)) {
+      await addUserToChat(chatId, userId);
+      [chats] = await pool.execute(
+        `SELECT c.* FROM chats c
+         INNER JOIN chat_participants cp ON c.id = cp.chat_id
+         WHERE c.id = ? AND cp.user_id = ?`,
+        [chatId, userId]
+      );
+    }
+  }
+
+  if (chats.length === 0) {
+    return {
+      statusCode: 404,
+      userMessage: 'Chat not found or access denied',
+      details: {
+        message: `User ${userId} has no access to chat ${chatId}`,
+        chatId,
+        userId,
+        chatType: chat.type,
+        participants: participantIds
+      }
+    };
+  }
+
+  return { chat: chats[0] };
+}
+
 /**
  * Отправка события через SSE всем подключенным клиентам чата
  * @param {string} chatId - ID чата
  * @param {object} event - Событие для отправки
  */
 function sendSSEEvent(chatId, event) {
+  const { sseEnabled } = getRealtimeRoutingSnapshot();
+  if (!sseEnabled) {
+    return;
+  }
+
   const connections = sseConnections.get(chatId);
   if (!connections || connections.size === 0) {
     return;
@@ -164,6 +347,129 @@ function sendSSEEvent(chatId, event) {
     sseConnections.delete(chatId);
   }
 }
+
+async function emitChatRealtimeEvent(req, chatId, options) {
+  const snapshot = getRealtimeRoutingSnapshot();
+  const mode = String(snapshot.mode || 'hybrid').toLowerCase();
+  const externalPayload = options.externalPayload || options.sseEvent || options.socketPayload || {};
+
+  if (mode === 'external_only') {
+    const externalOk = await emitExternalChatShadowEvent(chatId, options.eventName, externalPayload).catch(
+      () => false
+    );
+    if (!externalOk) {
+      markExternalOnlyDrop();
+    }
+    return;
+  }
+
+  if (mode === 'external_preferred') {
+    const externalOk = await emitExternalChatShadowEvent(chatId, options.eventName, externalPayload).catch(
+      () => false
+    );
+    if (externalOk) {
+      return;
+    }
+    markExternalPreferredFallback();
+  }
+
+  if (options.sseEvent) {
+    sendSSEEvent(chatId, options.sseEvent);
+  }
+
+  if (options.socketEventName && options.socketPayload) {
+    try {
+      emitSocketChatEvent(req, chatId, options.socketEventName, options.socketPayload);
+    } catch (_) {
+      // Socket.io недоступен; основной HTTP поток не ломаем
+    }
+  }
+
+  if (mode === 'hybrid' || mode === 'shadow') {
+    emitExternalChatShadowEvent(chatId, options.eventName, externalPayload).catch(() => {});
+  }
+}
+
+function buildCanaryReadinessReport() {
+  const routing = getRealtimeRoutingSnapshot();
+  const preflight = getRealtimePreflightSnapshot();
+
+  const checks = {
+    externalEnabled: !!routing.externalWssEnabled,
+    externalUrlConfigured: !!(routing.externalWssUrl && String(routing.externalWssUrl).trim() !== ''),
+    preflightOk: preflight.lastStatus === 'ok',
+    canaryConfigured:
+      (Array.isArray(routing.externalWssCanaryChatIds) && routing.externalWssCanaryChatIds.length > 0) ||
+      Number(routing.externalWssCanaryPercent || 0) > 0
+  };
+
+  const mode = String(routing.mode || 'hybrid').toLowerCase();
+  let readyForCanary = false;
+
+  if (mode === 'external_only' || mode === 'external_preferred') {
+    readyForCanary = checks.externalEnabled && checks.externalUrlConfigured && checks.preflightOk;
+  } else {
+    readyForCanary =
+      checks.externalEnabled &&
+      checks.externalUrlConfigured &&
+      checks.preflightOk &&
+      checks.canaryConfigured;
+  }
+
+  const reasons = [];
+  if (!checks.externalEnabled) reasons.push('REALTIME_EXTERNAL_WSS_ENABLED is disabled');
+  if (!checks.externalUrlConfigured) reasons.push('REALTIME_EXTERNAL_WSS_URL is empty');
+  if (!checks.preflightOk) reasons.push('External WSS preflight is not ok');
+  if (!checks.canaryConfigured && (mode === 'hybrid' || mode === 'shadow')) {
+    reasons.push('Canary routing is not configured (chat ids list or percent)');
+  }
+
+  return {
+    ready_for_canary: readyForCanary,
+    mode,
+    checks,
+    reasons,
+    routing,
+    preflight
+  };
+}
+
+router.get('/admin/realtime-routing-status', authenticate, requireAdmin, async (req, res) => {
+  return success(res, {
+    routing: getRealtimeRoutingSnapshot(),
+    metrics: getRealtimeMetricsSnapshot(),
+    preflight: getRealtimePreflightSnapshot(),
+    activeSseChats: sseConnections.size,
+    activeSseConnections: Array.from(sseConnections.values()).reduce((sum, set) => sum + set.size, 0),
+    timestamp: new Date().toISOString()
+  });
+});
+
+router.post('/admin/realtime-preflight-run', authenticate, requireAdmin, async (req, res) => {
+  const ok = await runRealtimeExternalPreflight().catch(() => false);
+  return success(res, {
+    ok,
+    preflight: getRealtimePreflightSnapshot(),
+    routing: getRealtimeRoutingSnapshot(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+router.get('/admin/realtime-canary-readiness', authenticate, requireAdmin, async (req, res) => {
+  const report = buildCanaryReadinessReport();
+  return success(res, { ...report, timestamp: new Date().toISOString() });
+});
+
+router.post('/admin/realtime-canary-validate', authenticate, requireAdmin, async (req, res) => {
+  const preflightOk = await runRealtimeExternalPreflight().catch(() => false);
+  const report = buildCanaryReadinessReport();
+  return success(res, {
+    ...report,
+    preflight_run: true,
+    preflight_result: preflightOk,
+    timestamp: new Date().toISOString()
+  });
+});
 
 /**
  * GET /api/chats
@@ -219,9 +525,42 @@ router.get('/', authenticate, async (req, res) => {
     const [chats] = await pool.execute(query, params);
 
     // Получаем последние сообщения и валидируем типы чатов
+    const chatIds = chats.map((c) => c.id);
+    const participantsCountByChatId = new Map();
+    const lastMessageById = new Map();
+
+    if (chatIds.length > 0) {
+      const placeholders = chatIds.map(() => '?').join(',');
+      const [participantsRows] = await pool.execute(
+        `SELECT chat_id, COUNT(*) AS participants_count
+         FROM chat_participants
+         WHERE chat_id IN (${placeholders})
+         GROUP BY chat_id`,
+        chatIds
+      );
+      for (const row of participantsRows) {
+        participantsCountByChatId.set(row.chat_id, Number(row.participants_count) || 0);
+      }
+
+      const lastMessageIds = chats
+        .map((c) => c.last_message_id)
+        .filter((id) => id !== null && id !== undefined);
+      if (lastMessageIds.length > 0) {
+        const messagePlaceholders = lastMessageIds.map(() => '?').join(',');
+        const [messages] = await pool.execute(
+          `SELECT id, message, sender_id, created_at
+           FROM messages
+           WHERE id IN (${messagePlaceholders})`,
+          lastMessageIds
+        );
+        for (const m of messages) {
+          lastMessageById.set(m.id, m);
+        }
+      }
+    }
+
     for (const chat of chats) {
-      // Получаем количество участников
-      const participantsCount = await getParticipantsCount(chat.id);
+      const participantsCount = participantsCountByChatId.get(chat.id) || 0;
       chat.participants_count = participantsCount;
       
       // Явно указываем тип чата
@@ -247,14 +586,9 @@ router.get('/', authenticate, async (req, res) => {
       }
 
       if (chat.last_message_id) {
-        const [messages] = await pool.execute(
-          `SELECT id, message, sender_id, created_at 
-           FROM messages 
-           WHERE id = ?`,
-          [chat.last_message_id]
-        );
-        if (messages.length > 0) {
-          chat.last_message = messages[0];
+        const lastMessage = lastMessageById.get(chat.last_message_id);
+        if (lastMessage) {
+          chat.last_message = lastMessage;
         }
       }
     }
@@ -300,23 +634,12 @@ router.get('/support', authenticate, async (req, res) => {
   try {
     const userId = req.user.userId || req.user.id;
 
-    const [chats] = await pool.execute(
-      `SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m 
-         WHERE m.chat_id = c.id 
-         AND m.deleted_at IS NULL
-         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count
-       FROM chats c
-       WHERE c.type = 'support' AND c.user_id = ?`,
-      [userId, userId]
-    );
-
-    if (chats.length === 0) {
+    const supportChat = await findExistingSupportChat(userId);
+    if (!supportChat) {
       return error(res, 'Support chat not found', 404);
     }
 
-    const chat = chats[0];
+    const chat = (await getChatWithUnreadCount(supportChat.id, userId)) || supportChat;
     const participantsCount = await getParticipantsCount(chat.id);
     chat.participants_count = participantsCount;
     chat.type = 'support'; // Явно указываем тип
@@ -347,19 +670,7 @@ router.post('/support', authenticate, async (req, res) => {
     if (existingChat) {
       // Возвращаем существующий чат
       const participantsCount = await getParticipantsCount(existingChat.id);
-      const [chats] = await pool.execute(
-        `SELECT c.*, 
-         (SELECT COUNT(*) FROM messages m 
-          WHERE m.chat_id = c.id 
-          AND m.deleted_at IS NULL
-          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-         ) as unread_count
-         FROM chats c
-         WHERE c.id = ?`,
-        [userId, existingChat.id]
-      );
-      
-      const chat = chats[0] || existingChat;
+      const chat = (await getChatWithUnreadCount(existingChat.id, userId)) || existingChat;
       chat.participants_count = participantsCount;
       chat.type = 'support'; // Явно указываем тип
       
@@ -386,33 +697,22 @@ router.post('/support', authenticate, async (req, res) => {
       `SELECT id FROM users WHERE is_admin = true OR admin = true`
     );
     
-    for (const admin of admins) {
-      try {
-        await pool.execute(
-          `INSERT INTO chat_participants (chat_id, user_id, joined_at)
-           VALUES (?, ?, NOW())
-           ON DUPLICATE KEY UPDATE joined_at = joined_at`,
-          [chatId, admin.id]
-        );
-      } catch (err) {
-        // Игнорируем ошибки дублирования
-      }
+    if (admins.length > 0) {
+      const valuesPlaceholders = admins.map(() => '(?, ?, NOW())').join(', ');
+      const valuesParams = admins.flatMap((admin) => [chatId, admin.id]);
+      await pool.execute(
+        `INSERT INTO chat_participants (chat_id, user_id, joined_at)
+         VALUES ${valuesPlaceholders}
+         ON DUPLICATE KEY UPDATE joined_at = joined_at`,
+        valuesParams
+      );
     }
 
     const participantsCount = await getParticipantsCount(chatId);
-    const [newChat] = await pool.execute(
-      `SELECT c.*, 
-       (SELECT COUNT(*) FROM messages m 
-        WHERE m.chat_id = c.id 
-        AND m.deleted_at IS NULL
-        AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-       ) as unread_count
-       FROM chats c
-       WHERE c.id = ?`,
-      [userId, chatId]
-    );
-
-    const chat = newChat[0];
+    const chat = await getChatWithUnreadCount(chatId, userId);
+    if (!chat) {
+      return error(res, 'Support chat not found after creation', 500);
+    }
     chat.participants_count = participantsCount;
     chat.type = 'support'; // Явно указываем тип
 
@@ -441,25 +741,10 @@ router.get('/private/:requestId', authenticate, async (req, res) => {
       return error(res, 'Request not found', 404);
     }
 
-    // Ищем приватный чат по request_id и типу (один приватный чат на заявку)
-    const [chats] = await pool.execute(
-      `SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m 
-         WHERE m.chat_id = c.id 
-         AND m.deleted_at IS NULL
-         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count
-       FROM chats c
-       WHERE c.type = 'private' 
-       AND c.request_id = ?`,
-      [userId, requestId]
-    );
-
-    if (chats.length === 0) {
+    const chat = await getChatByTypeAndRequestWithUnreadCount('private', requestId, userId);
+    if (!chat) {
       return error(res, 'Private chat not found', 404);
     }
-
-    const chat = chats[0];
     const participantsCount = await getParticipantsCount(chat.id);
     chat.participants_count = participantsCount;
     chat.type = 'private';
@@ -544,19 +829,7 @@ router.post('/private', authenticate, async (req, res) => {
       }
       
       const participantsCount = await getParticipantsCount(existingChat.id);
-      const [chats] = await pool.execute(
-        `SELECT c.*, 
-         (SELECT COUNT(*) FROM messages m 
-          WHERE m.chat_id = c.id 
-          AND m.deleted_at IS NULL
-          AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-         ) as unread_count
-         FROM chats c
-         WHERE c.id = ?`,
-        [userId, existingChat.id]
-      );
-      
-      const chat = chats[0] || existingChat;
+      const chat = (await getChatWithUnreadCount(existingChat.id, userId)) || existingChat;
       chat.participants_count = participantsCount;
       chat.type = 'private';
       
@@ -602,19 +875,10 @@ router.post('/private', authenticate, async (req, res) => {
     const participantsCount = await getParticipantsCount(chatId);
     
     // Валидация созданного чата
-    const [newChat] = await pool.execute(
-      `SELECT c.*, 
-       (SELECT COUNT(*) FROM messages m 
-        WHERE m.chat_id = c.id 
-        AND m.deleted_at IS NULL
-        AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-       ) as unread_count
-       FROM chats c
-       WHERE c.id = ?`,
-      [userId, chatId]
-    );
-
-    const chat = newChat[0];
+    const chat = await getChatWithUnreadCount(chatId, userId);
+    if (!chat) {
+      return error(res, 'Private chat not found after creation', 500);
+    }
     chat.participants_count = participantsCount;
     chat.type = 'private';
 
@@ -643,24 +907,10 @@ router.get('/group/:requestId', authenticate, async (req, res) => {
       return error(res, 'Request not found', 404);
     }
 
-    // Ищем чат
-    const [chats] = await pool.execute(
-      `SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m 
-         WHERE m.chat_id = c.id 
-         AND m.deleted_at IS NULL
-         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count
-       FROM chats c
-       WHERE c.type = 'group' AND c.request_id = ?`,
-      [userId, requestId]
-    );
-
-    if (chats.length === 0) {
+    const chat = await getChatByTypeAndRequestWithUnreadCount('group', requestId, userId);
+    if (!chat) {
       return error(res, 'Group chat not found', 404);
     }
-
-    const chat = chats[0];
     const participantsCount = await getParticipantsCount(chat.id);
     chat.participants_count = participantsCount;
     chat.type = 'group'; // Явно указываем тип
@@ -709,19 +959,7 @@ router.post('/group', authenticate, async (req, res) => {
     if (existingChat) {
       // Возвращаем существующий чат
       const participantsCount = await getParticipantsCount(existingChat.id);
-      const [chats] = await pool.execute(
-        `SELECT c.*, 
-          (SELECT COUNT(*) FROM messages m 
-           WHERE m.chat_id = c.id 
-           AND m.deleted_at IS NULL
-           AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-          ) as unread_count
-         FROM chats c
-         WHERE c.id = ?`,
-        [userId, existingChat.id]
-      );
-      
-      const chat = chats[0] || existingChat;
+      const chat = (await getChatWithUnreadCount(existingChat.id, userId)) || existingChat;
       chat.participants_count = participantsCount;
       chat.type = 'group'; // Явно указываем тип
       
@@ -812,19 +1050,10 @@ router.post('/group', authenticate, async (req, res) => {
     const participantsCount = await getParticipantsCount(chatId);
     
     // Получаем созданный чат
-    const [newChat] = await pool.execute(
-      `SELECT c.*, 
-        (SELECT COUNT(*) FROM messages m 
-         WHERE m.chat_id = c.id 
-         AND m.deleted_at IS NULL
-         AND JSON_CONTAINS(COALESCE(m.unread_by, '[]'), JSON_QUOTE(?)) = 1
-        ) as unread_count
-       FROM chats c
-       WHERE c.id = ?`,
-      [userId, chatId]
-    );
-
-    const chat = newChat[0];
+    const chat = await getChatWithUnreadCount(chatId, userId);
+    if (!chat) {
+      return error(res, 'Group chat not found after creation', 500);
+    }
     chat.participants_count = participantsCount;
     chat.type = 'group'; // Явно указываем тип
 
@@ -856,121 +1085,14 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 50));
     const offsetNum = Math.max(0, parseInt(offset) || 0);
 
-    // Проверяем доступ к чату
-    let [chats] = await pool.execute(
-      `SELECT c.* FROM chats c
-       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-       WHERE c.id = ? AND cp.user_id = ?`,
-      [chatId, userId]
-    );
-
-    // Если чат не найден через участников, проверяем, существует ли чат вообще
-    if (chats.length === 0) {
-      const [chatExists] = await pool.execute(
-        `SELECT c.* FROM chats c WHERE c.id = ?`,
-        [chatId]
+    const access = await ensureChatAccessForUser(chatId, userId);
+    if (!access.chat) {
+      return error(
+        res,
+        access.userMessage || 'Chat not found or access denied',
+        access.statusCode || 404,
+        access.details ? new Error(JSON.stringify(access.details)) : undefined
       );
-
-      if (chatExists.length === 0) {
-        return error(res, 'Chat not found', 404);
-      }
-
-      const chat = chatExists[0];
-
-      // Проверяем, есть ли пользователь в участниках
-      const [participants] = await pool.execute(
-        `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-        [chatId]
-      );
-      
-      const participantIds = participants.map(p => p.user_id);
-      
-      // Для приватных чатов: автоматически добавляем участников, если они не добавлены
-      if (chat.type === 'private') {
-        if (!participantIds.includes(userId)) {
-          const added = await ensurePrivateChatParticipants(chatId, userId, chat);
-          if (!added) {
-            const errorDetails = {
-              message: `User ${userId} is not a participant of private chat ${chatId}`,
-              chatId,
-              userId,
-              chatType: chat.type,
-              participants: participantIds,
-              chatUserId: chat.user_id,
-              chatCreatedBy: chat.created_by
-            };
-            return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-          }
-          // Повторно проверяем доступ после добавления
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      // Для чатов типа support: если пользователь создатель чата - добавляем его
-      if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
-        );
-      } else if (chat.type === 'support') {
-        // Если пользователь не создатель, проверяем, является ли он участником
-        if (!participantIds.includes(userId)) {
-          const errorDetails = {
-            message: `User ${userId} is not a participant of support chat ${chatId}`,
-            chatId,
-            userId,
-            chatType: chat.type,
-            participants: participantIds,
-            chatUserId: chat.user_id,
-            chatCreatedBy: chat.created_by
-          };
-          return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-        }
-      }
-
-      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
-      if (chat.type === 'group' && chat.request_id) {
-        // Проверяем, есть ли пользователь в участниках
-        const [participants] = await pool.execute(
-          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-          [chatId]
-        );
-        const participantIds = participants.map(p => p.user_id);
-        
-        if (!participantIds.includes(userId)) {
-          // Пользователь не является участником - автоматически добавляем его
-          await addUserToChat(chatId, userId);
-          
-          // Повторно проверяем доступ
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      if (chats.length === 0) {
-        const errorDetails = {
-          message: `User ${userId} has no access to chat ${chatId}`,
-          chatId,
-          userId,
-          chatType: chat.type,
-          participants: participantIds
-        };
-        return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-      }
     }
 
     // Получаем сообщения (LEFT JOIN: сообщение не пропадает, если строка отправителя в users удалена)
@@ -995,20 +1117,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
 
     const [messages] = await pool.execute(query, params);
 
-    // Парсим JSON поля read_by и unread_by для каждого сообщения
-    for (const message of messages) {
-      // Безопасный парсинг JSON полей
-      message.read_by = safeParseJsonArray(message.read_by);
-      message.unread_by = safeParseJsonArray(message.unread_by);
-      
-      // Убеждаемся, что отправитель всегда в read_by
-      if (!message.read_by.includes(message.sender_id)) {
-        message.read_by.push(message.sender_id);
-      }
-      
-      // Удаляем отправителя из unread_by (если он там есть)
-      message.unread_by = message.unread_by.filter(id => id !== message.sender_id);
-    }
+    const normalizedMessages = messages.map(normalizeMessageReadState);
 
     // Получаем общее количество сообщений
     let countQuery = `SELECT COUNT(*) as total FROM messages WHERE chat_id = ? AND deleted_at IS NULL`;
@@ -1021,17 +1130,7 @@ router.get('/:chatId/messages', authenticate, async (req, res) => {
     const total = countResult[0].total;
 
     // Формируем ответ с данными отправителя
-    const formattedMessages = messages.map((msg) => ({
-      id: msg.id,
-      chat_id: msg.chat_id,
-      sender_id: msg.sender_id,
-      sender: senderFromMessageRow(msg),
-      message: msg.message,
-      message_type: msg.message_type,
-      created_at: msg.created_at,
-      read_by: msg.read_by,
-      unread_by: msg.unread_by
-    }));
+    const formattedMessages = normalizedMessages.map(mapMessageForResponse);
 
     success(res, {
       messages: formattedMessages.reverse(), // Обратный порядок для хронологии
@@ -1057,121 +1156,14 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       return error(res, 'message is required', 400);
     }
 
-    // Проверяем доступ к чату
-    let [chats] = await pool.execute(
-      `SELECT c.* FROM chats c
-       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-       WHERE c.id = ? AND cp.user_id = ?`,
-      [chatId, userId]
-    );
-
-    // Если чат не найден через участников, проверяем, существует ли чат вообще
-    if (chats.length === 0) {
-      const [chatExists] = await pool.execute(
-        `SELECT c.* FROM chats c WHERE c.id = ?`,
-        [chatId]
+    const access = await ensureChatAccessForUser(chatId, userId);
+    if (!access.chat) {
+      return error(
+        res,
+        access.userMessage || 'Chat not found or access denied',
+        access.statusCode || 404,
+        access.details ? new Error(JSON.stringify(access.details)) : undefined
       );
-
-      if (chatExists.length === 0) {
-        return error(res, 'Chat not found', 404);
-      }
-
-      const chat = chatExists[0];
-
-      // Проверяем, есть ли пользователь в участниках
-      const [participants] = await pool.execute(
-        `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-        [chatId]
-      );
-      
-      const participantIds = participants.map(p => p.user_id);
-      
-      // Для приватных чатов: автоматически добавляем участников, если они не добавлены
-      if (chat.type === 'private') {
-        if (!participantIds.includes(userId)) {
-          const added = await ensurePrivateChatParticipants(chatId, userId, chat);
-          if (!added) {
-            const errorDetails = {
-              message: `User ${userId} is not a participant of private chat ${chatId}`,
-              chatId,
-              userId,
-              chatType: chat.type,
-              participants: participantIds,
-              chatUserId: chat.user_id,
-              chatCreatedBy: chat.created_by
-            };
-            return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-          }
-          // Повторно проверяем доступ после добавления
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      // Для чатов типа support: если пользователь создатель чата - добавляем его
-      if (chat.type === 'support' && (chat.user_id === userId || chat.created_by === userId)) {
-        await addUserToChat(chatId, userId);
-        
-        // Повторно проверяем доступ
-        [chats] = await pool.execute(
-          `SELECT c.* FROM chats c
-           INNER JOIN chat_participants cp ON c.id = cp.chat_id
-           WHERE c.id = ? AND cp.user_id = ?`,
-          [chatId, userId]
-        );
-      } else if (chat.type === 'support') {
-        // Если пользователь не создатель, проверяем, является ли он участником
-        if (!participantIds.includes(userId)) {
-          const errorDetails = {
-            message: `User ${userId} is not a participant of support chat ${chatId}`,
-            chatId,
-            userId,
-            chatType: chat.type,
-            participants: participantIds,
-            chatUserId: chat.user_id,
-            chatCreatedBy: chat.created_by
-          };
-          return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-        }
-      }
-
-      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
-      if (chat.type === 'group' && chat.request_id) {
-        // Проверяем, есть ли пользователь в участниках
-        const [participants] = await pool.execute(
-          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-          [chatId]
-        );
-        const participantIds = participants.map(p => p.user_id);
-        
-        if (!participantIds.includes(userId)) {
-          // Пользователь не является участником - автоматически добавляем его
-          await addUserToChat(chatId, userId);
-          
-          // Повторно проверяем доступ
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      if (chats.length === 0) {
-        const errorDetails = {
-          message: `User ${userId} has no access to chat ${chatId}`,
-          chatId,
-          userId,
-          chatType: chat.type,
-          participants: participantIds
-        };
-        return error(res, 'Chat not found or access denied', 404, new Error(JSON.stringify(errorDetails)));
-      }
     }
 
     // Получаем всех участников чата
@@ -1236,8 +1228,7 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
     messageData.read_by = safeParseJsonArray(messageData.read_by);
     messageData.unread_by = safeParseJsonArray(messageData.unread_by);
 
-    // Отправляем через SSE (Server-Sent Events)
-    sendSSEEvent(chatId, {
+    const sseNewMessageEvent = {
       type: 'new_message',
       success: true,
       id: messageData.id,
@@ -1248,26 +1239,23 @@ router.post('/:chatId/messages', authenticate, async (req, res) => {
       created_at: messageData.created_at,
       read_by: messageData.read_by,
       unread_by: messageData.unread_by
+    };
+    const socketNewMessageEvent = {
+      success: true,
+      id: messageData.id,
+      chat_id: messageData.chat_id,
+      sender_id: messageData.sender_id,
+      message: messageData.message,
+      message_type: messageData.message_type,
+      created_at: messageData.created_at
+    };
+    await emitChatRealtimeEvent(req, chatId, {
+      eventName: 'new_message',
+      sseEvent: sseNewMessageEvent,
+      socketEventName: 'new_message',
+      socketPayload: socketNewMessageEvent,
+      externalPayload: sseNewMessageEvent
     });
-
-    // Отправляем через Socket.io (если доступен) - для обратной совместимости
-    try {
-      const mainApp = req.app;
-      const io = mainApp ? mainApp.get('io') : null;
-      if (io) {
-        io.to(`chat:${chatId}`).emit('new_message', {
-          success: true,
-          id: messageData.id,
-          chat_id: messageData.chat_id,
-          sender_id: messageData.sender_id,
-          message: messageData.message,
-          message_type: messageData.message_type,
-          created_at: messageData.created_at
-        });
-      }
-    } catch (socketError) {
-      // Socket.io не доступен, но сообщение сохранено
-    }
 
     // Возвращаем chat_id из URL (правильный), а не из messageData (на случай ошибки)
     success(res, {
@@ -1294,54 +1282,14 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
     const userId = req.user.userId || req.user.id;
     const { chatId } = req.params;
 
-    // Проверяем доступ к чату
-    let [chats] = await pool.execute(
-      `SELECT c.* FROM chats c
-       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-       WHERE c.id = ? AND cp.user_id = ?`,
-      [chatId, userId]
-    );
-
-    // Если чат не найден через участников, проверяем, существует ли чат вообще
-    if (chats.length === 0) {
-      const [chatExists] = await pool.execute(
-        `SELECT c.* FROM chats c WHERE c.id = ?`,
-        [chatId]
+    const access = await ensureChatAccessForUser(chatId, userId);
+    if (!access.chat) {
+      return error(
+        res,
+        access.userMessage || 'Chat not found or access denied',
+        access.statusCode || 404,
+        access.details ? new Error(JSON.stringify(access.details)) : undefined
       );
-
-      if (chatExists.length === 0) {
-        return error(res, 'Chat not found', 404);
-      }
-
-      const chat = chatExists[0];
-
-      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
-      if (chat.type === 'group' && chat.request_id) {
-        // Проверяем, есть ли пользователь в участниках
-        const [participants] = await pool.execute(
-          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-          [chatId]
-        );
-        const participantIds = participants.map(p => p.user_id);
-        
-        if (!participantIds.includes(userId)) {
-          // Пользователь не является участником - автоматически добавляем его
-          const { addUserToChat } = require('../utils/chatHelpers');
-          await addUserToChat(chatId, userId);
-          
-          // Повторно проверяем доступ
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      if (chats.length === 0) {
-        return error(res, 'Chat not found or access denied', 404);
-      }
     }
 
     // Все непрочитанные для пользователя — одна транзакция на одном соединении (меньше round-trip к пулу при серии UPDATE)
@@ -1357,6 +1305,8 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       const readConn = await pool.getConnection();
       try {
         await readConn.beginTransaction();
+
+        const updates = [];
         for (const message of messages) {
           let readBy = safeParseJsonArray(message.read_by);
           let unreadBy = safeParseJsonArray(message.unread_by);
@@ -1366,19 +1316,38 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
             if (!readBy.includes(userId)) {
               readBy.push(userId);
             }
+            updates.push({
+              id: message.id,
+              readBy: JSON.stringify(readBy),
+              unreadBy: unreadBy.length > 0 ? JSON.stringify(unreadBy) : null
+            });
           }
+        }
+
+        if (updates.length > 0) {
+          const ids = updates.map((u) => u.id);
+          const readByCase = updates.map(() => 'WHEN ? THEN ?').join(' ');
+          const unreadByCase = updates.map(() => 'WHEN ? THEN ?').join(' ');
+          const idPlaceholders = ids.map(() => '?').join(', ');
+
+          const params = [];
+          for (const u of updates) {
+            params.push(u.id, u.readBy);
+          }
+          for (const u of updates) {
+            params.push(u.id, u.unreadBy);
+          }
+          params.push(...ids);
 
           await readConn.execute(
-            `UPDATE messages 
-             SET read_by = ?, unread_by = ? 
-             WHERE id = ?`,
-            [
-              JSON.stringify(readBy),
-              unreadBy.length > 0 ? JSON.stringify(unreadBy) : null,
-              message.id
-            ]
+            `UPDATE messages
+             SET read_by = CASE id ${readByCase} ELSE read_by END,
+                 unread_by = CASE id ${unreadByCase} ELSE unread_by END
+             WHERE id IN (${idPlaceholders})`,
+            params
           );
         }
+
         await readConn.commit();
       } catch (readTxErr) {
         try {
@@ -1392,31 +1361,27 @@ router.post('/:chatId/read', authenticate, async (req, res) => {
       }
     }
 
-    // Отправляем через SSE (Server-Sent Events)
-    sendSSEEvent(chatId, {
+    const sseAllReadEvent = {
       type: 'all_messages_read',
       success: true,
       userId: userId,
       chatId: chatId,
       messagesCount: messages.length,
       readAt: new Date().toISOString()
+    };
+    const socketAllReadEvent = {
+      success: true,
+      userId: userId,
+      chatId: chatId,
+      messagesCount: messages.length
+    };
+    await emitChatRealtimeEvent(req, chatId, {
+      eventName: 'all_messages_read',
+      sseEvent: sseAllReadEvent,
+      socketEventName: 'all_messages_read',
+      socketPayload: socketAllReadEvent,
+      externalPayload: sseAllReadEvent
     });
-
-    // Отправляем через Socket.io (если доступен) - для обратной совместимости
-    try {
-      const mainApp = req.app;
-      const io = mainApp ? mainApp.get('io') : null;
-      if (io) {
-        io.to(`chat:${chatId}`).emit('all_messages_read', {
-          success: true,
-          userId: userId,
-          chatId: chatId,
-          messagesCount: messages.length
-        });
-      }
-    } catch (socketError) {
-      // Socket.io не доступен
-    }
 
     success(res, {
       chat_id: chatId,
@@ -1436,17 +1401,14 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
   try {
     const userId = req.user.userId || req.user.id;
     const { chatId, messageId } = req.params;
-
-    // Проверяем доступ к чату
-    const [chats] = await pool.execute(
-      `SELECT c.* FROM chats c
-       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-       WHERE c.id = ? AND cp.user_id = ?`,
-      [chatId, userId]
-    );
-
-    if (chats.length === 0) {
-      return error(res, 'Chat not found or access denied', 404);
+    const access = await ensureChatAccessForUser(chatId, userId);
+    if (!access.chat) {
+      return error(
+        res,
+        access.userMessage || 'Chat not found or access denied',
+        access.statusCode || 404,
+        access.details ? new Error(JSON.stringify(access.details)) : undefined
+      );
     }
 
     // Получаем сообщение
@@ -1461,8 +1423,9 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
     }
 
     const message = messages[0];
-    let readBy = safeParseJsonArray(message.read_by);
-    let unreadBy = safeParseJsonArray(message.unread_by);
+    const normalizedMessage = normalizeMessageReadState(message);
+    let readBy = normalizedMessage.read_by;
+    let unreadBy = normalizedMessage.unread_by;
 
     // Перемещаем userId из unread_by в read_by
     if (unreadBy.includes(userId)) {
@@ -1491,22 +1454,17 @@ router.post('/:chatId/messages/:messageId/read', authenticate, async (req, res) 
       readAt: new Date().toISOString()
     };
 
-    // Отправляем через SSE (Server-Sent Events)
-    sendSSEEvent(chatId, {
+    const sseMessageReadEvent = {
       type: 'message_read',
       ...readData
+    };
+    await emitChatRealtimeEvent(req, chatId, {
+      eventName: 'message_read',
+      sseEvent: sseMessageReadEvent,
+      socketEventName: 'message_read',
+      socketPayload: readData,
+      externalPayload: sseMessageReadEvent
     });
-
-    // Отправляем через Socket.io (если доступен) - для обратной совместимости
-    try {
-      const mainApp = req.app;
-      const io = mainApp ? mainApp.get('io') : null;
-      if (io) {
-        io.to(`chat:${chatId}`).emit('message_read', readData);
-      }
-    } catch (socketError) {
-      // Socket.io не доступен
-    }
 
     success(res, {
       message_id: messageId,
@@ -1633,20 +1591,7 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
 
     const [messages] = await pool.execute(query, params);
 
-    // Парсим JSON поля read_by и unread_by для каждого сообщения
-    for (const message of messages) {
-      // Безопасный парсинг JSON полей
-      message.read_by = safeParseJsonArray(message.read_by);
-      message.unread_by = safeParseJsonArray(message.unread_by);
-      
-      // Убеждаемся, что отправитель всегда в read_by
-      if (!message.read_by.includes(message.sender_id)) {
-        message.read_by.push(message.sender_id);
-      }
-      
-      // Удаляем отправителя из unread_by (если он там есть)
-      message.unread_by = message.unread_by.filter(id => id !== message.sender_id);
-    }
+    const normalizedMessages = messages.map(normalizeMessageReadState);
 
     // Получаем общее количество
     let countQuery = `SELECT COUNT(*) as total FROM messages WHERE chat_id = ? AND deleted_at IS NULL`;
@@ -1658,17 +1603,7 @@ router.get('/admin/chats/:chatId/messages', authenticate, requireAdmin, async (r
     const [countResult] = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
-    const formattedMessages = messages.map((msg) => ({
-      id: msg.id,
-      chat_id: msg.chat_id,
-      sender_id: msg.sender_id,
-      sender: senderFromMessageRow(msg),
-      message: msg.message,
-      message_type: msg.message_type,
-      created_at: msg.created_at,
-      read_by: msg.read_by,
-      unread_by: msg.unread_by
-    }));
+    const formattedMessages = normalizedMessages.map(mapMessageForResponse);
 
     success(res, {
       messages: formattedMessages.reverse(),
@@ -1692,54 +1627,14 @@ router.get('/:chatId/events', authenticate, async (req, res) => {
     const userId = req.user.userId || req.user.id;
     const { chatId } = req.params;
 
-    // Проверяем доступ к чату
-    let [chats] = await pool.execute(
-      `SELECT c.* FROM chats c
-       INNER JOIN chat_participants cp ON c.id = cp.chat_id
-       WHERE c.id = ? AND cp.user_id = ?`,
-      [chatId, userId]
-    );
-
-    // Если чат не найден через участников, проверяем, существует ли чат вообще
-    if (chats.length === 0) {
-      const [chatExists] = await pool.execute(
-        `SELECT c.* FROM chats c WHERE c.id = ?`,
-        [chatId]
+    const access = await ensureChatAccessForUser(chatId, userId);
+    if (!access.chat) {
+      return error(
+        res,
+        access.userMessage || 'Chat not found or access denied',
+        access.statusCode || 404,
+        access.details ? new Error(JSON.stringify(access.details)) : undefined
       );
-
-      if (chatExists.length === 0) {
-        return error(res, 'Chat not found', 404);
-      }
-
-      const chat = chatExists[0];
-
-      // Для групповых чатов: автоматически добавляем любого пользователя, который обращается к чату
-      if (chat.type === 'group' && chat.request_id) {
-        // Проверяем, есть ли пользователь в участниках
-        const [participants] = await pool.execute(
-          `SELECT user_id FROM chat_participants WHERE chat_id = ?`,
-          [chatId]
-        );
-        const participantIds = participants.map(p => p.user_id);
-        
-        if (!participantIds.includes(userId)) {
-          // Пользователь не является участником - автоматически добавляем его
-          const { addUserToChat } = require('../utils/chatHelpers');
-          await addUserToChat(chatId, userId);
-          
-          // Повторно проверяем доступ
-          [chats] = await pool.execute(
-            `SELECT c.* FROM chats c
-             INNER JOIN chat_participants cp ON c.id = cp.chat_id
-             WHERE c.id = ? AND cp.user_id = ?`,
-            [chatId, userId]
-          );
-        }
-      }
-
-      if (chats.length === 0) {
-        return error(res, 'Chat not found or access denied', 404);
-      }
     }
 
     // Устанавливаем заголовки для SSE
