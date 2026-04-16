@@ -15,6 +15,20 @@ const { renderAppOpenLandingPage } = require('./api/utils/deeplinkLanding');
 
 const app = express();
 
+const publishDir = path.join(__dirname, 'publish');
+// Flutter `build/web/` кладёте в publish/*/web/ (как на диске после сборки)
+const publishSiteDir = path.join(publishDir, 'site', 'web');
+const publishAdminDir = path.join(publishDir, 'admin', 'web');
+const publishSiteIndex = path.join(publishSiteDir, 'index.html');
+const publishAdminIndex = path.join(publishAdminDir, 'index.html');
+
+function safeSendFile(res, filePath) {
+  return res.sendFile(filePath, (err) => {
+    if (!err) return;
+    res.status(500).type('text/plain').send(`Failed to send file: ${filePath}`);
+  });
+}
+
 // КРИТИЧЕСКИ ВАЖНО: Для Passenger на Beget
 // Passenger сам создает HTTP сервер, нам нужно получить его через app.listen
 // Но Passenger перехватывает app.listen, поэтому создаем сервер явно
@@ -123,12 +137,81 @@ app.get('/news/:newsId', (req, res) => {
 // Статические файлы - загруженные файлы (фото, аватары и т.д.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Статические файлы из папки web
-app.use(express.static(path.join(__dirname, 'web')));
+// Flutter Web / static publish folders (содержимое build/web/):
+// - publish/site/web  -> сайт на "/"
+// - publish/admin/web -> админка на "/admin/"
 
-// Основной роут - админ панель из папки web
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'index.html'));
+// Admin static assets (JS/CSS) must live under /admin/*
+app.use(
+  '/admin',
+  express.static(publishAdminDir, {
+    index: false,
+    fallthrough: true
+  })
+);
+
+// Admin SPA (Flutter web): serve index.html for navigation routes under /admin/*
+app.use('/admin', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  if (res.headersSent) return next();
+
+  // Внутри app.use('/admin', ...) у Express req.path уже без префикса /admin:
+  // для URL /admin/ здесь p === '/', редирект на /admin/ давал бесконечный цикл.
+  const p = req.path || '/';
+
+  // Let real files be handled by express.static above (or return 404 for missing assets)
+  if (path.extname(p)) return next();
+
+  if (!fs.existsSync(publishAdminIndex)) {
+    return res
+      .status(503)
+      .type('text/plain')
+      .send(
+        'Admin UI is not published yet. Put your Flutter web build output into publish/admin/web/ (must include index.html).'
+      );
+  }
+
+  return safeSendFile(res, publishAdminIndex);
+});
+
+// Public site static assets under "/" (из publish/site/web/)
+app.use(express.static(publishSiteDir, { index: false, fallthrough: true }));
+
+// Old server status page (was previously served at "/")
+app.get('/server-status', (_req, res) => {
+  safeSendFile(res, path.join(__dirname, 'web', 'server-status.html'));
+});
+
+// Public site SPA (Flutter web) — fallback for client-side routes
+app.get('*', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+
+  const p = req.path || '/';
+  if (
+    p.startsWith('/api') ||
+    p.startsWith('/socket.io') ||
+    p.startsWith('/uploads') ||
+    p.startsWith('/stripeCallback') ||
+    p.startsWith('/admin') ||
+    p.startsWith('/news/') ||
+    p.startsWith('/terms-of-service') ||
+    p.startsWith('/privacy-policy') ||
+    p.startsWith('/email-logo.png') ||
+    p.startsWith('/server-status')
+  ) {
+    return next();
+  }
+
+  // Don't swallow obvious static file requests (if you add /foo.js at repo root, it won't be served anyway)
+  if (path.extname(p)) return next();
+
+  // Deeplink HTML routes are registered above as explicit handlers
+  if (p.startsWith('/request/') || p.startsWith('/news/')) return next();
+
+  if (!fs.existsSync(publishSiteIndex)) {
+    return res.status(503).type('text/plain').send('Site is not published yet. Add publish/site/web/index.html');
+  }
+  return safeSendFile(res, publishSiteIndex);
 });
 
 // Настройка cron задач через node-cron

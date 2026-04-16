@@ -200,90 +200,57 @@
     </div>
 
     <script>
-        function updateTimestamp() {
-            const now = new Date();
-            const timeString = now.toLocaleString('ru-RU', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            document.getElementById('time').textContent = timeString;
-        }
+        async function checkHealth() {
+            const timeEl = document.getElementById('time');
+            const dbIcon = document.getElementById('db-icon');
+            const dbStatus = document.getElementById('db-status');
+            const apiIcon = document.getElementById('api-icon');
+            const apiStatus = document.getElementById('api-status');
 
-        function setStatus(elementId, iconId, status, details, isSuccess) {
-            const icon = document.getElementById(iconId);
-            const statusEl = document.getElementById(elementId);
-            
-            if (isSuccess) {
-                icon.className = 'status-icon success';
-                icon.textContent = '✓';
-            } else {
-                icon.className = 'status-icon error';
-                icon.textContent = '✗';
-            }
-            
-            statusEl.textContent = details;
-        }
+            timeEl.textContent = new Date().toLocaleString('ru-RU');
 
-        function setLoading(elementId, iconId) {
-            const icon = document.getElementById(iconId);
-            const statusEl = document.getElementById(elementId);
-            
-            icon.className = 'status-icon loading';
-            icon.textContent = '⟳';
-            statusEl.textContent = 'Проверка...';
-        }
-
-        async function checkStatus() {
-            updateTimestamp();
-            
-            // Проверка Node.js (уже работает, раз страница загрузилась)
-            setStatus('node-status', 'node-icon', 'success', 'Работает', true);
-            
-            // Проверка API
-            setLoading('api-status', 'api-icon');
             try {
-                const healthResponse = await fetch('/health');
-                if (healthResponse.ok) {
-                    const healthData = await healthResponse.json();
-                    setStatus('api-status', 'api-icon', 'success', 
-                        `API работает (${healthData.timestamp ? 'OK' : 'OK'})`, true);
+                const apiResponse = await fetch('/api/health');
+                const apiData = await apiResponse.json();
+
+                if (apiData.success) {
+                    apiIcon.className = 'status-icon success';
+                    apiIcon.textContent = '✓';
+                    apiStatus.textContent = 'Доступны';
                 } else {
-                    setStatus('api-status', 'api-icon', 'error', 'Ошибка API', false);
+                    apiIcon.className = 'status-icon error';
+                    apiIcon.textContent = '✗';
+                    apiStatus.textContent = 'Ошибка API';
                 }
             } catch (error) {
-                setStatus('api-status', 'api-icon', 'error', 'Недоступен', false);
+                apiIcon.className = 'status-icon error';
+                apiIcon.textContent = '✗';
+                apiStatus.textContent = 'Ошибка подключения';
             }
-            
-            // Проверка БД
-            setLoading('db-status', 'db-icon');
+
             try {
                 const dbResponse = await fetch('/api/health/db');
-                if (dbResponse.ok) {
-                    const dbData = await dbResponse.json();
-                    if (dbData.success && dbData.database === 'connected') {
-                        setStatus('db-status', 'db-icon', 'success', 
-                            `Подключена (${dbData.databaseVersion || 'MySQL'})`, true);
-                    } else {
-                        setStatus('db-status', 'db-icon', 'error', 'Ошибка подключения', false);
-                    }
+                const dbData = await dbResponse.json();
+
+                if (dbData.success && dbData.database === 'connected') {
+                    dbIcon.className = 'status-icon success';
+                    dbIcon.textContent = '✓';
+                    const v = dbData.databaseVersion ? `Подключена (${dbData.databaseVersion})` : 'Подключена';
+                    dbStatus.textContent = v;
                 } else {
-                    setStatus('db-status', 'db-icon', 'error', 'Не удалось проверить', false);
+                    dbIcon.className = 'status-icon error';
+                    dbIcon.textContent = '✗';
+                    dbStatus.textContent = 'Ошибка подключения';
                 }
             } catch (error) {
-                setStatus('db-status', 'db-icon', 'error', 'Недоступна', false);
+                dbIcon.className = 'status-icon error';
+                dbIcon.textContent = '✗';
+                dbStatus.textContent = 'Ошибка подключения';
             }
         }
 
-        // Проверка при загрузке страницы
-        window.addEventListener('load', () => {
-            updateTimestamp();
-            checkStatus();
-        });
+        checkHealth();
+        setInterval(checkHealth, 30000);
     </script>
 </body>
 </html>
-

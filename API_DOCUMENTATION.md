@@ -2,8 +2,17 @@
 
 ## Базовый URL
 
+**Production (основной домен):** `https://joypick.world`
+
+| Назначение | Базовый URL |
+|------------|-------------|
+| REST API (все эндпоинты документа ниже с префиксом `/api/...`) | `https://joypick.world/api` |
+| Публичный сайт (Flutter web, статика `publish/site/web/`) | `https://joypick.world/` |
+| Админ-панель (Flutter web, статика `publish/admin/web/`) | `https://joypick.world/admin/` |
+| Загруженные файлы (`/uploads/...`) | `https://joypick.world/uploads/...` |
+
 ```
-https://danilagames.ru/api
+https://joypick.world/api
 ```
 
 **Или для локальной разработки:**
@@ -20,7 +29,7 @@ http://localhost:3000/api
 | GET | `/api/terms-of-service` | Terms of Service — полная страница HTML |
 | GET | `/api/privacy-policy` | Privacy Policy — полная страница HTML |
 
-**URL:** `https://danilagames.ru/api/terms-of-service`, `https://danilagames.ru/api/privacy-policy`. Ответ: `Content-Type: text/html`, тело — HTML. Ссылки внутри страниц ведут на `/api/terms-of-service` и `/api/privacy-policy`.
+**URL:** `https://joypick.world/api/terms-of-service`, `https://joypick.world/api/privacy-policy`. Ответ: `Content-Type: text/html`, тело — HTML. Ссылки внутри страниц ведут на `/api/terms-of-service` и `/api/privacy-policy`.
 
 ---
 
@@ -209,7 +218,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "city": "Москва",
   "country": "Россия",
   "gender": "male",
-  "photo_url": "https://danilagames.ru/uploads/avatars/uuid.jpg",
+  "photo_url": "https://joypick.world/uploads/avatars/uuid.jpg",
   "latitude": 55.7558,
   "longitude": 37.6173,
   "fcm_token": "cqMv5gx6SKWXpMxFdRX8_3:APA91b...",
@@ -305,8 +314,8 @@ YYYY-MM-DDTHH:mm:ss.sssZ
   "longitude": 37.6173,
   "city": "Москва",
   "photos_before": [
-    "https://danilagames.ru/uploads/photos/uuid1.jpg",
-    "https://danilagames.ru/uploads/photos/uuid2.jpg"
+    "https://joypick.world/uploads/photos/uuid1.jpg",
+    "https://joypick.world/uploads/photos/uuid2.jpg"
   ],
   "photos_after": [],
   "garbage_size": 2,
@@ -365,7 +374,7 @@ YYYY-MM-DDTHH:mm:ss.sssZ
 {
   "id": "660e8400-e29b-41d4-a716-446655440000",
   "name": "Эко-Магазин",
-  "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+  "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
   "latitude": 55.7558,
   "longitude": 37.6173,
   "address": "г. Москва, ул. Экологическая, д. 1",
@@ -852,7 +861,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService {
-  final String baseUrl = 'https://danilagames.ru/api';
+  final String baseUrl = 'https://joypick.world/api';
   final FlutterSecureStorage _storage = FlutterSecureStorage();
 
   /// Авторизация через Firebase (Google Sign In, Apple Sign In и др.)
@@ -1226,7 +1235,7 @@ Future<Map<String, dynamic>> getAllUsers({
     queryParams['search'] = search;
   }
   
-  final uri = Uri.parse('https://danilagames.ru/api/users/all')
+  final uri = Uri.parse('https://joypick.world/api/users/all')
       .replace(queryParameters: queryParams);
   
   final response = await http.get(
@@ -1318,7 +1327,7 @@ Future<Map<String, dynamic>> getUsersList({
     queryParams['search'] = search;
   }
   
-  final uri = Uri.parse('https://danilagames.ru/api/users')
+  final uri = Uri.parse('https://joypick.world/api/users')
       .replace(queryParameters: queryParams);
   
   final response = await http.get(
@@ -1493,7 +1502,7 @@ Future<void> updateUserAvatar({
   required String userId,
   required File avatarFile,
 }) async {
-  final uri = Uri.parse('https://danilagames.ru/api/users/$userId');
+  final uri = Uri.parse('https://joypick.world/api/users/$userId');
   final request = http.MultipartRequest('PUT', uri);
   
   request.headers['Authorization'] = 'Bearer $token';
@@ -1879,7 +1888,7 @@ Future<void> createRequestWithPhotos({
   List<File>? photos_before,
   List<File>? photos_after,
 }) async {
-  final uri = Uri.parse('https://danilagames.ru/api/requests');
+  final uri = Uri.parse('https://joypick.world/api/requests');
   final request = http.MultipartRequest('POST', uri);
   
   // Заголовок авторизации
@@ -1943,9 +1952,9 @@ Future<void> createRequestWithPhotos({
     "request": {
       "id": "uuid",
       "name": "Название заявки",
-      "photos": ["https://danilagames.ru/uploads/photos/uuid1.jpg", "https://danilagames.ru/uploads/photos/uuid2.jpg"],
-      "photos_before": ["https://danilagames.ru/uploads/photos/uuid3.jpg"],
-      "photos_after": ["https://danilagames.ru/uploads/photos/uuid4.jpg"],
+      "photos": ["https://joypick.world/uploads/photos/uuid1.jpg", "https://joypick.world/uploads/photos/uuid2.jpg"],
+      "photos_before": ["https://joypick.world/uploads/photos/uuid3.jpg"],
+      "photos_after": ["https://joypick.world/uploads/photos/uuid4.jpg"],
       // ... остальные поля
     },
     "group_chat": {
@@ -1976,7 +1985,7 @@ Future<void> createRequestWithPhotos({
 - Файлы автоматически сохраняются на сервере в папке `uploads/photos/`
 - Сервер генерирует уникальные имена файлов
 - URL файлов автоматически подставляются в соответствующие поля заявки
-- Файлы доступны по URL: `https://danilagames.ru/uploads/photos/{filename}`
+- Файлы доступны по URL: `https://joypick.world/uploads/photos/{filename}`
 
 ---
 
@@ -2148,7 +2157,7 @@ Future<void> createRequestWithPayment({
 }) async {
   // ВАЖНО: Endpoint /requests/create-with-payment удален
   // Используйте POST /api/requests для создания заявки, затем POST /api/donations для доната
-  final uri = Uri.parse('https://danilagames.ru/api/requests');
+  final uri = Uri.parse('https://joypick.world/api/requests');
   final request = http.MultipartRequest('POST', uri);
   
   request.headers['Authorization'] = 'Bearer $token';
@@ -2622,7 +2631,7 @@ Future<void> createRequestWithPayment({
       "participant_completions": {
         "user_id_1": {
           "status": "pending",
-          "photos_after": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+          "photos_after": ["https://joypick.world/uploads/photos/uuid1.jpg"],
           "completion_comment": "Убрал весь мусор",
           "completion_latitude": 56.4962847,
           "completion_longitude": 84.9802779,
@@ -2686,7 +2695,7 @@ Future<void> createRequestWithPayment({
       "participant_completions": {
         "user_id_1": {
           "status": "approved",
-          "photos_after": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+          "photos_after": ["https://joypick.world/uploads/photos/uuid1.jpg"],
           "completion_comment": "Убрал весь мусор",
           "completion_latitude": 56.4962847,
           "completion_longitude": 84.9802779,
@@ -3487,8 +3496,8 @@ API для управления партнерами. Партнеры - это 
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "ЭкоПартнер",
-        "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
-        "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+        "logo_url": "https://joypick.world/uploads/logos/uuid.png",
+        "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
         "activity": "Переработка пластика",
         "website_url": "https://ecopartner.ru",
         "currency": "USD",
@@ -3533,8 +3542,8 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
-      "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
-      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+      "logo_url": "https://joypick.world/uploads/logos/uuid.png",
+      "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
       "activity": "Переработка пластика",
       "website_url": "https://ecopartner.ru",
       "currency": "USD",
@@ -3634,8 +3643,8 @@ API для управления партнерами. Партнеры - это 
     "partner": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "ЭкоПартнер",
-      "logo_url": "https://danilagames.ru/uploads/logos/uuid.png",
-      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+      "logo_url": "https://joypick.world/uploads/logos/uuid.png",
+      "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
       "activity": "Переработка пластика",
       "website_url": "https://ecopartner.ru",
       "currency": "RUB",
@@ -4081,7 +4090,7 @@ API для управления станциями переработки. Ст�
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "Станция переработки \"ЭкоТомск\"",
-        "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+        "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
         "latitude": 56.4962847,
         "longitude": 84.9802779,
         "address": "г. Томск, ул. Экологическая, д. 10",
@@ -4127,7 +4136,7 @@ API для управления станциями переработки. Ст�
     "station": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "Станция переработки \"ЭкоТомск\"",
-      "photo_urls": ["https://danilagames.ru/uploads/photos/uuid1.jpg"],
+      "photo_urls": ["https://joypick.world/uploads/photos/uuid1.jpg"],
       "latitude": 56.4962847,
       "longitude": 84.9802779,
       "address": "г. Томск, ул. Экологическая, д. 10",
@@ -5385,7 +5394,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiService {
-  final String baseUrl = 'https://danilagames.ru/api';
+  final String baseUrl = 'https://joypick.world/api';
   final FlutterSecureStorage _storage = FlutterSecureStorage();
 
   // Получение токена
@@ -6085,8 +6094,8 @@ try {
 
 Чтобы в письме отображался логотип приложения:
 1. **Положите файл логотипа** в папку `uploads` проекта и назовите его, например, `email-logo.png` (или другой формат: jpg, webp).
-2. Убедитесь, что в `.env` задан **APP_URL** (полный URL сайта, например `https://danilagames.ru`). Тогда логотип будет доступен по адресу `APP_URL/uploads/email-logo.png`.
-3. Либо задайте в `.env` переменную **EMAIL_LOGO_URL** с полным URL картинки (например `https://danilagames.ru/uploads/email-logo.png`).
+2. Убедитесь, что в `.env` задан **APP_URL** (полный URL сайта, например `https://joypick.world`). Тогда логотип будет доступен по адресу `APP_URL/uploads/email-logo.png`.
+3. Либо задайте в `.env` переменную **EMAIL_LOGO_URL** с полным URL картинки (например `https://joypick.world/uploads/email-logo.png`).
 
 В шаблоне письма с фронта используйте плейсхолдер `{{logo_url}}` — он подставит этот URL.
 
@@ -6148,7 +6157,7 @@ APP_NAME=Joy Pick
 
 **Важно:** Используйте тот же домен, что и для HTTP API, БЕЗ указания порта!
 
-- **Production URL:** `https://danilagames.ru` или `https://autogie1.bget.ru`
+- **Production URL:** `https://joypick.world`
 - **Development URL:** `http://localhost:3000` (только для локальной разработки)
 
 **Как работает:**
@@ -6185,7 +6194,7 @@ data: {"type":"ping","timestamp":"2024-01-01T00:00:00.000Z"}
 
 **Пример для JavaScript/TypeScript:**
 ```javascript
-const eventSource = new EventSource('https://danilagames.ru/api/chats/chat-uuid/events', {
+const eventSource = new EventSource('https://joypick.world/api/chats/chat-uuid/events', {
   headers: {
     'Authorization': 'Bearer your_jwt_token'
   }
@@ -6217,7 +6226,7 @@ import 'package:eventsource/eventsource.dart';
 
 // Подключение к SSE потоку
 final eventSource = EventSource.connect(
-  'https://danilagames.ru/api/chats/$chatId/events',
+  'https://joypick.world/api/chats/$chatId/events',
   headers: {
     'Authorization': 'Bearer $jwtToken',
   },
@@ -6249,7 +6258,7 @@ eventSource.onError = (error) {
 ```dart
 // POST /api/chats/:chatId/messages
 final response = await http.post(
-  Uri.parse('https://danilagames.ru/api/chats/$chatId/messages'),
+  Uri.parse('https://joypick.world/api/chats/$chatId/messages'),
   headers: {
     'Authorization': 'Bearer $jwtToken',
     'Content-Type': 'application/json',
@@ -6411,7 +6420,7 @@ final response = await http.post(
   "success": true,
   "message": "Файл загружен",
   "data": {
-    "url": "https://danilagames.ru/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg"
+    "url": "https://joypick.world/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg"
   }
 }
 ```
@@ -6446,7 +6455,7 @@ final response = await http.post(
   "message": "Image uploaded to request gallery",
   "data": {
     "id": 123,
-    "image_url": "https://danilagames.ru/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
+    "image_url": "https://joypick.world/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
     "uploaded_by": "uuid-admin",
     "created_at": "2026-03-24T12:34:56.000Z"
   }
@@ -6473,7 +6482,7 @@ final response = await http.post(
     "items": [
       {
         "id": 123,
-        "image_url": "https://danilagames.ru/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
+        "image_url": "https://joypick.world/uploads/photos/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jpg",
         "uploaded_by": "uuid-admin",
         "created_at": "2026-03-24T12:34:56.000Z"
       }
@@ -7168,21 +7177,21 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 1. **Войдите в панель управления Beget**
 2. **Перейдите в раздел "Домены" → "SSL сертификаты"**
-3. **Выберите домен** `danilagames.ru`
+3. **Выберите домен** `joypick.world`
 4. **Установите SSL сертификат:**
    - Можно использовать **Let's Encrypt** (бесплатный, автоматическое обновление)
    - Или загрузить свой сертификат
 5. **Включите "Принудительное перенаправление HTTP → HTTPS"** (опционально, но рекомендуется)
 
 **После настройки SSL:**
-- Webhook URL в Stripe Dashboard должен быть: `https://danilagames.ru/api/stripe/webhooks`
+- Webhook URL в Stripe Dashboard должен быть: `https://joypick.world/api/stripe/webhooks`
 - Сервер автоматически проверяет HTTPS в продакшене
 
 **Настройка в Stripe Dashboard:**
 
 1. Перейдите в **Stripe Dashboard** → **Developers** → **Webhooks**
 2. Нажмите **"Add endpoint"**
-3. Укажите URL: `https://danilagames.ru/api/stripe/webhooks`
+3. Укажите URL: `https://joypick.world/api/stripe/webhooks`
 4. Выберите события для отправки:
    - `account.updated`
    - `payment_intent.succeeded`
@@ -7585,7 +7594,7 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 4. Радиус поиска в метрах
 5. Токен JWT действителен 7 дней (по умолчанию)
 6. При истечении токена получите новый через `/auth/refresh`
-7. Базовый URL: `https://danilagames.ru`
+7. Базовый URL: `https://joypick.world`
 8. **Верификация email:** После регистрации автоматически отправляется код верификации (6 цифр), действителен 10 минут
 9. **Real-time чаты:** Используйте Server-Sent Events (SSE) для получения новых сообщений в реальном времени через `GET /api/chats/:chatId/events`
 
