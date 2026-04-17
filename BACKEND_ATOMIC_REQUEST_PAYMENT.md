@@ -435,7 +435,7 @@ POST /requests/create-with-payment
 ## Пример полного запроса (cURL)
 
 ```bash
-curl -X POST https://danilagames.ru/api/requests/create-with-payment \
+curl -X POST https://joypick.world/api/requests/create-with-payment \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: multipart/form-data" \
   -F "category=wasteLocation" \

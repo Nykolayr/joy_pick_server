@@ -8,6 +8,19 @@ const { generateId } = require('../utils/uuid');
 
 const router = express.Router();
 
+/** Origin публичного сайта без завершающего слеша (для Stripe redirect, если не заданы STRIPE_*_URL). */
+function publicSiteOrigin() {
+  return (process.env.BASE_URL || process.env.APP_URL || 'https://joypick.world').replace(/\/+$/, '');
+}
+
+function defaultStripeRefreshUrl() {
+  return `${publicSiteOrigin()}/stripeCallback?stripe=refresh`;
+}
+
+function defaultStripeReturnUrl() {
+  return `${publicSiteOrigin()}/stripeCallback?stripe=success`;
+}
+
 /**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
@@ -94,8 +107,8 @@ router.post('/create-account', authenticate, [
       try {
         const accountLink = await stripe.accountLinks.create({
           account: existingAccount.account_id,
-          refresh_url: process.env.STRIPE_REFRESH_URL || 'https://danilagames.ru/stripeCallback?stripe=refresh',
-          return_url: process.env.STRIPE_RETURN_URL || 'https://danilagames.ru/stripeCallback?stripe=success',
+          refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
+          return_url: process.env.STRIPE_RETURN_URL || defaultStripeReturnUrl(),
           type: 'account_onboarding'
         });
 
@@ -220,8 +233,8 @@ router.post('/create-account', authenticate, [
     // Создаем Account Link для доонбординга
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: process.env.STRIPE_REFRESH_URL || 'https://danilagames.ru/stripeCallback?stripe=refresh',
-      return_url: process.env.STRIPE_RETURN_URL || 'https://danilagames.ru/stripeCallback?stripe=success',
+      refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
+      return_url: process.env.STRIPE_RETURN_URL || defaultStripeReturnUrl(),
       type: 'account_onboarding'
     });
 
@@ -315,8 +328,8 @@ router.get('/account-status', authenticate, async (req, res) => {
       try {
         const accountLink = await stripe.accountLinks.create({
           account: dbAccount.account_id,
-          refresh_url: process.env.STRIPE_REFRESH_URL || 'https://danilagames.ru/stripeCallback?stripe=refresh',
-          return_url: process.env.STRIPE_RETURN_URL || 'https://danilagames.ru/stripeCallback?stripe=success',
+          refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
+          return_url: process.env.STRIPE_RETURN_URL || defaultStripeReturnUrl(),
           type: 'account_onboarding'
         });
         accountLinkUrl = accountLink.url;

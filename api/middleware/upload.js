@@ -106,7 +106,7 @@ const uploadMultiple = upload.array('files', 20);
  * @returns {String} URL файла
  */
 function getFileUrl(filename, subfolder = 'general') {
-  const baseUrl = process.env.BASE_URL || 'https://danilagames.ru';
+  const baseUrl = process.env.BASE_URL || 'https://joypick.world';
   return `${baseUrl}/uploads/${subfolder}/${filename}`;
 }
 

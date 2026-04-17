@@ -9,7 +9,7 @@ const { hashPassword } = require('../utils/password');
 const path = require('path');
 const crypto = require('crypto');
 
-const UPLOADS_BASE = process.env.BASE_URL || 'https://danilagames.ru';
+const UPLOADS_BASE = process.env.BASE_URL || 'https://joypick.world';
 
 /** Срок действия QR-кода волонтёра в секундах (одно место для бэка и ответа фронту). */
 const VOLUNTEER_QR_VALID_SECONDS = 2 * 60; // 120 секунд = 2 минуты

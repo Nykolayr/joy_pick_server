@@ -1,0 +1,9 @@
+# Пример: прозрачный прокси старого домена на новый бэкенд (Passenger).
+# Скопируйте scripts/legacy-transparent-proxy.cjs в public_html/scripts/ при необходимости.
+
+PassengerEnabled on
+PassengerNodejs /path/to/node/bin/node
+PassengerAppRoot /path/to/public_html
+PassengerAppType node
+PassengerStartupFile scripts/legacy-transparent-proxy.cjs
+PassengerFriendlyErrorPages on

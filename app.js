@@ -1,11 +1,9 @@
 require('dotenv').config();
 
-// Passenger (Beget): путь к node можно задать через PASSENGER_NODEJS_BIN в .env.
-// Жёсткий путь оставляем только как fallback для старого окружения.
+// Passenger (Beget): путь к node задаётся через PASSENGER_NODEJS_BIN в .env
+// или переменной окружения на стороне хостинга; захардкоженных путей нет.
 if (process.env.PASSENGER_NODEJS_BIN) {
   process.env.PASSENGER_NODEJS = process.env.PASSENGER_NODEJS_BIN;
-} else if (!process.env.PASSENGER_NODEJS) {
-  process.env.PASSENGER_NODEJS = '/home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node';
 }
 
 const express = require('express');

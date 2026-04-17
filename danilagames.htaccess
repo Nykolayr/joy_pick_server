@@ -1,9 +1,0 @@
-# danilagames.ru -> прозрачный прокси на новый сервер (без HTTP 3xx для клиента)
-# Важно: файл scripts/danilagames-legacy-proxy.cjs должен существовать в public_html/scripts/
-
-PassengerEnabled on
-PassengerNodejs /home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node
-PassengerAppRoot /home/a/autogie1/danilagames.ru/public_html
-PassengerAppType node
-PassengerStartupFile scripts/danilagames-legacy-proxy.cjs
-PassengerFriendlyErrorPages on

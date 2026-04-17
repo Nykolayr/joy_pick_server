@@ -1,6 +1,7 @@
+# Замените пути на свои (панель хостинга: каталог сайта и установка Node).
 PassengerEnabled on
-PassengerNodejs /home/a/autogie1/danilagames.ru/node-v18.19.0-linux-x64/bin/node
-PassengerAppRoot /home/a/autogie1/danilagames.ru/public_html
+PassengerNodejs /path/to/node/bin/node
+PassengerAppRoot /path/to/public_html
 PassengerAppType node
 PassengerStartupFile app.js
 PassengerFriendlyErrorPages on

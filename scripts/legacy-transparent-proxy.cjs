@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Временный прозрачный прокси для старого danilagames.ru (Beget + Passenger).
- * Старые приложения ходят на тот же домен — без HTTP-редиректов 302/307, которые ломают часть клиентов.
+ * Прозрачный HTTP-прокси на новый бэкенд (Beget + Passenger).
+ * Клиенты остаются на прежнем origin — без редиректов 302/307, которые ломают часть клиентов.
  *
  * Выкладка:
- *   1. Убери из .htaccess на danilagames.ru правила RewriteRule на joypick для /api, /uploads, … (иначе ответит Apache раньше Node).
- *   2. В .htaccess включи Passenger и укажи этот файл как PassengerStartupFile (или скопируй код в app.js).
- *   3. TARGET ниже — https://joypick.world
+ *   1. На стороне Apache не отдавайте /api, /uploads и т.п. RewriteRule раньше, чем запрос попадёт в Node.
+ *   2. В .htaccess включите Passenger и укажите этот файл как PassengerStartupFile (см. legacy-proxy-passenger.htaccess.example).
+ *   3. Целевой хост: LEGACY_PROXY_TARGET или по умолчанию https://joypick.world
  *
  * Ограничение: WebSocket upgrade для Socket.io через этот скрипт не проксируется; long polling обычно ок.
  */
@@ -78,5 +78,5 @@ const server = http.createServer((clientReq, clientRes) => {
 const port = Number(process.env.PORT || 3000);
 server.listen(port, () => {
   // eslint-disable-next-line no-console
-  console.log(`danilagames-legacy-proxy → ${TARGET} on port ${port}`);
+  console.log(`legacy-transparent-proxy → ${TARGET} on port ${port}`);
 });
