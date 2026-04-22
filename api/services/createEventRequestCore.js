@@ -2,6 +2,7 @@ const { generateId } = require('../utils/uuid');
 const { createGroupChatForRequest } = require('../utils/chatHelpers');
 const { initializeParticipantCompletion } = require('../utils/participantCompletions');
 const { sendRequestCreatedNotification } = require('./pushNotification');
+const { formatDateTimeForMySql } = require('../utils/requestPayloadParsers');
 
 /**
  * Создание заявки category=event с from_external_source=1 (логика как POST /api/requests для JSON).
@@ -44,6 +45,7 @@ async function createEventRequestFromExternalSource(pool, opts) {
   const finalPhotosBefore = Array.isArray(photosBeforeUrls)
     ? [...new Set(photosBeforeUrls.filter((u) => typeof u === 'string' && u.trim() !== '').map((u) => u.trim()))]
     : [];
+  const startDateForDb = formatDateTimeForMySql(start_date);
 
   const requestId = generateId();
   const only_foot = false;
@@ -78,7 +80,7 @@ async function createEventRequestFromExternalSource(pool, opts) {
       possible_by_car,
       null,
       true,
-      start_date || null,
+      startDateForDb,
       null,
       defaultStatus,
       priority,

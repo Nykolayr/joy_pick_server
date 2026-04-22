@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
 const { SUPPORTED_LOCALES, parseContent, parseContentFromRequest, translateToAllLocales } = require('../services/translateNews');
+const { formatDateTimeForMySql } = require('../utils/requestPayloadParsers');
 
 const router = express.Router();
 const NEWS_TYPES = ['simple', 'from_request'];
@@ -198,7 +199,7 @@ router.post('/', [
         JSON.stringify(text_i18n),
         imageUrlsJson,
         reqId,
-        publishedAt.toISOString().slice(0, 19).replace('T', ' ')
+        formatDateTimeForMySql(publishedAt)
       ]
     );
 
@@ -317,7 +318,7 @@ router.put('/:id', [
         return error(res, 'Invalid published date', 400);
       }
       updates.push('published_at = ?');
-      params.push(d.toISOString().slice(0, 19).replace('T', ' '));
+      params.push(formatDateTimeForMySql(d));
     }
     if (updates.length > 0) {
       params.push(id);

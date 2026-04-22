@@ -661,7 +661,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     // Для waste: 7 дней на присоединение; после истечения — уведомление о продлении на 7 дней или снятие через сутки
     const expiresAt = category === 'wasteLocation' 
-      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      ? formatDateTimeForMySql(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
       : null;
 
     // Для event заявок инициализируем пустой массив приватных чатов
@@ -2796,7 +2796,7 @@ router.post('/:id/extend', authenticate, async (req, res) => {
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     
     const newExpiresAt = new Date(currentExpiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const newExpiresAtString = newExpiresAt.toISOString().slice(0, 19).replace('T', ' ');
+    const newExpiresAtString = formatDateTimeForMySql(newExpiresAt);
 
     await pool.execute(
       `UPDATE requests 

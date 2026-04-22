@@ -34,6 +34,7 @@ const newsAdminRoutes = require('./routes/newsAdmin');
 const uploadRoutes = require('./routes/upload');
 const earthdayCleanupsAdminRoutes = require('./routes/earthdayCleanupsAdmin');
 const requestGalleryRoutes = require('./routes/requestGallery');
+const landingRoutes = require('./routes/landing');
 
 const app = express();
 
@@ -115,6 +116,7 @@ app.use('/news-admin', newsAdminRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/earthday-cleanups-admin', earthdayCleanupsAdminRoutes);
 app.use('/request-gallery', requestGalleryRoutes);
+app.use('/landing', landingRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {

@@ -1,3 +1,5 @@
+const { formatDateTimeForMySql } = require('../utils/requestPayloadParsers');
+
 function normalizeRegionKey(raw) {
   if (raw == null) return '';
   const src = String(raw).toLowerCase();
@@ -134,7 +136,7 @@ async function runEarthdayImageCacheBackfill(pool, opts = {}) {
     }
 
     const createdAt = row.request_created_at ? new Date(row.request_created_at) : null;
-    const createdIso = createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toISOString().slice(0, 19).replace('T', ' ') : null;
+    const createdIso = createdAt && !Number.isNaN(createdAt.getTime()) ? formatDateTimeForMySql(createdAt) : null;
 
     for (const imageUrl of photos) {
       const tripleKey = `${country}||${regionKey}||${imageUrl}`;

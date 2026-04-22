@@ -370,6 +370,29 @@ function itemsSlurp(items, max) {
   return copy.slice(0, Math.min(copy.length, max));
 }
 
+function buildErrorDiagnostics(err) {
+  if (!err) return {};
+  return {
+    error: err.message || 'Unknown error',
+    errorName: err.name,
+    errorCode: err.code,
+    sqlMessage: err.sqlMessage,
+    sqlState: err.sqlState,
+    errno: err.errno,
+    details: err.details || null,
+    originalError: err.originalError
+      ? {
+          message: err.originalError.message,
+          name: err.originalError.name,
+          code: err.originalError.code,
+          sqlMessage: err.originalError.sqlMessage,
+          sqlState: err.originalError.sqlState,
+          errno: err.originalError.errno
+        }
+      : null
+  };
+}
+
 /**
  * @param {import('mysql2/promise').Pool} pool
  * @param {string} userId
@@ -521,19 +544,11 @@ async function runEarthdayBulkCreateRequests(pool, userId, body) {
       await markCleanupAsUsed(pool, j.objectid);
       created.push({ objectid: j.objectid, request_id: requestId });
     } catch (e) {
-      try {
-        await markCleanupAsUsed(pool, j.objectid);
-      } catch (markErr) {
-        errors.push({
-          objectid: j.objectid,
-          code: 'MARK_USED_FAILED',
-          message: markErr.message || 'Не удалось пометить запись как used_for_internal_request после ошибки создания'
-        });
-      }
       errors.push({
         objectid: j.objectid,
         code: 'CREATE_REQUEST',
-        message: e.message || 'Ошибка создания заявки или чата'
+        message: e.message || 'Ошибка создания заявки или чата',
+        diagnostics: buildErrorDiagnostics(e)
       });
     }
   }
