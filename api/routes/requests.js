@@ -29,24 +29,46 @@ const stripe = require('../config/stripe.js');
 const { parseWorkDurationMinutesInput, normalizeRequestRowWorkDuration } = require('../utils/workDurationStats');
 
 const router = express.Router();
+const PUBLIC_BASE_URL = (process.env.BASE_URL || process.env.APP_URL || 'https://joypick.world').replace(/\/+$/, '');
 
 /**
  * Преобразует сырую строку заявки из БД в объект для ответа (JSON-поля, булевы значения, даты).
  */
+function toAbsolutePhotoUrl(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/uploads/')) return `${PUBLIC_BASE_URL}${raw}`;
+  if (raw.startsWith('uploads/')) return `${PUBLIC_BASE_URL}/${raw}`;
+  return raw;
+}
+
 function parseJsonArraySafe(value) {
   if (value == null || value === '') return [];
-  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => typeof v === 'string' && v.trim() !== '')
+      .map((v) => toAbsolutePhotoUrl(v))
+      .filter((v) => typeof v === 'string' && v.trim() !== '');
+  }
   if (typeof value === 'string') {
     const s = value.trim();
     if (s === '') return [];
     try {
       const parsed = JSON.parse(s);
       if (Array.isArray(parsed)) {
-        return parsed.filter((v) => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+        return parsed
+          .filter((v) => typeof v === 'string' && v.trim() !== '')
+          .map((v) => toAbsolutePhotoUrl(v))
+          .filter((v) => typeof v === 'string' && v.trim() !== '');
       }
     } catch (e) {
       // Для обратной совместимости: допускаем CSV-строку URL.
-      return s.split(',').map((v) => v.trim()).filter((v) => v !== '');
+      return s
+        .split(',')
+        .map((v) => toAbsolutePhotoUrl(v))
+        .filter((v) => typeof v === 'string' && v.trim() !== '');
     }
   }
   return [];
@@ -369,31 +391,9 @@ async function buildRequestDetailForApi(pool, id) {
       request.estimated_executor_payout_dollars = null;
     }
 
-    // Обработка данных
-    // photos_before и photos_after теперь JSON массивы, а не строки
-    if (request.photos_before) {
-      try {
-        request.photos_before = typeof request.photos_before === 'string' 
-          ? JSON.parse(request.photos_before) 
-          : request.photos_before;
-      } catch (e) {
-        request.photos_before = [];
-      }
-    } else {
-      request.photos_before = [];
-    }
-    
-    if (request.photos_after) {
-      try {
-        request.photos_after = typeof request.photos_after === 'string' 
-          ? JSON.parse(request.photos_after) 
-          : request.photos_after;
-      } catch (e) {
-        request.photos_after = [];
-      }
-    } else {
-      request.photos_after = [];
-    }
+    // Нормализуем фото и приводим /uploads/... к абсолютному URL.
+    request.photos_before = parseJsonArraySafe(request.photos_before);
+    request.photos_after = parseJsonArraySafe(request.photos_after);
     // Стабильный контракт для клиента: photos всегда присутствует.
     request.photos = uniqueUrls([...(request.photos_before || []), ...(request.photos_after || [])]);
     
@@ -778,31 +778,9 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     const request = requests[0];
     
-    // Обработка photos_before из JSON поля
-    if (request.photos_before) {
-      try {
-        request.photos_before = typeof request.photos_before === 'string' 
-          ? JSON.parse(request.photos_before) 
-          : request.photos_before;
-      } catch (e) {
-        request.photos_before = [];
-      }
-    } else {
-      request.photos_before = [];
-    }
-    
-    // Обработка photos_after из JSON поля
-    if (request.photos_after) {
-      try {
-        request.photos_after = typeof request.photos_after === 'string' 
-          ? JSON.parse(request.photos_after) 
-          : request.photos_after;
-      } catch (e) {
-        request.photos_after = [];
-      }
-    } else {
-      request.photos_after = [];
-    }
+    request.photos_before = parseJsonArraySafe(request.photos_before);
+    request.photos_after = parseJsonArraySafe(request.photos_after);
+    request.photos = uniqueUrls([...(request.photos_before || []), ...(request.photos_after || [])]);
     
     request.waste_types = parseJsonFieldSafe(request.waste_types, []);
     request.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
@@ -1393,31 +1371,9 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     const request = requests[0];
     
-    // Обработка photos_before из JSON поля
-    if (request.photos_before) {
-      try {
-        request.photos_before = typeof request.photos_before === 'string' 
-          ? JSON.parse(request.photos_before) 
-          : request.photos_before;
-      } catch (e) {
-        request.photos_before = [];
-      }
-    } else {
-      request.photos_before = [];
-    }
-    
-    // Обработка photos_after из JSON поля
-    if (request.photos_after) {
-      try {
-        request.photos_after = typeof request.photos_after === 'string' 
-          ? JSON.parse(request.photos_after) 
-          : request.photos_after;
-      } catch (e) {
-        request.photos_after = [];
-      }
-    } else {
-      request.photos_after = [];
-    }
+    request.photos_before = parseJsonArraySafe(request.photos_before);
+    request.photos_after = parseJsonArraySafe(request.photos_after);
+    request.photos = uniqueUrls([...(request.photos_before || []), ...(request.photos_after || [])]);
     request.waste_types = parseJsonFieldSafe(request.waste_types, []);
     request.actual_participants = parseJsonFieldSafe(request.actual_participants, []);
     request.participant_completions = parseJsonFieldSafe(request.participant_completions, {});
@@ -2816,29 +2772,9 @@ router.post('/:id/extend', authenticate, async (req, res) => {
     const updatedRequest = updatedRequests[0];
     
     // Обработка JSON полей
-    if (updatedRequest.photos_before) {
-      try {
-        updatedRequest.photos_before = typeof updatedRequest.photos_before === 'string' 
-          ? JSON.parse(updatedRequest.photos_before) 
-          : updatedRequest.photos_before;
-      } catch (e) {
-        updatedRequest.photos_before = [];
-      }
-    } else {
-      updatedRequest.photos_before = [];
-    }
-    
-    if (updatedRequest.photos_after) {
-      try {
-        updatedRequest.photos_after = typeof updatedRequest.photos_after === 'string' 
-          ? JSON.parse(updatedRequest.photos_after) 
-          : updatedRequest.photos_after;
-      } catch (e) {
-        updatedRequest.photos_after = [];
-      }
-    } else {
-      updatedRequest.photos_after = [];
-    }
+    updatedRequest.photos_before = parseJsonArraySafe(updatedRequest.photos_before);
+    updatedRequest.photos_after = parseJsonArraySafe(updatedRequest.photos_after);
+    updatedRequest.photos = uniqueUrls([...(updatedRequest.photos_before || []), ...(updatedRequest.photos_after || [])]);
 
     updatedRequest.waste_types = parseJsonFieldSafe(updatedRequest.waste_types, []);
     updatedRequest.actual_participants = parseJsonFieldSafe(updatedRequest.actual_participants, []);
