@@ -276,7 +276,7 @@ Authorization: Bearer {token}
           "details_submitted": true,
           "email": "user@example.com",
           "business_profile": {
-            "url": "https://joyvee.live/profile/user-uuid",
+            "url": "https://joypick.world/profile/user-uuid",
             "mcc": "8398"
           },
           "individual": {

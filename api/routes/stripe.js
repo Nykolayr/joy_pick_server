@@ -152,7 +152,7 @@ router.post('/create-account', authenticate, [
           }
         },
         business_profile: {
-          url: `https://joyvee.live/profile/${user_id}`,
+          url: `${publicSiteOrigin()}/profile/${user_id}`,
           product_description: 'Environmental cleanup volunteer on JoyPick platform',
           mcc: '8398', // Charitable organizations
           support_email: email,
@@ -195,7 +195,7 @@ router.post('/create-account', authenticate, [
               }
             },
             business_profile: {
-              url: `https://joyvee.live/profile/${user_id}`,
+              url: `${publicSiteOrigin()}/profile/${user_id}`,
               product_description: 'Environmental cleanup volunteer on JoyPick platform',
               mcc: '8398',
               support_email: email,
