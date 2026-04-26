@@ -3,6 +3,149 @@ const pool = require('../config/database');
 const { generateId } = require('../utils/uuid');
 const { resolveRequestIdFromSendPayload } = require('../utils/adminNotificationSendContext');
 
+/** Макс. отдельных FCM в одной «серии»; при большем — одно сводное (любые типы, см. byType). */
+const PUSH_CONSOLIDATE_MAX = Math.max(1, parseInt(process.env.PUSH_CONSOLIDATE_MAX || '3', 10) || 3);
+/** Склейка пушей, пришедших подряд (debounce) перед отправкой 1–3 отдельных. При >3 — сразу сводка. */
+const PUSH_CONSOLIDATE_DEBOUNCE_MS = Math.max(
+  50,
+  parseInt(process.env.PUSH_CONSOLIDATE_DEBOUNCE_MS || '250', 10) || 250
+);
+const PUSH_CONSOLIDATION_DISABLED = process.env.PUSH_CONSOLIDATION_DISABLED === '1' || process.env.PUSH_CONSOLIDATION_DISABLED === 'true';
+
+/** userId -> { entries: Array<{ singleUserArgs, resolve, reject }>, timer } */
+const userPushBatches = new Map();
+
+function shouldBypassNotificationConsolidation(outboundLog) {
+  if (PUSH_CONSOLIDATION_DISABLED) return true;
+  if (outboundLog && outboundLog.send_source === 'admin_manual') return true;
+  if (outboundLog && outboundLog.skip_consolidation === true) return true;
+  return false;
+}
+
+function mergeUserSendResults(results) {
+  if (!results.length) {
+    return { successCount: 0, failureCount: 0, consolidated: false };
+  }
+  const merged = { successCount: 0, failureCount: 0, consolidated: false };
+  for (const r of results) {
+    merged.successCount += r.successCount || 0;
+    merged.failureCount += r.failureCount || 0;
+    if (r.consolidated) merged.consolidated = true;
+    if (r.errorMessage) merged.errorMessage = r.errorMessage;
+    if (r.reason) merged.reason = r.reason;
+  }
+  return merged;
+}
+
+function countTypesFromEntries(entries) {
+  const counts = {};
+  for (const e of entries) {
+    const t =
+      (e.singleUserArgs && e.singleUserArgs.data && e.singleUserArgs.data.type) || 'app';
+    const key = String(t);
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function buildConsolidatedNotification(userId, entries) {
+  const n = entries.length;
+  const byType = countTypesFromEntries(entries);
+  const parts = Object.keys(byType)
+    .map((k) => `${k}: ${byType[k]}`)
+    .join(', ');
+  const body =
+    n <= 10
+      ? `You have ${n} pending alerts (${parts}). Open the app to review.`
+      : `You have ${n} pending alerts. Open the app to review.`;
+  const data = {
+    type: 'consolidated',
+    consolidated: 'true',
+    totalCount: String(n),
+    byType: JSON.stringify(byType),
+    initialPageName: 'Profile',
+  };
+  return {
+    title: 'Multiple notifications',
+    body,
+    userIds: [userId],
+    imageUrl: null,
+    sound: 'default',
+    data,
+    outboundLog: {
+      send_source: 'system',
+      push_trigger: 'consolidated',
+      request_id: null,
+    },
+  };
+}
+
+/**
+ * Сбрасывает накопленные пуши для одного userId: ≤PUSH_CONSOLIDATE_MAX — по одному;
+ * иначе — один сводный (англ. текст, все типы учитываются).
+ */
+async function flushUserNotificationBatch(userId) {
+  const state = userPushBatches.get(userId);
+  if (!state) return;
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+  const entries = state.entries;
+  userPushBatches.delete(userId);
+  if (!entries || entries.length === 0) return;
+
+  try {
+    if (entries.length <= PUSH_CONSOLIDATE_MAX) {
+      for (const e of entries) {
+        const r = await sendNotificationToUsersImmediate(e.singleUserArgs);
+        e.resolve(r);
+      }
+    } else {
+      const cons = buildConsolidatedNotification(userId, entries);
+      const r = await sendNotificationToUsersImmediate(cons);
+      const resultWithFlag = { ...r, consolidated: true };
+      for (const e of entries) {
+        e.resolve(resultWithFlag);
+      }
+    }
+  } catch (err) {
+    const fail = {
+      successCount: 0,
+      failureCount: entries.length,
+      errorMessage: err.message,
+      reason: err.message,
+    };
+    for (const e of entries) {
+      e.resolve(fail);
+    }
+  }
+}
+
+function scheduleOrFlushUserBatch(userId) {
+  const state = userPushBatches.get(userId);
+  if (!state) return;
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+  if (state.entries.length > PUSH_CONSOLIDATE_MAX) {
+    setImmediate(() => {
+      flushUserNotificationBatch(userId).catch((err) => {
+        console.error('❌ flushUserNotificationBatch:', err);
+      });
+    });
+    return;
+  }
+  state.timer = setTimeout(() => {
+    const s = userPushBatches.get(userId);
+    if (s) s.timer = null;
+    flushUserNotificationBatch(userId).catch((err) => {
+      console.error('❌ flushUserNotificationBatch:', err);
+    });
+  }, PUSH_CONSOLIDATE_DEBOUNCE_MS);
+}
+
 /**
  * Сохранение push-уведомления в базу данных
  * @param {string} userId - ID пользователя
@@ -445,18 +588,10 @@ async function sendRequestCreatedNotification(requestData) {
 }
 
 /**
- * Отправка push-уведомлений конкретным пользователям
+ * Отправка push-уведомлений конкретным пользователям (без объединения в батч).
  * @param {Object} options - Параметры уведомления
- * @param {string} options.title - Заголовок уведомления
- * @param {string} options.body - Текст уведомления
- * @param {Array<string>} options.userIds - Массив ID пользователей
- * @param {string} options.imageUrl - URL изображения (опционально)
- * @param {string} options.sound - Звук уведомления (опционально)
- * @param {Object} options.data - Дополнительные данные (опционально)
- * @param {Object} [options.outboundLog] - Журнал admin_notification_sends: для POST /send — send_source admin_manual и sent_by_user_id; иначе системный пуш.
- * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendNotificationToUsers({
+async function sendNotificationToUsersImmediate({
   title,
   body,
   userIds,
@@ -576,6 +711,64 @@ async function sendNotificationToUsers({
       reason: error.message
     };
   }
+}
+
+/**
+ * Те же пуши, что и sendNotificationToUsersImmediate, но с батчингом по пользователю:
+ * подряд debounce PUSH_CONSOLIDATE_DEBOUNCE_MS; если за одну «серию» > PUSH_CONSOLIDATE_MAX — сразу одно сводное FCM
+ * (любые типы). Ручной POST /send (admin_manual) и PUSH_CONSOLIDATION_DISABLED=1 — без батча.
+ * @param {Object} [options.outboundLog] - при outboundLog.skip_consolidation: true — отправить сразу.
+ */
+async function sendNotificationToUsers(args) {
+  const {
+    title,
+    body,
+    userIds,
+    imageUrl = null,
+    sound = 'default',
+    data = {},
+    outboundLog = null,
+  } = args;
+
+  if (!userIds || userIds.length === 0) {
+    return {
+      successCount: 0,
+      failureCount: 0,
+      errorMessage: 'No users specified for sending notifications',
+      reason: 'userIds is empty or not specified',
+    };
+  }
+
+  if (shouldBypassNotificationConsolidation(outboundLog)) {
+    return sendNotificationToUsersImmediate(args);
+  }
+
+  const uniqueUserIds = [...new Set(userIds)];
+  const partPromises = uniqueUserIds.map(
+    (uid) =>
+      new Promise((resolve) => {
+        const singleUserArgs = {
+          title,
+          body,
+          userIds: [uid],
+          imageUrl,
+          sound,
+          data,
+          outboundLog,
+        };
+        if (!userPushBatches.has(uid)) {
+          userPushBatches.set(uid, { entries: [], timer: null });
+        }
+        const st = userPushBatches.get(uid);
+        st.entries.push({
+          singleUserArgs,
+          resolve,
+        });
+        scheduleOrFlushUserBatch(uid);
+      })
+  );
+  const results = await Promise.all(partPromises);
+  return mergeUserSendResults(results);
 }
 
 /**
