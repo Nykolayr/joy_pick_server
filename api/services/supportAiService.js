@@ -173,17 +173,22 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Answer in Russian only.'
       : 'Answer in English only.';
+  const inAppScopeRule =
+    answerLanguage === 'ru'
+      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению».'
+      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Never reply with «not related to the app» for those.';
   const offTopicRule =
     answerLanguage === 'ru'
-      ? 'Если сообщение явно не про приложение Joy Pick (погода, общая болтовня, темы вне экологии/заявок/карты/донатов/аккаунта/коинов/чатов в приложении) — ответь коротко и прямо: вопрос не относится к приложению Joy Pick. Не предлагай «обратиться в поддержку» только из-за такого оффтопа.'
-      : 'If the message is clearly not about the Joy Pick app (weather, chitchat, topics unrelated to cleanups, map, donations, account, coins, in-app chats, etc.) — reply briefly and plainly that the question is not related to the Joy Pick app. Do not suggest contacting support for that kind of off-topic alone.';
+      ? 'Фразу «вопрос не относится к приложению Joy Pick» используй только для явного оффтопа: погода, политика, кино, случайная болтовня без связи с уборками/экологией/приложением. Один только «привет» без вопроса по приложению можно ответить коротко дружелюбно и спросить, чем помочь по Joy Pick.'
+      : 'Say «not related to the Joy Pick app» only for clear off-topic: weather, politics, random chitchat unrelated to the app. A bare «hello» may get a short friendly reply and an offer to help with Joy Pick.';
   const inAppNoKnowledgeRule =
     answerLanguage === 'ru'
-      ? 'Если вопрос про приложение, но в Knowledge нет ответа — скажи, что в справочнике нет подходящей информации, и при необходимости можно обратиться в поддержку. Не выдумывай экраны и функции.'
-      : 'If the question is about the app but Knowledge has no answer, say the help base does not cover that and the user may contact support if needed. Do not invent screens or features.';
+      ? 'Если вопрос про приложение, но в Knowledge нет деталей — ответь по общему назначению Joy Pick (эко-инициативы, карта, заявки, донаты, коины) в пределах известного, без выдуманных кнопок; при необходимости скажи, что точной инструкции в справочнике нет и можно написать в поддержку.'
+      : 'If the question is in-scope but Knowledge lacks details, answer with high-level truthful info about Joy Pick (cleanups, map, requests, donations, coins) without inventing UI; say the help base may not cover specifics and support can help.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
+    inAppScopeRule,
     offTopicRule,
     inAppNoKnowledgeRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
@@ -269,8 +274,8 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage) 
   if (!chunks.length) {
     body +=
       answerLanguage === 'ru'
-        ? '\n\nПодсказка: фрагменты справки не подошли. Если речь не про приложение Joy Pick — ответь, что вопрос не относится к приложению. Если про приложение — что в справочнике нет подходящей информации.'
-        : '\n\nHint: no snippets matched. If the topic is not about the Joy Pick app, say the question is not related to the app. If it is about the app, say the help base has no matching information.';
+        ? '\n\nПодсказка: в справке нет подходящих фрагментов. Если вопрос про назначение приложения или что делать в Joy Pick — отвечай как о приложении (см. системные правила), не как об оффтопе. Оффтоп — только явный (погода и т.п.).'
+        : '\n\nHint: no snippets matched. If the user asks what the app is for or how to use Joy Pick, answer in-app per system rules; use off-topic wording only for clearly unrelated topics.';
   }
   return body;
 }

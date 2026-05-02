@@ -868,5 +868,11 @@
     "title": "Volunteer hours tracking and official letter",
     "text": "The app tracks time spent on verified cleanups as volunteer hours. In your profile you can print a letter documenting your hours on an official-style form. This supports school, work, or other programs that require documented volunteer time.",
     "tags": ["volunteer hours", "hours letter", "print letter", "official", "school", "tracking", "documentation"]
+  },
+  {
+    "chunk_id": "intent_what_is_app_for_beginners",
+    "title": "What Joy Pick is for and what you can do in the app",
+    "text": "Joy Pick is an app for environmental cleanups and volunteer actions. You see requests and events on a map. You can create a Waste Location (report pollution), Speed Cleanup (quick cleanup with before/after photos), or Event (scheduled cleanup or gathering). The app supports donations, JoyCoins, volunteer hours, chats on requests, and profile payouts via Stripe. The goal is to help clean polluted areas and motivate volunteers.",
+    "tags": ["what is joy pick", "what is the app for", "what to do in the app", "how to use", "getting started", "onboarding", "purpose", "beginner"]
   }
 ]
