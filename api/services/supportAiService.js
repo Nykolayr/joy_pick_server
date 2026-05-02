@@ -173,13 +173,22 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Answer in Russian only.'
       : 'Answer in English only.';
+  const offTopicRule =
+    answerLanguage === 'ru'
+      ? 'Если сообщение явно не про приложение Joy Pick (погода, общая болтовня, темы вне экологии/заявок/карты/донатов/аккаунта/коинов/чатов в приложении) — ответь коротко и прямо: вопрос не относится к приложению Joy Pick. Не предлагай «обратиться в поддержку» только из-за такого оффтопа.'
+      : 'If the message is clearly not about the Joy Pick app (weather, chitchat, topics unrelated to cleanups, map, donations, account, coins, in-app chats, etc.) — reply briefly and plainly that the question is not related to the Joy Pick app. Do not suggest contacting support for that kind of off-topic alone.';
+  const inAppNoKnowledgeRule =
+    answerLanguage === 'ru'
+      ? 'Если вопрос про приложение, но в Knowledge нет ответа — скажи, что в справочнике нет подходящей информации, и при необходимости можно обратиться в поддержку. Не выдумывай экраны и функции.'
+      : 'If the question is about the app but Knowledge has no answer, say the help base does not cover that and the user may contact support if needed. Do not invent screens or features.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
-    'Use only the provided Knowledge snippets.',
+    offTopicRule,
+    inAppNoKnowledgeRule,
+    'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
     'If user asks about creating a request without specifying type, first ask a short clarifying question about request type (waste cleanup, speed cleanup, or event).',
     'If user already answered the clarifying question with a short synonym (for example: subbotnik, event, cleanup event), do not repeat the same clarifying question again.',
-    "If the answer is not present in Knowledge, say that you don't have enough information and suggest contacting support.",
     'Do not invent screens, buttons, or app behavior.',
     'Keep responses concise and practical.'
   ].join('\n');
@@ -256,7 +265,14 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage) 
     blocks.join('\n\n---\n\n')
   ].filter(Boolean);
 
-  return parts.join('\n\n');
+  let body = parts.join('\n\n');
+  if (!chunks.length) {
+    body +=
+      answerLanguage === 'ru'
+        ? '\n\nПодсказка: фрагменты справки не подошли. Если речь не про приложение Joy Pick — ответь, что вопрос не относится к приложению. Если про приложение — что в справочнике нет подходящей информации.'
+        : '\n\nHint: no snippets matched. If the topic is not about the Joy Pick app, say the question is not related to the app. If it is about the app, say the help base has no matching information.';
+  }
+  return body;
 }
 
 async function callGeminiAnswer({ question, chunks, answerLanguage, conversationContext }) {
