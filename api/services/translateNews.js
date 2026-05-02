@@ -153,6 +153,7 @@ function parseContentFromRequest(content) {
 module.exports = {
   SUPPORTED_LOCALES,
   CONTENT_DELIMITER,
+  translateOne,
   parseContent,
   parseContentFromRequest,
   translateToAllLocales

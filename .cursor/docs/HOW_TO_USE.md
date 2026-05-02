@@ -74,6 +74,7 @@
         ├── error-handling.md # Обработка ошибок
         ├── user-ids.md       # ID пользователей
         ├── dates-time.md     # Даты и время
-        └── cron-jobs.md      # Cron задачи
+        ├── cron-jobs.md      # Cron задачи
+        └── ssh-server.md     # SSH на прод (PowerShell)
 ```
 

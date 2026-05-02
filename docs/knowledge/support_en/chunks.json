@@ -1,0 +1,872 @@
+[
+  {
+    "chunk_id": "auth_login_email_password",
+    "title": "Login with email and password",
+    "text": "Open the Login screen and enter your email and password. Tap Login to continue. If login is successful, the app opens your main home flow. If the credentials are wrong, you will stay on the login flow and see an error from the auth process.",
+    "tags": ["login", "sign in", "email", "password", "auth"]
+  },
+  {
+    "chunk_id": "auth_login_google_apple",
+    "title": "Login with Google or Apple",
+    "text": "You can use social sign-in from the authentication flow. The app supports Google and Apple sign-in and then continues with the same user session logic as email login. If social authentication fails, retry from the same login screen.",
+    "tags": ["google login", "apple login", "social sign in", "auth", "oauth"]
+  },
+  {
+    "chunk_id": "auth_registration_required_fields",
+    "title": "Registration required fields",
+    "text": "Registration validates email format and password rules before sending data. Password must be at least 6 characters and confirmation must match. You also need to accept Terms of Use to create an account.",
+    "tags": ["register", "sign up", "password", "email validation", "terms"]
+  },
+  {
+    "chunk_id": "auth_registration_terms_required",
+    "title": "Terms acceptance during registration",
+    "text": "If Terms of Use are not accepted, registration cannot continue. Enable the terms checkbox and submit again. This is a required step in the registration flow.",
+    "tags": ["terms of use", "registration", "sign up", "cannot register", "auth"]
+  },
+  {
+    "chunk_id": "auth_email_verification_code_flow",
+    "title": "Email verification code flow",
+    "text": "After registration, email verification is handled by a code confirmation screen. Enter the verification code to confirm your email. If the code was not received or expired, use the resend code action and try again.",
+    "tags": ["email verification", "verify code", "resend code", "auth", "registration"]
+  },
+  {
+    "chunk_id": "auth_validation_email_required",
+    "title": "Email is required error",
+    "text": "If email is empty, the app shows a required-email validation message. Enter a valid email address and submit again. The same validation is used in login and registration flows.",
+    "tags": ["email required", "validation", "login error", "registration error", "auth"]
+  },
+  {
+    "chunk_id": "auth_validation_email_format",
+    "title": "Invalid email format error",
+    "text": "If the email format is incorrect, the app blocks submit and asks for a valid email. Update the email field to a standard address format. Then retry login or registration.",
+    "tags": ["invalid email", "email format", "auth error", "login", "register"]
+  },
+  {
+    "chunk_id": "auth_validation_password_min_length",
+    "title": "Password minimum length",
+    "text": "Password must contain at least 6 characters. If the password is shorter, registration cannot continue. Update the password and submit again.",
+    "tags": ["password too short", "password min", "register", "auth", "validation"]
+  },
+  {
+    "chunk_id": "auth_validation_password_mismatch",
+    "title": "Password confirmation mismatch",
+    "text": "If password and confirmation do not match, the app shows a mismatch message and blocks registration. Re-enter both fields with the same value. Then submit again.",
+    "tags": ["password mismatch", "confirm password", "registration", "auth", "validation"]
+  },
+  {
+    "chunk_id": "auth_logout_profile_menu",
+    "title": "How logout works",
+    "text": "Logout is available from the Profile flow. When you sign out, the app clears session data and returns to the start/login path. After logout, protected user actions require sign-in again.",
+    "tags": ["logout", "sign out", "profile", "session", "auth"]
+  },
+  {
+    "chunk_id": "location_disclosure_before_permission",
+    "title": "Location disclosure before permission",
+    "text": "Before runtime location permission, the app shows a location disclosure dialog. If user selects Not now, permission request is not sent in that step. User can continue app flow with limited location-dependent actions.",
+    "tags": ["location disclosure", "geolocation", "permission", "not now", "privacy"]
+  },
+  {
+    "chunk_id": "location_permission_request_on_start",
+    "title": "Location permission during startup",
+    "text": "During startup, the app requests location permission after disclosure. If permission is granted, location service initialization continues. If permission is denied, location-dependent features stay limited until permission is granted later.",
+    "tags": ["startup", "location permission", "gps", "geolocation", "onboarding"]
+  },
+  {
+    "chunk_id": "location_service_disabled_warning",
+    "title": "Location service is disabled",
+    "text": "If device location service is off, the app shows a warning that executor actions are limited. The warning includes an action to open device location settings. Enable location service in system settings and return to the app.",
+    "tags": ["location off", "gps disabled", "open settings", "geolocation", "warning"]
+  },
+  {
+    "chunk_id": "location_open_settings_action",
+    "title": "Open location settings action",
+    "text": "In the location-off warning, tap the button to open device location settings directly. Turn location services on, then return to the app. The app re-checks location state when resumed.",
+    "tags": ["open location settings", "gps settings", "location service", "resumed", "fix"]
+  },
+  {
+    "chunk_id": "location_startup_no_wait_when_disabled",
+    "title": "Startup behavior when location service is off",
+    "text": "If permission exists but system location service is turned off, startup does not keep waiting for real coordinates. This avoids long waiting after splash. User can still continue and enable location later from warning/settings.",
+    "tags": ["splash", "loading", "gps off", "startup", "location timeout"]
+  },
+  {
+    "chunk_id": "location_executor_limitations",
+    "title": "Why executor actions are blocked without location",
+    "text": "Without location permission or enabled location service, users can still donate and create requests, but executor actions are restricted. Joining and performing tasks requires location checks. Enable permission and device location service to unlock executor actions.",
+    "tags": ["cannot join", "cannot perform", "executor", "location required", "restriction"]
+  },
+  {
+    "chunk_id": "request_create_waste_cleanup",
+    "title": "How to create a waste cleanup request",
+    "text": "From the main screen, tap the \"+\" button and select request type \"Waste Cleanup\" (Waste Location). Fill required fields: location, title, and description, then add required photos and waste details (size/type/access). Submit the request and wait for success confirmation.",
+    "tags": ["create request", "waste cleanup", "plus button", "+", "garbage", "trash", "how to create"]
+  },
+  {
+    "chunk_id": "request_create_waste_location_required",
+    "title": "Waste cleanup requires selected location",
+    "text": "If location is not selected, creation shows a location-required error and does not submit. Pick a map location first, then submit again. This is a hard validation step.",
+    "tags": ["location not selected", "waste cleanup", "creation error", "request", "validation"]
+  },
+  {
+    "chunk_id": "request_create_speed_cleanup",
+    "title": "How to create a speed cleanup",
+    "text": "Open Speed Cleanup creation and fill required fields, including location and cleanup details. Add required cleanup photos in the flow. Submit and wait for creation success message.",
+    "tags": ["speed cleanup", "create", "quick cleanup", "request", "how to"]
+  },
+  {
+    "chunk_id": "request_create_speed_cleanup_photo_requirement",
+    "title": "Speed cleanup photo requirements",
+    "text": "Speed cleanup flow uses before/after photo logic in creation and completion-related UI. If required photos are missing, the app asks to add them before submission. Add photos and retry submit.",
+    "tags": ["before after photos", "speed cleanup", "photo required", "cannot submit", "validation"]
+  },
+  {
+    "chunk_id": "request_create_event",
+    "title": "How to create an event request",
+    "text": "Open Event creation and fill required fields like location, title, description, and event date/time. Add event photos as needed by the form. Submit creation and confirm success message.",
+    "tags": ["create event", "event request", "cleanup event", "subbotnik", "how to create", "request"]
+  },
+  {
+    "chunk_id": "request_create_event_date_time_required",
+    "title": "Event creation date and time requirement",
+    "text": "Event creation requires selecting date and time as part of the form flow. If this is missing, creation cannot finish correctly. Set event schedule fields and submit again.",
+    "tags": ["event date time", "event validation", "cannot create event", "required fields", "request"]
+  },
+  {
+    "chunk_id": "request_creation_fill_required_error",
+    "title": "Please fill all required fields error",
+    "text": "When required request fields are missing, the app shows a fill-required message. Review all required inputs on the current creation screen. Complete missing fields and submit again.",
+    "tags": ["fill required fields", "creation error", "request validation", "cannot submit", "form"]
+  },
+  {
+    "chunk_id": "request_creation_failed_generic",
+    "title": "Request creation failed",
+    "text": "If request creation fails, the app shows an error and keeps you in the creation flow. Check required fields, internet connection, and try submit again. Retry from the same screen is supported.",
+    "tags": ["request failed", "creation failed", "submit error", "retry", "network"]
+  },
+  {
+    "chunk_id": "request_join_request_flow",
+    "title": "How to join a request",
+    "text": "Open request details and use the Join action if available. On success, the app shows a join-success message and updates participation state. If join fails, retry and verify location-related requirements.",
+    "tags": ["join request", "participation", "how to join", "request details", "executor"]
+  },
+  {
+    "chunk_id": "request_unjoin_request_flow",
+    "title": "How to cancel participation (unjoin)",
+    "text": "From request details, use the Unjoin action to cancel your participation. On success, app shows unjoin confirmation and updates state. If unjoin fails, retry from the same request details screen.",
+    "tags": ["unjoin", "cancel participation", "leave request", "request details", "executor"]
+  },
+  {
+    "chunk_id": "request_join_event_flow",
+    "title": "How to join an event",
+    "text": "Open event details and tap Join when event participation is open. Success is confirmed by event-join success feedback. If joining is canceled later, app shows event-canceled participation feedback.",
+    "tags": ["join event", "event participation", "cleanup event", "request details", "join"]
+  },
+  {
+    "chunk_id": "request_event_not_started_limit",
+    "title": "Event has not started yet",
+    "text": "If you try to perform event actions too early, the app can show that event has not started yet. Wait until the event start time, then retry perform/completion actions. This is an expected time-based restriction.",
+    "tags": ["event not started", "cannot perform", "time restriction", "event", "completion"]
+  },
+  {
+    "chunk_id": "request_event_distance_limit",
+    "title": "Event distance restriction for task actions",
+    "text": "Event perform flow checks distance to event location. If you are outside the allowed radius, app shows a distance restriction message and blocks the action. Move closer to the event location and retry.",
+    "tags": ["distance", "radius", "event", "cannot perform", "location check"]
+  },
+  {
+    "chunk_id": "request_distance_out_of_cleanup_radius",
+    "title": "Out of cleanup radius message",
+    "text": "During cleanup-related actions, app can show that you are out of allowed cleanup radius. Return to the task location and try again. This check protects location-based task completion flow.",
+    "tags": ["out of radius", "cleanup radius", "location", "task completion", "error"]
+  },
+  {
+    "chunk_id": "request_complete_participant_flow",
+    "title": "How participant completion submission works",
+    "text": "Participant completion flow requires submitting cleanup result data, including after-photo evidence in relevant screens. After submit, request moves to review-dependent state. If submission fails, app shows retry-oriented error feedback.",
+    "tags": ["mark completed", "participant completion", "submit result", "after photo", "review"]
+  },
+  {
+    "chunk_id": "request_complete_missing_after_photo",
+    "title": "Cannot complete without after photo",
+    "text": "If after photo is required and missing, completion flow asks to add it first. Upload the after photo and submit completion again. This is a common reason for completion submit failure.",
+    "tags": ["after photo required", "cannot complete", "completion error", "cleanup", "proof"]
+  },
+  {
+    "chunk_id": "request_completion_request_id_missing",
+    "title": "Request ID is missing in completion flow",
+    "text": "If completion screen cannot resolve request ID, submission is blocked and app shows a missing request ID error. Reopen completion from the request details flow instead of stale navigation entry. Then retry submission.",
+    "tags": ["request id missing", "completion", "navigation issue", "submit blocked", "error"]
+  },
+  {
+    "chunk_id": "request_completion_submit_error_retry",
+    "title": "Completion submit failed",
+    "text": "When work completion submit fails, app shows an error and advises retry. Check network stability and try again from the same completion screen. If issue repeats, reopen request details and retry flow.",
+    "tags": ["completion failed", "submit error", "retry", "network", "mark as completed"]
+  },
+  {
+    "chunk_id": "request_status_pending_review_meaning",
+    "title": "What pending review status means",
+    "text": "Pending status means request or completion is waiting for moderation/review stage. It is not final approved/rejected result yet. Wait for status update or creator/admin decision depending on flow.",
+    "tags": ["pending", "waiting review", "moderation", "status", "request status"]
+  },
+  {
+    "chunk_id": "request_status_in_progress_meaning",
+    "title": "What in progress status means",
+    "text": "In Progress means active execution is ongoing and not finished. Continue work from request details if continue action is available. Submit completion when task result is ready.",
+    "tags": ["in progress", "status", "continue work", "active task", "request"]
+  },
+  {
+    "chunk_id": "request_status_approved_meaning",
+    "title": "What approved status means",
+    "text": "Approved status indicates review accepted the result for that flow. Approved is a positive final or near-final moderation outcome. Related actions may become limited after approval depending on screen logic.",
+    "tags": ["approved", "status", "moderation result", "request", "completion"]
+  },
+  {
+    "chunk_id": "request_status_rejected_meaning",
+    "title": "What rejected status means",
+    "text": "Rejected status means review declined submitted result. In participant moderation flows, rejection can include a rejection reason. Check details and follow available next actions in the request screen.",
+    "tags": ["rejected", "status", "rejection reason", "moderation", "request"]
+  },
+  {
+    "chunk_id": "request_status_completed_meaning",
+    "title": "What completed status means",
+    "text": "Completed status means the task/request reached its completion state in the app flow. Completed requests usually have no active executor actions left. Open details to review final data and outcome.",
+    "tags": ["completed", "status", "finished request", "task done", "request details"]
+  },
+  {
+    "chunk_id": "request_archived_not_visible_behavior",
+    "title": "Why request may not be visible (archived)",
+    "text": "Archived requests are filtered from standard active request views in app repositories. If a request is archived, it may not appear in normal browsing lists. Open direct details link or related history/admin views if available to inspect it.",
+    "tags": ["not visible", "archived", "request missing", "status", "list filtering"]
+  },
+  {
+    "chunk_id": "donation_how_to_donate",
+    "title": "How to donate from request details",
+    "text": "Open request details and use Donate action. Donation starts Stripe payment flow and confirms result in-app. If payment is successful, app shows donation success feedback.",
+    "tags": ["donate", "donation", "stripe", "request details", "payment"]
+  },
+  {
+    "chunk_id": "donation_min_amount_limit",
+    "title": "Minimum donation amount",
+    "text": "Minimum donation amount is $1.00 in the app. If amount is below minimum, donation flow will not continue. Increase amount to at least $1.00 and retry.",
+    "tags": ["minimum donation", "donation amount", "1.00", "payment", "stripe"]
+  },
+  {
+    "chunk_id": "donation_payment_failed",
+    "title": "Donation payment failed",
+    "text": "If donation payment creation fails, app shows payment failed feedback and keeps you in current flow. Retry donation from request details. If cancellation happened manually, app shows payment canceled state.",
+    "tags": ["payment failed", "donation failed", "stripe error", "retry payment", "payment cancelled"]
+  },
+  {
+    "chunk_id": "stripe_executor_setup_requirement",
+    "title": "Stripe setup requirement for receiving donation money",
+    "text": "App warns that without fully configured Stripe account and linked debit card, donation money payouts are not available as expected. Complete Stripe setup from profile-related payment section. Then retry payout-related actions.",
+    "tags": ["stripe setup", "debit card", "payout eligibility", "donation money", "profile payments"]
+  },
+  {
+    "chunk_id": "payout_page_available_and_history_tabs",
+    "title": "Payout screen tabs",
+    "text": "Payouts page has two tabs: Available and History. Available shows current amounts and payout action, while History lists past payout records. Use these tabs to understand current and past payout states.",
+    "tags": ["payouts", "available", "history", "withdraw", "balance"]
+  },
+  {
+    "chunk_id": "payout_instant_minimum_amount",
+    "title": "Instant payout minimum amount",
+    "text": "Instant payout is available only from $1.00 and above. For lower amounts, app indicates scheduled transfer behavior. If instant payout button does not complete, check your amount and payout method availability.",
+    "tags": ["instant payout", "minimum 1", "withdraw", "balance", "payout limit"]
+  },
+  {
+    "chunk_id": "payout_no_funds_message",
+    "title": "No funds available for payout",
+    "text": "If balance is not available, app shows no-funds message in payout flow. In this state, payout action cannot proceed. Wait for eligible balance updates and retry later.",
+    "tags": ["no funds", "payout", "withdrawal", "balance unavailable", "payments"]
+  },
+  {
+    "chunk_id": "payout_no_methods_available",
+    "title": "No payout methods available",
+    "text": "If no payout method is linked, app shows no payout methods message in instant payout flow. Add/enable payout method in Stripe setup path first. Then return to payouts and retry.",
+    "tags": ["no payout methods", "stripe method", "withdraw error", "payout", "payments"]
+  },
+  {
+    "chunk_id": "chat_open_and_send_message",
+    "title": "How to open chat and send a message",
+    "text": "Open chat from chat list or supported route, then enter text and tap Send. Empty messages are ignored by input validation. Sent messages appear in the conversation with sender-side bubble styling.",
+    "tags": ["chat", "send message", "message input", "conversation", "how to"]
+  },
+  {
+    "chunk_id": "chat_empty_message_not_sent",
+    "title": "Why empty message is not sent",
+    "text": "The chat input trims text and blocks empty messages. If message is only spaces or blank, send action does nothing. Enter text content and send again.",
+    "tags": ["chat message not sent", "empty message", "chat input", "send blocked", "validation"]
+  },
+  {
+    "chunk_id": "chat_typing_indicator_behavior",
+    "title": "Typing indicator behavior in chat",
+    "text": "Chat screen can show a typing indicator when typing events are present from participants. Indicator appears as someone typing text in chat UI. It is transient and depends on live chat state updates.",
+    "tags": ["typing indicator", "chat typing", "real time", "messages", "chat ui"]
+  },
+  {
+    "chunk_id": "chat_mark_read_on_open",
+    "title": "How chat read state updates on open",
+    "text": "When you open a chat, the app marks the chat as read and resets unread count for that chat. This uses chat read endpoints in the backend integration. If unread badge stays stale, reopen the same chat and return to chat list.",
+    "tags": ["chat read", "unread count", "mark as read", "chat badge", "open chat"]
+  },
+  {
+    "chunk_id": "chat_read_receipt_icon_for_own_messages",
+    "title": "Read receipt icon on your messages",
+    "text": "For your own messages, chat bubble shows check icons based on read-by data. Single check and double-check visuals are used in UI for delivery/read style feedback. Exact recipient read timing depends on server updates.",
+    "tags": ["read receipt", "double check", "message seen", "chat status", "readBy"]
+  },
+  {
+    "chunk_id": "chat_unread_badge_in_chat_list",
+    "title": "Unread badge in chat list",
+    "text": "Chat list shows unread counters per chat and updates counts from chat state. Opening a chat usually clears that chat unread count. Very large counters are compacted in badge display logic.",
+    "tags": ["unread badge", "chat list", "unread count", "messages", "chat"]
+  },
+  {
+    "chunk_id": "chat_invalid_chat_id_route",
+    "title": "Invalid chat route behavior",
+    "text": "If chat route is opened without a valid chat ID, chat page cannot initialize proper conversation context. Use valid chat link/route with chatId parameter. Reopen from in-app chat list when possible.",
+    "tags": ["chat id required", "invalid chat link", "chat route", "cannot open chat", "deeplink"]
+  },
+  {
+    "chunk_id": "chat_private_chat_not_found_error",
+    "title": "Private chat not found",
+    "text": "If app cannot resolve private chat for the current context, it can show private chat not found message. Reopen the related request/details flow and try chat action again. If still missing, the chat relation may not exist yet.",
+    "tags": ["private chat not found", "chat error", "request chat", "cannot message", "support"]
+  },
+  {
+    "chunk_id": "notifications_open_list",
+    "title": "How to open and review notifications",
+    "text": "Notifications page shows your notification list with pagination and refresh options. Tap any notification card to open details in a bottom sheet. Opening a card also marks that notification as read.",
+    "tags": ["notifications", "notification list", "open details", "read", "in-app notifications"]
+  },
+  {
+    "chunk_id": "notifications_mark_all_as_read",
+    "title": "Mark all notifications as read",
+    "text": "If there are unread notifications, use the done-all action in notifications app bar. App calls mark-all-read and updates local notification list state. A success snackbar confirms all marked as read.",
+    "tags": ["mark all read", "notifications", "unread", "done all", "notification center"]
+  },
+  {
+    "chunk_id": "notifications_refresh_and_retry",
+    "title": "Refresh notifications and retry load",
+    "text": "Notifications page supports pull-to-refresh and refresh icon in app bar. If loading fails, error state includes retry action. Use refresh/retry to fetch latest notifications again.",
+    "tags": ["refresh notifications", "retry", "loading error", "notification fetch", "network"]
+  },
+  {
+    "chunk_id": "notifications_empty_state",
+    "title": "No notifications yet",
+    "text": "If there are no notifications, app shows an empty notifications state. This is expected when your account has no recent notification records. You can return later and refresh.",
+    "tags": ["no notifications", "empty state", "notification list", "inbox empty", "notifications"]
+  },
+  {
+    "chunk_id": "notifications_push_permission_basics",
+    "title": "Push notification permission basics",
+    "text": "Push service initialization requests system notification permission and configures foreground/local handling. If permission is denied, push delivery visibility is limited by OS settings. Enable notifications in device settings and relaunch app.",
+    "tags": ["push notifications", "permission", "allow notifications", "device settings", "fcm"]
+  },
+  {
+    "chunk_id": "notifications_push_android_gms_edge_case",
+    "title": "Push on devices without Google Play Services",
+    "text": "FCM token retrieval can fail on devices/emulators without Google Play Services support. In such cases, push notifications may not work as expected. Use a device with proper Google services for reliable FCM behavior.",
+    "tags": ["fcm", "google play services", "service not available", "android push", "notifications not received"]
+  },
+  {
+    "chunk_id": "deeplink_open_request_details",
+    "title": "How request deep links open in app",
+    "text": "Request deep links support both web and app-scheme formats, such as /request/{category}/{requestId}. App parses category and request ID, then opens the matching request details screen. If request is not found, error fallback screen is shown.",
+    "tags": ["deep link", "request link", "open request", "waste_location", "speed_cleanup"]
+  },
+  {
+    "chunk_id": "deeplink_open_news_details",
+    "title": "How news deep links open in app",
+    "text": "News deep links support /news/{newsId} in web and app-scheme formats. App parses newsId and routes to news details screen. If link format is invalid, parsing fails and no news navigation is performed.",
+    "tags": ["news deep link", "open news", "newsId", "deeplink", "routing"]
+  },
+  {
+    "chunk_id": "deeplink_cold_start_pending_behavior",
+    "title": "Deep link behavior on cold start",
+    "text": "On cold start, app may queue deep link first and apply it after home route is ready. This prevents splash navigation from overriding deep link target. If it looks delayed, wait until home is initialized.",
+    "tags": ["cold start deep link", "queued deep link", "splash", "home route", "navigation"]
+  },
+  {
+    "chunk_id": "deeplink_duplicate_ignored_short_window",
+    "title": "Duplicate deep links are ignored briefly",
+    "text": "If the same deep link arrives multiple times within a short window, app ignores duplicates to prevent repeated navigation. This is expected anti-duplicate behavior. Use one valid link tap and wait for navigation.",
+    "tags": ["duplicate deeplink", "opens twice", "navigation duplicate", "anti duplicate", "deep link"]
+  },
+  {
+    "chunk_id": "deeplink_invalid_format_behavior",
+    "title": "Invalid deep link format behavior",
+    "text": "If deep link format does not match supported request/news patterns, app does not navigate to target content. Invalid format is logged internally and ignored in UI navigation flow. Use a valid deep link structure and retry.",
+    "tags": ["invalid deep link", "link not opening", "wrong format", "deeplink parse", "routing"]
+  },
+  {
+    "chunk_id": "deeplink_open_chat_route",
+    "title": "Open chat by route link",
+    "text": "Chat route supports /chat/{chatId} navigation when a valid chatId is provided. If chatId is missing, route cannot open conversation correctly. Use links that include actual chat ID from app context.",
+    "tags": ["chat deep link", "chat route", "chatId", "open chat", "navigation"]
+  },
+  {
+    "chunk_id": "profile_edit_basic_fields",
+    "title": "How to edit profile data",
+    "text": "Profile edit flow supports user data updates like first name, last name, country, city, about, and social links. Save changes from edit profile screen to update account data. Updated profile is then used in user-facing views.",
+    "tags": ["edit profile", "name", "city", "about", "social links"]
+  },
+  {
+    "chunk_id": "profile_update_photo_behavior",
+    "title": "Profile photo update behavior",
+    "text": "Profile editing flow includes profile image update in user data update process. If image update fails, app can show photo processing or save-related errors. Retry image selection/upload and save again.",
+    "tags": ["profile photo", "avatar", "photo processing error", "edit profile", "save error"]
+  },
+  {
+    "chunk_id": "profile_open_public_user_profile",
+    "title": "Open public user profile",
+    "text": "App supports user profile route with user ID parameter to open public user profile page. If user ID is missing in route, fallback error UI appears. Open user profile from valid in-app links when possible.",
+    "tags": ["user profile", "public profile", "userId", "profile route", "navigation"]
+  },
+  {
+    "chunk_id": "profile_language_change_behavior",
+    "title": "Language change in profile flow",
+    "text": "Language settings are available in profile and app localization supports multiple locales. Changing language updates text resources used across screens. Reopen target screen if you need to refresh visible strings immediately.",
+    "tags": ["language", "localization", "profile settings", "translate", "app language"]
+  },
+  {
+    "chunk_id": "support_generic_retry_after_temporary_failure",
+    "title": "What to do when action fails temporarily",
+    "text": "For temporary submit/load failures, first retry in the same screen using built-in retry/refresh actions. Then reopen the flow from source screen (request details, chat list, notifications list). If issue persists, capture exact error text and context for support.",
+    "tags": ["something failed", "retry", "refresh", "temporary error", "troubleshooting"]
+  },
+  {
+    "chunk_id": "support_request_not_visible_checklist",
+    "title": "Why my request is not visible",
+    "text": "A request can look missing if it is archived or filtered out of active lists. It may also be in status states not shown by your current filter context. Open direct request details link if available and verify status from there.",
+    "tags": ["request not visible", "missing request", "archived", "filters", "status"]
+  },
+  {
+    "chunk_id": "support_why_cannot_mark_completed",
+    "title": "Why I cannot mark request as completed",
+    "text": "Completion can fail when required proof fields are missing, request ID context is invalid, or location constraints are not satisfied. Check after-photo requirement and distance/time restrictions for your request type. Then retry completion from request details.",
+    "tags": ["cannot mark completed", "completion blocked", "after photo", "distance check", "request id"]
+  },
+  {
+    "chunk_id": "support_why_notifications_not_received",
+    "title": "Why I do not receive notifications",
+    "text": "Verify OS notification permission for the app and ensure device supports push stack correctly. In-app notifications page can still show records even when push delivery was missed. Use refresh in notifications page and check whether new items appear there.",
+    "tags": ["notifications not received", "push not working", "permission", "fcm", "notification list"]
+  },
+  {
+    "chunk_id": "support_open_app_from_deeplink",
+    "title": "How to open app from deep link",
+    "text": "Use a valid Joy Pick request or news deep link format. On some cold starts, app may first open splash/home and then navigate to deep link target. If nothing opens, verify link structure and category/request ID values.",
+    "tags": ["open app from link", "deeplink", "request link", "news link", "navigation"]
+  },
+  {
+    "chunk_id": "support_chat_read_status_explained",
+    "title": "How chat read status works",
+    "text": "Opening a chat marks it as read and clears unread count for that chat in list state. For your sent messages, UI check icons are based on read-by metadata from backend responses. Read timing can vary with real-time sync and connection state.",
+    "tags": ["chat read status", "unread", "mark read", "double check", "read receipts"]
+  },
+  {
+    "chunk_id": "auth_need_sign_in_before_actions",
+    "title": "You need to sign in before protected actions",
+    "text": "Some actions require an authenticated session. If auth token is missing or session ended, app asks you to sign in first. Log in again and retry the action.",
+    "tags": ["need sign in", "not authorized", "login required", "auth", "session expired"]
+  },
+  {
+    "chunk_id": "auth_email_not_found_case",
+    "title": "Email not found during login",
+    "text": "If login email is not recognized, app can show an email-not-found error. Check the entered address and try again. If this is a new account, use registration flow first.",
+    "tags": ["email not found", "login failed", "wrong email", "auth", "sign in"]
+  },
+  {
+    "chunk_id": "auth_password_reset_entry",
+    "title": "Forgot password entry point",
+    "text": "Password reset flow is available from authentication routing. If user cannot log in with current password, open reset password screen from auth flow and complete reset steps there. After reset, sign in with the new password.",
+    "tags": ["forgot password", "reset password", "cannot login", "auth", "recover account"]
+  },
+  {
+    "chunk_id": "location_permission_denied_recovery",
+    "title": "Recover after location permission denied",
+    "text": "If location permission was denied, location-dependent actions stay restricted. Re-trigger permission from relevant flow or use app/device settings to grant location access. Then reopen the action that previously failed.",
+    "tags": ["permission denied", "location denied", "enable location permission", "gps", "retry"]
+  },
+  {
+    "chunk_id": "location_cached_or_default_coordinates_note",
+    "title": "Why map may show cached or default location",
+    "text": "Location service can use cached coordinates and has fallback behavior when real location is not yet available. In fallback cases, location may not match current position immediately. Enable location service and wait for a fresh update.",
+    "tags": ["wrong location", "cached location", "default location", "map location", "gps"]
+  },
+  {
+    "chunk_id": "request_join_failed_retry_guidance",
+    "title": "Join request failed troubleshooting",
+    "text": "If join action fails, first retry from the same request details page. Then confirm location permission and location service are enabled, because executor actions depend on location checks. If issue persists, reopen request details and retry join.",
+    "tags": ["join failed", "cannot join request", "retry join", "location dependency", "executor"]
+  },
+  {
+    "chunk_id": "request_unjoin_failed_retry_guidance",
+    "title": "Unjoin request failed troubleshooting",
+    "text": "If unjoin action fails, keep the current request open and retry once. If it still fails, reopen request details from list/map and try again. This helps resync current participation state before action call.",
+    "tags": ["unjoin failed", "cancel participation failed", "leave request", "retry", "request details"]
+  },
+  {
+    "chunk_id": "request_continue_work_action_meaning",
+    "title": "What Continue Work means",
+    "text": "Continue Work appears when your task already started and remains active. It returns you to active execution flow instead of starting from zero. Use it to resume unfinished work.",
+    "tags": ["continue work", "resume task", "in progress", "request action", "executor"]
+  },
+  {
+    "chunk_id": "request_cancel_work_action_meaning",
+    "title": "What Cancel Work does",
+    "text": "Cancel Work stops your active work state for that task flow. App asks for confirmation because progress can be lost. Use this only if you want to stop current execution.",
+    "tags": ["cancel work", "stop task", "progress lost", "request action", "confirmation"]
+  },
+  {
+    "chunk_id": "request_group_chat_not_found_case",
+    "title": "Group chat not found from request",
+    "text": "If app cannot resolve request group chat, it can show group-chat-not-found message. Reopen request details and retry chat action. If still unavailable, group chat may not be created for that context.",
+    "tags": ["group chat not found", "request group chat", "chat from request", "cannot open chat", "error"]
+  },
+  {
+    "chunk_id": "request_rejection_reason_requirement",
+    "title": "Rejection reason is required in participant review",
+    "text": "In participant moderation reject flow, rejection reason is required. If reason is empty, reject action should not proceed correctly. Enter reason text and submit rejection again.",
+    "tags": ["rejection reason", "participant review", "reject work", "moderation", "required field"]
+  },
+  {
+    "chunk_id": "request_work_completed_moderation_message",
+    "title": "Work completed and sent for moderation",
+    "text": "After successful completion submit in relevant flows, app can show that work is sent for moderation. This means result is submitted and now waiting for review. Final status update appears after moderation decision.",
+    "tags": ["submitted for moderation", "work completed", "pending review", "status", "completion"]
+  },
+  {
+    "chunk_id": "request_work_completed_waiting_creator_approval",
+    "title": "Work completed and waiting for creator approval",
+    "text": "Some completion flows show waiting for creator approval instead of immediate finalization. In this state, participant should wait for creator decision. Check request status later for approved or rejected outcome.",
+    "tags": ["waiting creator approval", "completion submitted", "request status", "approved rejected", "moderation"]
+  },
+  {
+    "chunk_id": "request_extend_for_one_day_action",
+    "title": "Extend request for one day",
+    "text": "Request details include an extend action for one day where supported. If extension succeeds, app shows confirmation feedback. Use it when additional execution time is needed.",
+    "tags": ["extend request", "extend 1 day", "request deadline", "request details", "action"]
+  },
+  {
+    "chunk_id": "request_close_and_submit_for_review",
+    "title": "Close request and submit for review",
+    "text": "Creator-side close action can move request into review submission stage. App confirms this with a submitted-for-review style message. After that, final review outcome updates status later.",
+    "tags": ["close request", "submit for review", "creator action", "moderation", "status"]
+  },
+  {
+    "chunk_id": "donation_user_cancelled_payment_case",
+    "title": "User canceled donation payment",
+    "text": "If payment sheet is closed or canceled by user, app treats donation as canceled and shows canceled feedback. No successful donation result is recorded in that attempt. Start donation again when ready.",
+    "tags": ["payment canceled", "donation canceled", "stripe sheet closed", "no payment", "retry donation"]
+  },
+  {
+    "chunk_id": "payout_confirm_payout_flow",
+    "title": "Confirm payout action",
+    "text": "Instant payout flow requires confirmation after selecting available payout method and amount context. Tap confirm payout to send payout request. Processing state can appear while backend action is running.",
+    "tags": ["confirm payout", "instant payout", "withdraw confirm", "processing", "payout flow"]
+  },
+  {
+    "chunk_id": "payout_history_empty_case",
+    "title": "No payout history yet",
+    "text": "If no payout records exist, History tab shows an empty state message. This is expected for accounts without completed payouts. Check again after your first successful payout.",
+    "tags": ["no payout history", "history empty", "payouts", "withdraw history", "payments"]
+  },
+  {
+    "chunk_id": "chat_list_empty_state",
+    "title": "No chats yet",
+    "text": "Chat list can show empty state when user has no active chat threads. Start participation or open supported support/request chat flows to generate chats. Refresh chat list after new activity.",
+    "tags": ["no chats", "chat list empty", "messages", "conversation list", "chat"]
+  },
+  {
+    "chunk_id": "chat_send_in_progress_state",
+    "title": "Message sending in progress",
+    "text": "When a message is being sent, chat UI shows sending progress on send control. Wait until sending completes before retrying rapid taps. This helps avoid accidental duplicate sends.",
+    "tags": ["sending message", "chat loading", "send progress", "message pending", "chat ui"]
+  },
+  {
+    "chunk_id": "chat_title_resolution_by_request_context",
+    "title": "Why chat title changes by context",
+    "text": "Chat header can show request name when chat is linked to a request ID. For support/private/group contexts without request data, title falls back to chat type labels. This is expected header behavior.",
+    "tags": ["chat title", "request name in chat", "support chat", "private chat", "group chat"]
+  },
+  {
+    "chunk_id": "notifications_mark_as_read_on_open_details",
+    "title": "Notification is marked read on detail open",
+    "text": "When you open notification details modal, app marks that notification as read automatically. You do not need extra button tap for single-item read in this flow. Return to list to see updated read style.",
+    "tags": ["notification read", "open details", "mark as read", "notification modal", "read status"]
+  },
+  {
+    "chunk_id": "notifications_unread_indicator_dot",
+    "title": "Unread indicator on notification card",
+    "text": "Unread notifications are styled differently and include a visual unread indicator. After read action, card style returns to normal read appearance. This helps quickly scan unread vs read items.",
+    "tags": ["unread indicator", "notification dot", "read unread", "notification card", "ui"]
+  },
+  {
+    "chunk_id": "notifications_error_state_with_retry_button",
+    "title": "Notification load error with retry button",
+    "text": "If notifications load fails and list is empty, app shows error state with retry control. Tap retry to request notifications again. Use refresh later if data loads but may be outdated.",
+    "tags": ["notification error", "retry button", "cannot load notifications", "network", "reload"]
+  },
+  {
+    "chunk_id": "deeplink_supported_request_category_paths",
+    "title": "Supported deep link category paths for requests",
+    "text": "Request deep links support category paths: waste_location, speed_cleanup, and event. If category path is different, parser rejects the link and navigation will not happen. Use one of supported categories in shared links.",
+    "tags": ["deeplink category", "waste_location", "speed_cleanup", "event", "request link format"]
+  },
+  {
+    "chunk_id": "deeplink_request_not_found_fallback",
+    "title": "Deep link request not found fallback",
+    "text": "When request ID from deep link cannot be loaded, app shows request-not-found fallback screen. This can happen for invalid, removed, or inaccessible request IDs. Verify link ID and open a current request link.",
+    "tags": ["request not found", "deep link error", "invalid request id", "cannot open request", "fallback"]
+  },
+  {
+    "chunk_id": "deeplink_user_profile_route_requirement",
+    "title": "User profile route requires user ID",
+    "text": "User profile route expects a userId parameter. If userId is missing, app renders fallback error state instead of profile data. Open profile from valid in-app user links.",
+    "tags": ["user profile link", "userId required", "route error", "profile navigation", "fallback"]
+  },
+  {
+    "chunk_id": "profile_payout_data_refresh_on_profile_tab",
+    "title": "Profile tab refreshes payouts and user data",
+    "text": "When profile tab is opened from main navigation, app triggers user and payout data refresh in background. This helps keep balance/history sections up to date. If data looks stale, re-open profile tab once.",
+    "tags": ["profile refresh", "payout refresh", "balance update", "profile tab", "data sync"]
+  },
+  {
+    "chunk_id": "news_unread_pulse_dot_behavior",
+    "title": "Unread news pulse dot behavior",
+    "text": "Main navigation shows a pulse dot on News tab when unseen news IDs are detected versus saved seen IDs. Opening News tab marks current news list as seen and removes the dot. This is local unread-news indicator behavior.",
+    "tags": ["news unread", "pulse dot", "news tab", "mark news seen", "indicator"]
+  },
+  {
+    "chunk_id": "news_empty_state",
+    "title": "No news yet state",
+    "text": "If there are no news items available, News screen shows an empty-state message. This is expected when feed has no entries for current locale/time. Refresh later to check new items.",
+    "tags": ["no news", "news empty", "news feed", "empty state", "refresh"]
+  },
+  {
+    "chunk_id": "news_detail_donation_actions",
+    "title": "Donation actions from news detail",
+    "text": "News detail text supports donation-related actions like supporting cleanup or donating to participants/volunteer. These actions route to donation-capable flows linked to request/payment logic. If donation fails, use donation troubleshooting chunks.",
+    "tags": ["news donation", "support cleanup", "donate to volunteer", "news detail", "payment"]
+  },
+  {
+    "chunk_id": "map_search_and_filter_basics",
+    "title": "Map search and filter basics",
+    "text": "Map/listing supports search by title, city, waste type, or user name wording. Regional filters include All, America, Europe, and Nearby options. If nothing matches, app shows no-requests hint to adjust query or filters.",
+    "tags": ["map search", "request filters", "nearby", "america", "europe"]
+  },
+  {
+    "chunk_id": "map_my_requests_legend_meaning",
+    "title": "Map legend: my requests, joins, donations",
+    "text": "Map/list views include legend groups for My Requests, My Joins, and My Donations. These help users understand ownership/participation context quickly. If expected item is absent, verify current filter scope.",
+    "tags": ["map legend", "my requests", "my joins", "my donations", "filter context"]
+  },
+  {
+    "chunk_id": "map_loading_and_failed_to_load_states",
+    "title": "Map loading and failed-to-load states",
+    "text": "Request listing can show loading states while fetching requests/events. If fetch fails, app shows failed-to-load feedback. Retry using refresh actions and check network stability.",
+    "tags": ["map loading", "failed to load", "requests list error", "retry", "network"]
+  },
+  {
+    "chunk_id": "map_no_user_activity_state",
+    "title": "No user activity map state",
+    "text": "When user has not created, joined, or donated to any requests, map/listing can show a dedicated no-activity message. This is expected for new or inactive accounts. Create/join/donate to populate personal sections.",
+    "tags": ["no activity", "my requests empty", "my joins empty", "my donations empty", "map state"]
+  },
+  {
+    "chunk_id": "support_stuck_after_splash_location_case",
+    "title": "If user reports app stuck after splash",
+    "text": "A common case is disabled location service during startup-related checks. Current app behavior avoids long wait for real coordinates when system location is off, then shows location warning with settings action. Ask user to enable location service and reopen target action.",
+    "tags": ["stuck on splash", "long loading", "location off", "startup issue", "troubleshooting"]
+  },
+  {
+    "chunk_id": "support_collect_minimum_debug_context",
+    "title": "Minimum context to collect before escalation",
+    "text": "For repeat failures, collect: exact screen, exact action tapped, full error text, and whether location/notifications permissions are enabled. Also ask if action was retried after reopening the screen. This context maps directly to existing app-level troubleshooting flows.",
+    "tags": ["support checklist", "debug context", "error text", "repro steps", "escalation"]
+  },
+  {
+    "chunk_id": "intent_alias_how_to_create_request",
+    "title": "How to create request intent alias",
+    "text": "If user asks \"how to create a request\" without specifying request type, ask a short clarifying question first: waste cleanup, speed cleanup, or event. After user clarifies, provide step-by-step instructions only for that type. Do not merge steps from different request types.",
+    "tags": ["how to create", "create request", "clarify request type", "request type question", "make request", "new request", "create cleanup", "create event"]
+  },
+  {
+    "chunk_id": "intent_alias_why_request_pending",
+    "title": "Why request is pending intent alias",
+    "text": "If user asks why request is pending, explain that pending means waiting for review/moderation and not a final result yet. User should wait for status transition to approved or rejected. This is expected moderation stage behavior.",
+    "tags": ["why pending", "request pending", "still pending", "waiting moderation", "waiting review", "status pending"]
+  },
+  {
+    "chunk_id": "intent_alias_how_to_mark_completed",
+    "title": "How to mark completed intent alias",
+    "text": "If user asks how to mark as completed, direct them to request completion flow and confirm required proof fields are present. Missing after photo, invalid context, or distance restrictions can block completion. Retry from request details after fixing blockers.",
+    "tags": ["mark completed", "complete request", "finish task", "submit completion", "cannot complete", "how to complete"]
+  },
+  {
+    "chunk_id": "intent_alias_deeplink_not_opening",
+    "title": "Deep link not opening intent alias",
+    "text": "If user says link does not open, verify link format and required IDs first. App supports request/news patterns and may delay deep link navigation on cold start until home is ready. Invalid format or missing IDs leads to no navigation.",
+    "tags": ["link not opening", "deeplink not working", "open from link", "link opens home only", "invalid deeplink"]
+  },
+  {
+    "chunk_id": "intent_alias_notifications_not_working",
+    "title": "Notifications not working intent alias",
+    "text": "If user reports no notifications, verify device notification permission and push capability first. Then check in-app notifications page with refresh to confirm whether records exist. Missing push can coexist with available in-app notification records.",
+    "tags": ["notifications not working", "no push", "no notifications", "push issue", "notification problem", "fcm issue"]
+  },
+  {
+    "chunk_id": "intent_alias_chat_read_receipts",
+    "title": "Chat read receipts intent alias",
+    "text": "If user asks about seen/read in chat, explain that opening chat marks unread as read and check icons for own messages depend on read-by data. Real-time sync can affect exact timing of visual updates. Reopen chat to force state refresh if needed.",
+    "tags": ["chat seen", "message seen", "read receipt", "double tick", "chat unread", "chat read status"]
+  },
+  {
+    "chunk_id": "intent_alias_cannot_join_request",
+    "title": "Cannot join request intent alias",
+    "text": "If user cannot join, check whether location permission and location service are enabled because executor actions depend on location checks. Retry from request details after enabling required settings. If event is not started yet, joining/performing constraints can also apply.",
+    "tags": ["cannot join", "join button not working", "join failed", "cant join", "executor blocked", "location required"]
+  },
+  {
+    "chunk_id": "intent_alias_payment_failed",
+    "title": "Payment failed intent alias",
+    "text": "If user reports payment failure, map it to donation/Stripe flow and retry from request details or news donation action. Confirm minimum donation amount and whether payment was canceled manually. Use payout/Stripe setup guidance when issue is account-configuration related.",
+    "tags": ["payment failed", "stripe failed", "donation failed", "checkout error", "payment canceled", "cannot donate"]
+  },
+  {
+    "chunk_id": "intent_alias_payout_not_available",
+    "title": "Payout not available intent alias",
+    "text": "If user asks why payout is unavailable, check available balance, instant payout minimum, and payout method setup. No funds or no payout methods are expected blocking states shown by app. After fixing setup or waiting for balance, retry payout action.",
+    "tags": ["payout unavailable", "cannot withdraw", "withdraw not working", "no funds payout", "no payout method", "instant payout"]
+  },
+  {
+    "chunk_id": "intent_alias_profile_update_failed",
+    "title": "Profile update failed intent alias",
+    "text": "If profile changes are not saved, retry from edit profile screen and verify each edited field and image upload result. Photo processing/save errors can block update completion. Reopen profile and retry save after correcting failed fields.",
+    "tags": ["profile not saving", "edit profile failed", "cannot update profile", "avatar upload failed", "save profile error"]
+  },
+  {
+    "chunk_id": "intent_alias_request_not_visible_short_query",
+    "title": "Request not visible short-query alias",
+    "text": "For short user messages like request missing or not shown, check archived/filter/status causes first. Request may be valid but hidden in active list context. Use direct details path or adjust filter scope.",
+    "tags": ["request missing", "not shown", "where is my request", "request disappeared", "hidden request", "archived request"]
+  },
+  {
+    "chunk_id": "intent_alias_stuck_loading_app",
+    "title": "App stuck loading intent alias",
+    "text": "If user reports long loading around splash/startup, check location service state as first high-probability cause. App now avoids long coordinate wait when location is off, then prompts user with location warning/settings action. Ask user to enable location and retry target flow.",
+    "tags": ["app stuck loading", "stuck splash", "long startup", "loading forever", "splash freeze", "location startup"]
+  },
+  {
+    "chunk_id": "intent_alias_chat_not_opening",
+    "title": "Chat not opening intent alias",
+    "text": "If chat does not open, verify chat route context has a valid chatId and related request chat exists. Missing or invalid chat context leads to fallback errors like chat not found. Reopen from in-app chat list or request details chat action.",
+    "tags": ["chat not opening", "cannot open chat", "chat id invalid", "chat not found", "private chat not found", "group chat not found"]
+  },
+  {
+    "chunk_id": "intent_alias_news_unread_dot",
+    "title": "News unread dot intent alias",
+    "text": "If user asks about red/pulse dot on news tab, explain it marks unseen news compared to locally saved seen IDs. Opening news tab marks current news list as seen and removes the dot. This is expected local unread-news behavior.",
+    "tags": ["news dot", "red dot news", "pulse news icon", "unread news", "news indicator", "news tab mark seen"]
+  },
+  {
+    "chunk_id": "intent_alias_map_no_results",
+    "title": "Map no results intent alias",
+    "text": "If user sees no requests on map/list, suggest adjusting search text and filters first. Regional/nearby filter scope can hide otherwise valid items. Loading and failed-to-load states should be handled with refresh and retry.",
+    "tags": ["no requests on map", "map empty", "no results", "filter too strict", "nearby empty", "search no matches"]
+  },
+  {
+    "chunk_id": "product_onboarding_map_three_types",
+    "title": "First launch: language, account, map, three eco request types",
+    "text": "After install, choose language and create an account with email, Google, or Apple. The home screen shows a map with eco-related locations. Tap plus (+) to create an initiative. Three formats exist: Waste Location (mark a polluted area), Speed Cleanup (you mark the place, before/after photos, your cleanup), and Event (planned cleanups, tree planting, etc., with time and participants).",
+    "tags": ["onboarding", "first launch", "home", "map", "plus", "waste location", "speed cleanup", "event", "how app works", "eco initiative"]
+  },
+  {
+    "chunk_id": "product_waste_location_mark_donation_haul_only",
+    "title": "Waste Location: polluted spot, donation, optional haul-only",
+    "text": "Waste Location marks a polluted area. User adds a photo, description, and can attach a donation. Donations go to volunteers who respond, clean the area, and submit photo proof. Others can add donations to draw attention; paid requests are shown distinctly. There is also an option that only trash haul-away is needed.",
+    "tags": ["waste location", "polluted area", "donation", "photo", "trash haul", "garbage", "map pin", "report litter"]
+  },
+  {
+    "chunk_id": "product_speed_cleanup_before_after_coins_hours",
+    "title": "Speed Cleanup: before/after photos, coins, volunteer hours letter",
+    "text": "Speed Cleanup: you mark the place on the map, take a before photo, do the cleanup, then an after photo. Others see the result on the map and in good-news style feeds and can donate to you directly. You earn JoyCoins even without donations; coins can be redeemed with partners (list grows). Cleanup time is tracked; you can print an official-style letter about volunteer hours.",
+    "tags": ["speed cleanup", "before after", "joycoins", "volunteer hours", "letter", "quick cleanup", "news feed", "partners"]
+  },
+  {
+    "chunk_id": "product_event_group_chat_share",
+    "title": "Event: schedule, chat, donations to participants, share link",
+    "text": "Event is for planned cleanups, tree planting, and similar activities. You set place, time, and description; people can join. Like other requests, there is a participant chat and donations that go to cleanup participants. You can share the event link to social networks and messengers to attract volunteers.",
+    "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations"]
+  },
+  {
+    "chunk_id": "features_stripe_link_profile_route_notify_10mi",
+    "title": "Stripe in profile, routes to requests, notifications within ~10 miles",
+    "text": "During registration you can connect Stripe to receive donations; the setup link appears in your profile. You can build a route to points that have requests. Users within about a 10-mile radius can receive notifications about relevant requests (wording may vary by build/region).",
+    "tags": ["stripe", "profile", "connect account", "route", "navigation", "notifications", "10 miles", "radius", "nearby"]
+  },
+  {
+    "chunk_id": "features_geo_photos_required_completion",
+    "title": "Physical presence, geolocation, in-app photos to finish work",
+    "text": "Work for verification and completion is tied to being physically present and using geolocation. You cannot complete the work without live photos taken through the app as required by the flow. This supports fair verification of cleanups.",
+    "tags": ["geolocation", "gps", "photos", "complete", "verification", "physical presence", "cannot complete", "camera"]
+  },
+  {
+    "chunk_id": "features_share_search_social_links_profile",
+    "title": "Share requests, search, social links on profile",
+    "text": "Event and other requests can be shared to messengers and social networks via a built-in share action. You can search requests by address and by user—useful when influencers or communities organize cleanups. In profile you can add social links; user activity can be visible to others depending on settings.",
+    "tags": ["share", "messengers", "social", "search", "address", "username", "profile links", "influencer"]
+  },
+  {
+    "chunk_id": "features_profile_stats_hours_qr_coins_partners",
+    "title": "Profile: requests, donations total, hours, print letter, QR for coins",
+    "text": "Profile shows your requests and completed work, total donations received, volunteer hours, a button to print a volunteer-hours letter, and a QR flow for spending JoyCoins. JoyCoins can be exchanged for discounts at partner businesses.",
+    "tags": ["profile", "volunteer hours", "print letter", "qr code", "joycoins", "partners", "discount", "donations total"]
+  },
+  {
+    "chunk_id": "value_why_joypick_motivation_faq",
+    "title": "Why people return: motivation layers in JoyPick",
+    "text": "JoyPick combines several motivation layers: community (people see others, chat, join group cleanups), social recognition (sharing achievements), JoyCoins and donations (including donations attached to polluted spots on the map so the problem and reward stay visible), reporting polluted areas, volunteer hours tracking for school/work, and positive news for inspiration. The goal is to turn one-off goodwill into a lasting habit.",
+    "tags": ["motivation", "why joypick", "community", "joycoins", "donations map", "volunteer hours", "news", "return", "gamification"]
+  },
+  {
+    "chunk_id": "faq_cleanup_verification_geo_photos_moderator",
+    "title": "How cleanup verification works: distance check, photos, moderator",
+    "text": "Volunteer arrives at the marked location and starts through the app. Geolocation is checked—if they are too far from the designated point (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, required photos are taken in the app and the user completes the task; finishing without being there and without those photos is not possible. A moderator then reviews the submission; after approval, held donation funds can be released to the volunteer balance.",
+    "tags": ["verification", "moderator", "50 meters", "50m", "geolocation", "photos", "complete", "donation hold", "approve"]
+  },
+  {
+    "chunk_id": "faq_moderation_manual_dataset_future_automation",
+    "title": "Moderation: manual first, dataset for models, possible community helpers",
+    "text": "Moderation is manual for now, done by trusted people and the team when needed. Verified cleanups help build a quality dataset for future automated checks. Longer term, community-based moderation may be considered: active volunteers could get moderation roles; admin tooling may already support assigning such roles for selected users.",
+    "tags": ["moderation", "manual review", "queue", "neural model", "dataset", "community moderator", "admin roles", "automation"]
+  },
+  {
+    "chunk_id": "faq_report_polluted_spot_without_volunteer",
+    "title": "Reporting a polluted spot without being a volunteer first",
+    "text": "You do not need to be a verified volunteer to report a polluted area. After installing the app you can immediately mark a dirty spot, attach a photo, and describe the issue—this is part of the core experience and helps populate the map even in quiet regions.",
+    "tags": ["report", "new user", "polluted spot", "pin", "not volunteer", "first day", "mark location"]
+  },
+  {
+    "chunk_id": "rewards_volunteer_earn_donations_payouts",
+    "title": "How volunteers can receive money: donations and payouts",
+    "text": "Volunteers can receive money from donations attached to cleanup requests. Other users donate to fund a cleanup; after you complete the work, pass verification (location and in-app photos where required), and a moderator approves it, held donation funds can be credited to your balance. Set up Stripe from your profile to withdraw (instant payout or scheduled options, as shown in the app). These are voluntary peer-to-peer transfers for real cleanups—not a salary or wage paid by Joy Pick as an employer. You can also earn JoyCoins and accumulate volunteer hours shown in your profile.",
+    "tags": ["earn", "earn money", "earning", "income", "get paid", "make money", "money", "donations", "payout", "stripe", "volunteer", "salary", "wages", "payment", "how to earn", "paid"]
+  },
+  {
+    "chunk_id": "rewards_what_you_get_for_cleanups",
+    "title": "What you can get for cleanups",
+    "text": "For verified cleanups you can receive: donation money from other users (after moderation approval, funds go to your balance; withdraw via Stripe once connected), JoyCoins for verified work, and volunteer hours with an option to print an official-style hours letter from your profile. For Event-type requests, participants may receive donations according to that request’s rules.",
+    "tags": ["what do i get", "what can i get", "rewards", "cleanups", "benefits", "joycoins", "volunteer hours", "donations", "compensation", "for cleanups"]
+  },
+  {
+    "chunk_id": "rewards_volunteer_hours_official_letter",
+    "title": "Volunteer hours tracking and official letter",
+    "text": "The app tracks time spent on verified cleanups as volunteer hours. In your profile you can print a letter documenting your hours on an official-style form. This supports school, work, or other programs that require documented volunteer time.",
+    "tags": ["volunteer hours", "hours letter", "print letter", "official", "school", "tracking", "documentation"]
+  }
+]
