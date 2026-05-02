@@ -260,7 +260,8 @@ router.delete(
         return success(res, { deleted }, 'Support AI history cleared');
       }
 
-      return error(res, 'Authorization or X-Support-Guest-Id required', 401);
+      // Лендинг: нет JWT и гость ещё не создал UUID — очистка и так no-op, не 401
+      return success(res, { deleted: 0 }, 'Support AI history cleared');
     } catch (err) {
       return error(res, 'Failed to clear support AI history', 500, err);
     }

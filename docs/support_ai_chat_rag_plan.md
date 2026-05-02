@@ -16,6 +16,7 @@
 
 - Заголовок **`X-Support-Guest-Id`**: UUID v4 (тот же id хранить в `localStorage` на клиенте).
 - С тем же заголовком: `GET /api/support/chat/history`, `GET .../messages/:id`, `DELETE .../history`, `POST /api/support/chat`.
+- `DELETE /api/support/chat/history` без JWT и без заголовка: `200` и `{ deleted: 0 }` (идемпотентно, удобно для лендинга до генерации guest id).
 - Если передан **Bearer** — используется аккаунт пользователя, гостевой id не нужен.
 - Таблица БД: `support_ai_messages_guest` (миграция `038_support_ai_messages_guest.sql`).
 
