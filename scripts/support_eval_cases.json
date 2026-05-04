@@ -1,0 +1,51 @@
+[
+  {
+    "id": "donate_send_ru",
+    "message": "как отправить донат по чужой заявке?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["donation_how_to_donate"],
+    "answerMustNotContain": ["нужно создать заявку", "создайте заявку", "остаются на платформе"]
+  },
+  {
+    "id": "what_requests_ru",
+    "message": "какие заявки есть?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["requests_what_types_and_how_to_browse"],
+    "answerMustNotContain": ["уточните, пожалуйста, какой тип заявки"]
+  },
+  {
+    "id": "hold_refund_ru",
+    "message": "если никто не выполнит заявку с донатами, куда деньги донатера?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["payments_donation_hold_release_to_donor"],
+    "answerMustNotContain": ["остаются на платформе", "политик"]
+  },
+  {
+    "id": "map_paid_marker_ru",
+    "message": "как на карте понять что заявка с деньгами?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_donation_paid_map_list_badges", "help_map_border_colors_and_gray_circle"],
+    "answerMustNotContain": ["нет отдельной отметки"]
+  },
+  {
+    "id": "share_link_ru",
+    "message": "как поделиться ссылкой на заявку?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_share_deeplink_install_flow"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "stripe_profile_ru",
+    "message": "как подключить stripe в профиле?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["stripe_connect_in_profile_in_app"],
+    "answerMustNotContain": ["не могу помочь", "cannot help"]
+  },
+  {
+    "id": "event_split_en",
+    "message": "Who receives donations when several people join an Event?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["donations_multiple_participants_who_receives"],
+    "answerMustNotContain": ["stays on the platform", "platform policy"]
+  }
+]

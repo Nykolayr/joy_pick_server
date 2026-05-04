@@ -545,6 +545,28 @@ async function normalizeQuestionForRag(message, locale) {
   };
 }
 
+/**
+ * Топ чанков RAG без вызова LLM (для офлайн-тестов и отладки ретривала).
+ */
+async function previewSupportRetrieval({ message, locale, topK }) {
+  const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
+  const answerLocale = inferAnswerLocale(message, safeLocale);
+  const knowledgePath = getKnowledgePathByLocale(answerLocale);
+  const { questionForModel } = await normalizeQuestionForRag(message, answerLocale);
+  const withKeywords = enrichQuestionForRetrievalKeywords(questionForModel, answerLocale);
+  const effectiveQuestion = enrichQuestionWithTypeAlias(withKeywords, answerLocale);
+  const k = topK != null ? Number(topK) : DEFAULT_TOP_K;
+  const chunks = retrieveTopChunks(effectiveQuestion, knowledgePath, k);
+  return {
+    answerLocale,
+    knowledgePath,
+    questionForModel,
+    effectiveQuestion,
+    chunkIds: chunks.map((x) => x.chunk_id || null).filter(Boolean),
+    chunks
+  };
+}
+
 async function getSupportAiAnswer({ message, locale, conversationContext = [] }) {
   const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
   const answerLocale = inferAnswerLocale(message, safeLocale);
@@ -613,5 +635,6 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
 
 module.exports = {
   getSupportAiAnswer,
-  buildSupportAiTimeoutFallback
+  buildSupportAiTimeoutFallback,
+  previewSupportRetrieval
 };

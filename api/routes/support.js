@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, param, validationResult } = require('express-validator');
 const { success, error } = require('../utils/response');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
@@ -27,6 +28,15 @@ const {
 } = require('../services/supportAiGuestHistory');
 
 const router = express.Router();
+
+function timingSafeEvalSecret(provided, expected) {
+  if (!provided || !expected || typeof provided !== 'string' || typeof expected !== 'string') {
+    return false;
+  }
+  const a = crypto.createHash('sha256').update(provided, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(expected, 'utf8').digest();
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 function processSupportMessageAsync(ctx) {
   const { messageId, message, locale, mode, userId, guestKey } = ctx;
@@ -76,6 +86,52 @@ function processSupportMessageAsync(ctx) {
       }
     });
 }
+
+/**
+ * POST /api/support/eval-reply
+ * Синхронный ответ Support AI для проверки качества (скрипты, Cursor). Только если задан SUPPORT_EVAL_SECRET в .env.
+ * Заголовок: X-Support-Eval-Secret (тот же секрет). Без записи в БД истории.
+ */
+router.post(
+  '/eval-reply',
+  [
+    body('message')
+      .isString()
+      .trim()
+      .isLength({ min: 1, max: 2000 })
+      .withMessage('message must be 1-2000 chars'),
+    body('locale')
+      .optional()
+      .isString()
+      .trim()
+      .isIn(SUPPORTED_LOCALES)
+      .withMessage(`locale must be one of: ${SUPPORTED_LOCALES.join(', ')}`)
+  ],
+  async (req, res) => {
+    try {
+      const expectedSecret = String(process.env.SUPPORT_EVAL_SECRET || '').trim();
+      if (!expectedSecret) {
+        return error(res, 'Not found', 404);
+      }
+      const provided = String(req.get('X-Support-Eval-Secret') || '').trim();
+      if (!timingSafeEvalSecret(provided, expectedSecret)) {
+        return error(res, 'Forbidden', 403);
+      }
+
+      const validationErrors = validationResult(req);
+      if (!validationErrors.isEmpty()) {
+        return error(res, 'Validation error', 400, validationErrors.array());
+      }
+
+      const message = String(req.body.message || '').trim();
+      const locale = String(req.body.locale || 'en').trim();
+      const data = await getSupportAiAnswer({ message, locale, conversationContext: [] });
+      return success(res, data, 'Support AI eval reply');
+    } catch (err) {
+      return error(res, 'Support AI eval failed', 500, err);
+    }
+  }
+);
 
 router.post(
   '/chat',
