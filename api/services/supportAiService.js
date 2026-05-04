@@ -172,10 +172,27 @@ function overlapScore(questionTokens, chunk) {
   return score;
 }
 
+/** Короткий фоллоуап только про деньги/Stripe/донаты — не подмешивать прошлый длинный вопрос в RAG (иначе снова всплывают чанки «никто не пришёл»). */
+function isMoneyDominantShortFollowUp(currentMessage) {
+  const q = normalizeText(currentMessage).toLowerCase();
+  if (!q || q.length > 200) return false;
+  const moneyish = /деньг|получу|получит|донат|stripe|выплат|заработ|оплат|paid|payout|donation/i.test(q);
+  if (!moneyish) return false;
+  const nobodyish = /никто\s+не|не\s+прид|нет\s+участник|no\s+one|nobody/i.test(q);
+  const flowish =
+    /выполнить|сдач|фото|геолок|закрыть\s+заяв|что\s+делать|как\s+отчит|пришёл|придут|участник|участи|join|perform|complete\s+task/i.test(
+      q
+    );
+  return !nobodyish && !flowish;
+}
+
 /** Короткий ответ в цепочке («да», «а через профиль?») — подмешиваем прошлый вопрос только в строку поиска, не в текст для пользователя. */
 function augmentMessageForRetrieval(questionForModel, conversationContext) {
   const q = normalizeText(questionForModel);
   if (!q) return q;
+  if (isMoneyDominantShortFollowUp(q)) {
+    return q;
+  }
   const ctx = Array.isArray(conversationContext) ? conversationContext : [];
   if (!ctx.length) return q;
   const last = ctx[ctx.length - 1];
@@ -498,7 +515,10 @@ function shouldPinEventMoneyQaKnowledge(mergedText) {
   return true;
 }
 
-function shouldPinEventNobodyJoinedKnowledge(mergedText) {
+function shouldPinEventNobodyJoinedKnowledge(mergedText, currentMessage) {
+  if (isMoneyDominantShortFollowUp(currentMessage)) {
+    return false;
+  }
   const t = String(mergedText || '').toLowerCase();
   const hasEvent = /субботник|суботник|subbotnik|мероприят|ивент|событ(ие|ия|ию|ием)?|\bevent\b/.test(t);
   const nobody =
@@ -508,7 +528,10 @@ function shouldPinEventNobodyJoinedKnowledge(mergedText) {
   return hasEvent && nobody;
 }
 
-function shouldPinEventParticipantKnowledge(mergedText) {
+function shouldPinEventParticipantKnowledge(mergedText, currentMessage) {
+  if (isMoneyDominantShortFollowUp(currentMessage)) {
+    return false;
+  }
   const t = String(mergedText || '').toLowerCase();
   const hasEventLexem =
     /субботник|суботник|subbotnik|мероприят|ивент|событ(ие|ия|ию|ием)?|\bevent\b/.test(t);
@@ -525,24 +548,33 @@ function shouldPinEventParticipantKnowledge(mergedText) {
   );
 }
 
-function collectPinnedKnowledgeChunkIds(mergedRagText) {
+function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const ids = [];
-  if (shouldPinEventNobodyJoinedKnowledge(mergedRagText)) {
+  if (shouldPinEventNobodyJoinedKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_EVENT_NOBODY_JOINED_CHUNK_ID);
   }
   if (shouldPinEventMoneyQaKnowledge(mergedRagText)) {
     ids.push(PINNED_EVENT_MONEY_QA_CHUNK_ID);
   }
-  if (shouldPinEventParticipantKnowledge(mergedRagText)) {
+  if (shouldPinEventParticipantKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
   }
   return ids;
 }
 
-function applyPinnedKnowledgeChunks(chunks, knowledgePath, mergedRagText, topK) {
+/** У денежного фоллоуапа убираем из RAG «длинный флоу» и «никто не пришёл» — иначе модель снова их пересказывает. */
+function filterRetrievalNoiseForMoneyFollowUp(chunks, currentMessage) {
+  if (!isMoneyDominantShortFollowUp(currentMessage) || !Array.isArray(chunks)) {
+    return chunks;
+  }
+  const drop = new Set([PINNED_EVENT_PARTICIPANT_CHUNK_ID, PINNED_EVENT_NOBODY_JOINED_CHUNK_ID]);
+  return chunks.filter((c) => c && !drop.has(c.chunk_id));
+}
+
+function applyPinnedKnowledgeChunks(chunks, knowledgePath, mergedRagText, topK, currentMessage) {
   const k = Math.max(1, Number(topK) || DEFAULT_TOP_K);
-  const base = Array.isArray(chunks) ? [...chunks] : [];
-  const pinIds = collectPinnedKnowledgeChunkIds(mergedRagText);
+  const base = filterRetrievalNoiseForMoneyFollowUp(Array.isArray(chunks) ? [...chunks] : [], currentMessage);
+  const pinIds = collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage);
   if (!pinIds.length) {
     return base.slice(0, k);
   }
@@ -606,7 +638,9 @@ function buildSystemInstruction(answerLanguage) {
       : 'If the user joined a Waste Location then forgot or did not show: per Knowledge/backend automation the executor slot is released after the join-based deadline (24 hours from join_date), request returns to new and becomes available again; creator may clear the executor manually; a separate long-stall path warns around 7 days from created_at. Do not claim joining «does not affect» the request. Never suggest donating instead of physically doing the cleanup.',
     'When the user asks what map colors, donation chips, wallet/news buttons, or incomplete banners mean, use the Help/UI Guide chunks and suggest opening Help in the app for the illustrated reference.',
     'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
-    'On follow-up turns, answer the new question first; do not paste the entire previous reply again unless the user explicitly asks to repeat.',
+    answerLanguage === 'ru'
+      ? 'На фоллоуапе отвечайте в первую очередь на НОВЫЙ вопрос; не копируйте целиком прошлый ответ. Если новый вопрос только про деньги/донаты/Stripe — не повторяйте абзац «никто не пришёл — выполните одни»; кратко по деньгам, условия — в одной-двух фразах.'
+      : 'On follow-ups, answer the NEW question first; do not restate the full prior reply. If the new question is only about money/donations/Stripe, do not repeat the «nobody came—finish alone» paragraph; answer payments concisely (conditions in one or two short sentences).',
     'Use Conversation context to resolve short follow-ups (yes/no, «а где?», «через профиль?»): they refer to the previous topic unless the user clearly switches subject.',
     answerLanguage === 'ru'
       ? 'Если в Conversation уже шли про Event/субботник, а новый короткий вопрос про деньги («получу?», «а деньги?») — отвечайте по цепочке Event: сдача, одобрение создателя, модерация, донаты, Stripe; не начинайте с ответа про Waste Location «не пришёл за 24 часа», если пользователь не переключился на уборку мусора.'
@@ -914,7 +948,8 @@ async function previewSupportRetrieval({ message, locale, topK, conversationCont
     retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, k),
     knowledgePath,
     mergedRagText,
-    k
+    k,
+    message
   );
   return {
     answerLocale,
@@ -947,7 +982,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, DEFAULT_TOP_K),
     knowledgePath,
     mergedRagText,
-    DEFAULT_TOP_K
+    DEFAULT_TOP_K,
+    message
   );
   const modelLanguage = answerLocale === 'ru' ? 'ru' : 'en';
   let aiResult = null;
