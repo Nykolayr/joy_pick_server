@@ -107,12 +107,41 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+/** Чат на сайте не рендерит Markdown — убираем ** и ` чтобы не показывались «звёздочки». */
+function stripSupportAnswerMarkdown(text) {
+  let s = String(text || '').trim();
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
+  s = s.replace(/\*([^*\n]+)\*/g, '$1');
+  s = s.replace(/__([^_]+)__/g, '$1');
+  s = s.replace(/`([^`]+)`/g, '$1');
+  return s.trim();
+}
+
 function tokenize(value) {
   return normalizeText(value)
     .toLowerCase()
     .split(/[^\p{L}\p{N}_]+/u)
     .filter((x) => x.length >= 2);
 }
+
+/** Слишком частые в словарных заголовках («Как …») — иначе любой вопрос с «как» выталкивает релевантные чанки при top_k. */
+const WEAK_TITLE_MATCH_TOKENS = new Set([
+  'как',
+  'что',
+  'где',
+  'когда',
+  'почему',
+  'зачем',
+  'куда',
+  'кто',
+  'how',
+  'what',
+  'where',
+  'when',
+  'why',
+  'who',
+  'which'
+]);
 
 function overlapScore(questionTokens, chunk) {
   const titleTokens = tokenize(chunk.title || '');
@@ -127,11 +156,81 @@ function overlapScore(questionTokens, chunk) {
 
   let score = 0;
   for (const q of questionTokens) {
-    if (titleSet.has(q)) score += 5;
+    if (titleSet.has(q)) score += WEAK_TITLE_MATCH_TOKENS.has(q) ? 1 : 5;
     if (tagsSet.has(q)) score += 4;
     if (textSet.has(q)) score += 1;
   }
   return score;
+}
+
+/** Подмешивает синонимы в строку поиска RAG (не в ответ пользователю), чтобы опечатки и «как …» не теряли тему. */
+function enrichQuestionForRetrievalKeywords(question, locale) {
+  const raw = normalizeText(question);
+  if (!raw) return question;
+  const t = raw.toLowerCase();
+  const isRu = locale === 'ru';
+
+  // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
+  if (
+    /какие.{0,40}(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|что\s+за\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|виды\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|список\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)/iu.test(
+      t
+    ) ||
+    /what\s+((kinds?\s+of|types?\s+of)\s+)?requests?\b|what\s+requests?\s+(exist|are\s+there)/i.test(t)
+  ) {
+    return isRu
+      ? `${question} типы заявок существующие заявки карта список waste location speed cleanup event перечислить без уточнения создания`
+      : `${question} request types browse map list waste location speed cleanup event existing requests`;
+  }
+
+  if (
+    /хелп|справк|руководств[\p{L}\p{N}_]*\s+по\s+интерфейс|цвет[\p{L}\p{N}_]*\s+рамк|рамк[\p{L}\p{N}_]*\s+заяв|сер[\p{L}\p{N}_]*\s+круг|чип[\p{L}\p{N}_]*\s+донат|оранжев[\p{L}\p{N}_]*\s+рамк|жёлт[\p{L}\p{N}_]*\s+рамк|фиолет[\p{L}\p{N}_]*\s+рамк|зелён[\p{L}\p{N}_]*\s+рамк|кошелёк[\p{L}\p{N}_]*\s+на\s+главн|незаверш[\p{L}\p{N}_]*\s+баннер|посадк[\p{L}\p{N}_]*\s+дерев|только\s+вывоз|иконк[\p{L}\p{N}_]*\s+грузовик|\bhelp\b.*\b(ui|map|border|chip|guide)/iu.test(
+      t
+    ) ||
+    /ui\s*guide|border\s*color|donation\s*chip|incomplete.*banner|what\s+.*\s+border|plant\s+tree|tree\s+planting|trash\s+pickup|haul\s*away|truck\s+icon/i.test(
+      t
+    )
+  ) {
+    return isRu
+      ? `${question} раздел help руководство интерфейс карта рамка чип донат кошелёк посадка дерева вывоз грузовик`
+      : `${question} help ui guide map border donation chip wallet home banner plant tree trash pickup truck`;
+  }
+
+  if (
+    /холд|расхолд|возврат|не\s+выполн|никто\s+не|платн|донатн|куда\s+деньг|остались\s+деньги|остаются\s+деньги|вернут|списыва|платеж|могу\s+ли\s+я\s+вернуть/i.test(
+      t
+    ) ||
+    /hold|refund|unfulfilled|not\s+completed|nobody|where\s+(does|do)\s+money|money\s+(stay|goes|remains)|debited|charged|get\s+my\s+money/i.test(
+      t
+    )
+  ) {
+    return isRu
+      ? `${question} холд донатер расхолд возврат донат донатная платная заявка не выполнена`
+      : `${question} donation hold donor release refund paid donation request unfulfilled`;
+  }
+
+  if (
+    /поделиться|поделит|ссылк[\p{L}\p{N}_]*\s+на\s+заяв|сообщить[\p{L}\p{N}_]*\s+о\s+заяв|диплин|дипссыл|получить\s+так[\p{L}\p{N}_]*\s+ссылк/i.test(
+      t
+    ) ||
+    /share\s+(a\s+)?request|request\s+link|deeplink|deep\s*link|get\s+(such\s+)?a?\s*link/i.test(t)
+  ) {
+    return isRu
+      ? `${question} поделиться ссылка диплинк заявка детали магазин приложения`
+      : `${question} share request deeplink app stores request details`;
+  }
+
+  if (/stripe|стрип/i.test(t) && /профил|подключ|connect|выплат|profile|payout/i.test(t)) {
+    return isRu
+      ? `${question} stripe connect онбординг в приложении профиль выплаты`
+      : `${question} stripe connect profile onboarding in app payouts`;
+  }
+
+  if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
+    return isRu
+      ? `${question} донат donation donate детали деталей заявки заявку пожертвование отправить донат`
+      : `${question} donation donate request details payment send donation`;
+  }
+  return question;
 }
 
 function loadKnowledgeChunks(knowledgePath) {
@@ -192,8 +291,15 @@ function buildSystemInstruction(answerLanguage) {
     offTopicRule,
     inAppNoKnowledgeRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
-    'If user asks about creating a request without specifying type, first ask a short clarifying question about request type (waste cleanup, speed cleanup, or event).',
+    'Do not use Markdown (no **bold**, no *italics*, no backticks). Plain text only so chat UI shows no asterisks.',
+    'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',
+    'If the user asks what requests exist, what request types exist, or how to see/browse requests on the map/list, answer immediately: list the three types and say they appear on the main map/list—do NOT use the create-flow clarification question.',
     'If user already answered the clarifying question with a short synonym (for example: subbotnik, event, cleanup event), do not repeat the same clarifying question again.',
+    'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
+    'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval (and equal split among Stripe-connected Event participants per Knowledge).',
+    'When the user asks what map colors, donation chips, wallet/news buttons, or incomplete banners mean, use the Help/UI Guide chunks and suggest opening Help in the app for the illustrated reference.',
+    'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
+    'On follow-up turns, answer the new question first; do not paste the entire previous reply again unless the user explicitly asks to repeat.',
     'Do not invent screens, buttons, or app behavior.',
     'Keep responses concise and practical.'
   ].join('\n');
@@ -280,7 +386,7 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage) 
   return body;
 }
 
-async function callGeminiAnswer({ question, chunks, answerLanguage, conversationContext }) {
+async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversationContext }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -299,7 +405,7 @@ async function callGeminiAnswer({ question, chunks, answerLanguage, conversation
       contents: [
         {
           role: 'user',
-          parts: [{ text: buildUserPrompt(question, chunks, conversationContext, answerLanguage) }]
+          parts: [{ text: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage) }]
         }
       ],
       generationConfig: {
@@ -335,7 +441,7 @@ async function callGeminiAnswer({ question, chunks, answerLanguage, conversation
   }
 }
 
-async function callOpenRouterAnswer({ question, chunks, answerLanguage, conversationContext }) {
+async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conversationContext }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured');
@@ -351,7 +457,7 @@ async function callOpenRouterAnswer({ question, chunks, answerLanguage, conversa
       model,
       messages: [
         { role: 'system', content: buildSystemInstruction(answerLanguage) },
-        { role: 'user', content: buildUserPrompt(question, chunks, conversationContext, answerLanguage) }
+        { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage) }
       ],
       temperature: DEFAULT_TEMPERATURE,
       max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
@@ -448,7 +554,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
 
   const knowledgePath = getKnowledgePathByLocale(answerLocale);
   const { questionForModel } = await normalizeQuestionForRag(message, answerLocale);
-  const effectiveQuestion = enrichQuestionWithTypeAlias(questionForModel, answerLocale);
+  const withKeywords = enrichQuestionForRetrievalKeywords(questionForModel, answerLocale);
+  const effectiveQuestion = enrichQuestionWithTypeAlias(withKeywords, answerLocale);
   const chunks = retrieveTopChunks(effectiveQuestion, knowledgePath, DEFAULT_TOP_K);
   const modelLanguage = answerLocale === 'ru' ? 'ru' : 'en';
   let aiResult = null;
@@ -457,7 +564,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
   try {
     try {
       aiResult = await callGeminiAnswer({
-        question: effectiveQuestion,
+        userQuestion: questionForModel,
         chunks,
         answerLanguage: modelLanguage,
         conversationContext
@@ -465,7 +572,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     } catch (geminiErr) {
       lastAiError = geminiErr;
       aiResult = await callOpenRouterAnswer({
-        question: effectiveQuestion,
+        userQuestion: questionForModel,
         chunks,
         answerLanguage: modelLanguage,
         conversationContext
@@ -473,10 +580,11 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     }
 
     const { answer, model } = aiResult;
+    const plainEn = stripSupportAnswerMarkdown(answer);
 
     if (answerLocale === 'ru') {
       return {
-        answer,
+        answer: stripSupportAnswerMarkdown(answer),
         answer_en: null,
         locale: 'ru',
         model,
@@ -488,8 +596,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     const localized = await localizeAnswer(answer, answerLocale);
 
     return {
-      answer: localized.answer,
-      answer_en: answer,
+      answer: stripSupportAnswerMarkdown(localized.answer),
+      answer_en: plainEn,
       locale: localized.locale,
       model,
       translation_fallback: localized.translationFallback,

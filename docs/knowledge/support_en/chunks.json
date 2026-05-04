@@ -241,9 +241,9 @@
   },
   {
     "chunk_id": "donation_how_to_donate",
-    "title": "How to donate from request details",
-    "text": "Open request details and use Donate action. Donation starts Stripe payment flow and confirms result in-app. If payment is successful, app shows donation success feedback.",
-    "tags": ["donate", "donation", "stripe", "request details", "payment"]
+    "title": "How to send a donation to an existing request",
+    "text": "To send money to support someone else's cleanup, you do not need to create your own request first. Pick any existing request on the map or list, open its details screen, and tap Donate. That starts the in-app Stripe payment flow and shows success feedback when it completes. Receiving donated funds on your balance as a performer is a different flow: complete the work, pass verification/moderation as the app shows, and connect Stripe in your profile to withdraw.",
+    "tags": ["donate", "donation", "send donation", "stripe", "request details", "payment", "existing request", "support a request"]
   },
   {
     "chunk_id": "donation_min_amount_limit",
@@ -656,8 +656,8 @@
   {
     "chunk_id": "map_search_and_filter_basics",
     "title": "Map search and filter basics",
-    "text": "Map/listing supports search by title, city, waste type, or user name wording. Regional filters include All, America, Europe, and Nearby options. If nothing matches, app shows no-requests hint to adjust query or filters.",
-    "tags": ["map search", "request filters", "nearby", "america", "europe"]
+    "text": "Map/listing supports search by title, city, waste type, or user name (including finding requests from a specific creator). Regional filters include All, America, Europe, and Nearby options. If nothing matches, app shows no-requests hint to adjust query or filters.",
+    "tags": ["map search", "request filters", "nearby", "america", "europe", "creator name", "address search", "find request", "user name"]
   },
   {
     "chunk_id": "map_my_requests_legend_meaning",
@@ -690,9 +690,15 @@
     "tags": ["support checklist", "debug context", "error text", "repro steps", "escalation"]
   },
   {
+    "chunk_id": "requests_what_types_and_how_to_browse",
+    "title": "What request types exist and where to browse them",
+    "text": "If the user asks what requests exist, what request types there are, or what those pins on the map are—this is about catalog/types, not creating a new request. Answer immediately without the create-flow question \"which type do you want to create?\": Joy Pick has three request types—(1) Waste Location: mark a polluted spot; (2) Speed Cleanup: your own quick cleanup with before/after photos; (3) Event: a scheduled cleanup or gathering with time and participants. Other people's live requests show on the main map and in lists; users can scroll, search, and filter. Use a type-clarifying question only when the user clearly wants to create a new request and did not name a type.",
+    "tags": ["what requests", "what requests are there", "request types", "types of requests", "browse requests", "map requests", "list requests", "existing requests", "kinds of requests"]
+  },
+  {
     "chunk_id": "intent_alias_how_to_create_request",
-    "title": "How to create request intent alias",
-    "text": "If user asks \"how to create a request\" without specifying request type, ask a short clarifying question first: waste cleanup, speed cleanup, or event. After user clarifies, provide step-by-step instructions only for that type. Do not merge steps from different request types.",
+    "title": "Intent alias: only when user wants to create a new request",
+    "text": "Use this rule only when the user clearly intends to create a new request (e.g. how do I create a request, I want to add a request) and did not name a type. Then ask which type: waste cleanup, speed cleanup, or event; after they answer, give steps for that type only. Do not use this flow for \"what requests exist\", \"what types are there\", or \"what is on the map\"—for those, list the three types and where to browse (see catalog chunk).",
     "tags": ["how to create", "create request", "clarify request type", "request type question", "make request", "new request", "create cleanup", "create event"]
   },
   {
@@ -836,7 +842,7 @@
   {
     "chunk_id": "faq_cleanup_verification_geo_photos_moderator",
     "title": "How cleanup verification works: distance check, photos, moderator",
-    "text": "Volunteer arrives at the marked location and starts through the app. Geolocation is checked—if they are too far from the designated point (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, required photos are taken in the app and the user completes the task; finishing without being there and without those photos is not possible. A moderator then reviews the submission; after approval, held donation funds can be released to the volunteer balance.",
+    "text": "Volunteer arrives at the marked location and starts through the app. Geolocation is checked—if they are too far from the designated point (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, required photos are taken in the app and the user completes the task; finishing without being there and without those photos is not possible. A moderator then reviews the submission; after approval, held donations are distributed to recipients via Stripe (Joy Pick does not accumulate that float on its own balance—hold then direct distribution).",
     "tags": ["verification", "moderator", "50 meters", "50m", "geolocation", "photos", "complete", "donation hold", "approve"]
   },
   {
@@ -868,6 +874,72 @@
     "title": "Volunteer hours tracking and official letter",
     "text": "The app tracks time spent on verified cleanups as volunteer hours. In your profile you can print a letter documenting your hours on an official-style form. This supports school, work, or other programs that require documented volunteer time.",
     "tags": ["volunteer hours", "hours letter", "print letter", "official", "school", "tracking", "documentation"]
+  },
+  {
+    "chunk_id": "payments_donation_hold_release_to_donor",
+    "title": "Donation holds: if the request is not completed, donor funds",
+    "text": "Donation payments are placed on hold when paid. If the request with those donations is not completed under the app rules, the hold is released: funds return to the payer (the donor). Do not claim money «stays on the Joy Pick platform» or «is not returned automatically» instead of this flow, and do not hand-wave with «platform policy» for this case. Joy Pick does not accumulate users’ money as a platform cash pile: funds sit in hold within the payment stack (Stripe), and after the approved flow donors’ held amounts are distributed straight to recipients via Stripe—not parked on a Joy Pick balance in between.",
+    "tags": ["hold", "release hold", "refund donor", "unfulfilled", "nobody completed", "paid request", "donation request", "where money goes", "money back"]
+  },
+  {
+    "chunk_id": "request_donation_paid_map_list_badges",
+    "title": "Donation (= paid) request: map icon and list total",
+    "text": "In the app, a request with money attached is called a donation request; in plain language it matches what people call a «paid» request. That applies if a donation was set when creating the request, or as soon as the first donation arrives later. On the map such a request shows a dollar icon. In the list view the app shows the total of all donations for that request. See the in-app Help section for more detail.",
+    "tags": ["donation request", "paid request", "dollar icon", "donation total", "list", "map", "paid badge", "how to see paid"]
+  },
+  {
+    "chunk_id": "request_share_deeplink_install_flow",
+    "title": "Share a request: deeplink, app installed or stores",
+    "text": "To tell others about a request by sharing a link, use Share from request details. The link is a deeplink: if Joy Pick is installed, that request opens; if not, the user is prompted to download the app and is sent to the app stores. This is different from «create a new request».",
+    "tags": ["share request", "request link", "deeplink", "tell others", "app store", "how to get link", "invite", "deep link"]
+  },
+  {
+    "chunk_id": "stripe_connect_in_profile_in_app",
+    "title": "Connect Stripe — in-app flow only",
+    "text": "«How do I connect Stripe in my profile» refers to the profile/payouts area where Stripe Connect onboarding runs inside the app (per on-screen UI). Do not refuse with «I cannot help create a Stripe account»—the user is asking for the in-app payout setup, not bypassing the app to sign up on stripe.com alone.",
+    "tags": ["stripe in profile", "connect stripe", "stripe connect", "payouts", "onboarding", "how to connect", "refused stripe help"]
+  },
+  {
+    "chunk_id": "payments_balance_stripe_not_joypick_bank",
+    "title": "Balance and «which bank»",
+    "text": "Payout balance in the app is tied to connected Stripe Connect: withdrawals go to the card/account the user sets during Stripe onboarding—not a separate «Joy Pick bank account» in the everyday sense. Exact payout details appear in Stripe / profile after you connect.",
+    "tags": ["balance", "which bank", "where money", "stripe", "payout", "account", "bank"]
+  },
+  {
+    "chunk_id": "donations_multiple_participants_who_receives",
+    "title": "Several Event participants—how donations are split",
+    "text": "For Events, donation totals are split evenly across participants who have Stripe Connect connected: take the full donated amount and divide by the count of participants with Stripe. Participants without Stripe connected are not included in that divisor. If the user asks about an unfulfilled request, do not substitute this split answer—use the donor hold-release chunk instead. Do not invent other percentages: for Event participants it is equal shares among Stripe-connected participants.",
+    "tags": ["multiple volunteers", "who gets money", "split donations", "participants", "event", "stripe", "equal split", "several people join"]
+  },
+  {
+    "chunk_id": "help_map_border_colors_and_gray_circle",
+    "title": "Help: map card border colors and gray circle",
+    "text": "The in-app Help (UI Guide) explains map markers. Border color on the request card: green—requests you created; orange—requests you joined/participate in; yellow—requests you donated to; purple—approved Event or Speed Cleanup within 7 days of creation where donations are still accepted; black—other requests. A gray circle around the map icon means the request is overdue, approved, or completed. A green dollar sign under the icon marks a donation-backed request.",
+    "tags": ["help", "ui guide", "border color", "green", "orange", "yellow", "purple", "black", "gray circle", "map", "dollar sign", "what does color mean"]
+  },
+  {
+    "chunk_id": "help_donation_chips_orange_vs_yellow",
+    "title": "Help: orange vs yellow donation amount chips",
+    "text": "Per Help copy: the orange donation chip shows the total raised on your own request; after you finish the work and a moderator approves, funds move to your connected Stripe account (minus fees). The yellow chip shows totals donated by the community plus the creator; after approval, funds go to the performer (minus fees). Point users to Help for the visual reference.",
+    "tags": ["orange donation", "yellow donation", "chip", "donation total", "fees", "stripe", "performer", "creator", "help", "donation chip"]
+  },
+  {
+    "chunk_id": "help_home_top_bar_wallet_profile_icons",
+    "title": "Help: home top bar and profile block icons",
+    "text": "Per Help: Chat opens chats with request creators and participants; red badge is unread count. Refresh reloads requests on the map and in the list. News is the Joy Pick feed; orange icon and pulsing dot mean new items. Wallet shows withdrawable balance and opens payouts. In the profile block: List icon opens completed requests (Coins) or payout history (Payouts); Exchange opens a partner QR to spend JoyCoins (Coins block); Pay Out opens payouts to withdraw balance (Payouts block).",
+    "tags": ["chat", "refresh", "news", "wallet", "balance", "payouts", "profile", "joycoins", "qr", "help", "home screen", "top bar"]
+  },
+  {
+    "chunk_id": "help_incomplete_request_banner",
+    "title": "Help: incomplete-request banner on home",
+    "text": "When Home shows a banner about an incomplete cleanup (waste, speed cleanup, or event), the user can complete it or dismiss the reminder. If they cancel, the incomplete item is removed from the device but can still be finished later from request details—as stated in the banner copy inside the app.",
+    "tags": ["incomplete request", "banner", "home", "complete", "cancel", "dismiss", "help"]
+  },
+  {
+    "chunk_id": "help_event_tree_and_trash_pickup_icons",
+    "title": "Help: tree and truck icons on a card",
+    "text": "Per the in-app Help (UI Guide): the Plant Tree indicator appears when an Event includes tree planting—shows a tree icon inside a white circle on the card. Trash Pickup Only means only haul-away is needed, no cleanup work—shows a truck icon in a white circle. These are extra markers on a request; users can see the visuals in Help inside the app.",
+    "tags": ["plant tree", "tree planting", "trash pickup only", "haul away", "truck icon", "tree icon", "event", "help", "white circle"]
   },
   {
     "chunk_id": "intent_what_is_app_for_beginners",
