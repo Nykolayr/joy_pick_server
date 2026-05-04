@@ -37,3 +37,6 @@ build/
 *service-account*.json
 garbagedev-*.json
 
+# Локальные черновики и проверки
+tmp/
+
