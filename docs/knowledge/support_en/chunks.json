@@ -822,6 +822,12 @@
     "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations", "close request", "review", "perform task", "flow", "step by step", "subbotnik", "photo report", "report work", "wait for creator", "app request"]
   },
   {
+    "chunk_id": "qa_event_money_after_approval_donations_stripe",
+    "title": "Event / subbotnik: will I get money as a participant",
+    "text": "For an Event-type request (including a «subbotnik») when you are a participant: donation money from that request can reach you only if the in-app chain is satisfied: you actually participated, submitted your work (photos/geo per app rules), the **creator approved** your submission (Review), the request then passes **Joy Pick moderation**, there were **donations** on the request, and you have **Stripe Connect** set up in your profile for payouts. For Events with multiple participants, donations are split **evenly** among participants with Stripe connected (see the dedicated split chunk). If there were no donations, funds are on hold / returned to donors per unfulfilled rules, or your submission was rejected—the outcome differs. **Do not answer this with the Waste Location «24 hours after join» no-show rule**—that is a different request type.",
+    "tags": ["money", "get paid", "will i get paid", "payout", "donations", "stripe", "event", "subbotnik", "participant", "creator approval", "moderation", "equal split", "submit work"]
+  },
+  {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
     "title": "Stripe in profile, routes to requests, notifications within ~10 miles",
     "text": "During registration you can connect Stripe to receive donations; the setup link appears in your profile. You can build a route to points that have requests. Users within about a 10-mile radius can receive notifications about relevant requests (wording may vary by build/region).",
@@ -872,7 +878,7 @@
   {
     "chunk_id": "rewards_volunteer_earn_donations_payouts",
     "title": "How volunteers can receive money: donations and payouts",
-    "text": "Volunteers who actually perform cleanup work (for example after joining someone else’s Waste Location) can receive money from donations attached to that request. Other users donate to fund a cleanup; after you complete the work, pass verification (location and in-app photos where required), and a moderator approves it, held donation funds can be credited to your balance. If you only created a Waste Location pin but did not join and execute the cleanup as a volunteer, you are not the donation recipient for that work—see the Waste vs Speed vs Event chunk. Set up Stripe from your profile to withdraw (instant payout or scheduled options, as shown in the app). These are voluntary peer-to-peer transfers for real cleanups—not a salary or wage paid by Joy Pick as an employer. You can also earn JoyCoins and accumulate volunteer hours shown in your profile.",
+    "text": "Start with request type: donation payouts differ for Waste Location, Speed Cleanup, and Event (subbotnik)—see the Waste vs Speed vs Event chunk. For Waste Location: volunteers who joined someone else’s request, actually cleaned, and passed moderation can receive donation money on that request; if you only created the pin but did not execute the cleanup as a volunteer, you are not the payout recipient for that performed work. For Event participants: after creator approval of your submission, moderation, existing donations, and Stripe Connect (splits—see the Event split chunk). After verification and moderator approval, held donations can credit your balance. Set up Stripe in your profile to withdraw. These are voluntary peer-to-peer transfers for real cleanups—not a salary from Joy Pick. You can also earn JoyCoins and volunteer hours in your profile.",
     "tags": ["earn", "earn money", "earning", "income", "get paid", "make money", "money", "donations", "payout", "stripe", "volunteer", "salary", "wages", "payment", "how to earn", "paid"]
   },
   {

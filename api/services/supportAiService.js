@@ -228,11 +228,27 @@ function retrieveTopChunksFused(questions, knowledgePath, topK = DEFAULT_TOP_K) 
 }
 
 /** Подмешивает синонимы в строку поиска RAG (не в ответ пользователю), чтобы опечатки и «как …» не теряли тему. */
-function enrichQuestionForRetrievalKeywords(question, locale) {
+function enrichQuestionForRetrievalKeywords(question, locale, conversationContext = []) {
   const raw = normalizeText(question);
   if (!raw) return question;
+  const ctxLines = Array.isArray(conversationContext)
+    ? conversationContext
+        .slice(-4)
+        .map((x) => normalizeText(x.user_message || ''))
+        .filter(Boolean)
+    : [];
+  const scoutLower = [...ctxLines, raw].join('\n').toLowerCase();
   const t = raw.toLowerCase();
   const isRu = locale === 'ru';
+
+  if (
+    (/деньг|получу|получит|заработ|выплат|stripe|донат|оплат/i.test(scoutLower)) &&
+    (/субботник|суботник|subbotnik|\bevent\b|мероприят|ивент|событ/i.test(scoutLower))
+  ) {
+    return isRu
+      ? `${question} event участник одобрение создателя модерация донаты stripe connect доля поровну получу деньги заявка`
+      : `${question} event participant creator approval moderation donations stripe connect equal split payout money`;
+  }
 
   if (
     /registration.{0,40}required|required.{0,24}fields|sign\s*up.{0,30}required|регистрац.{0,40}пол|обязательн.{0,20}пол/i.test(
@@ -441,6 +457,36 @@ function loadKnowledgeChunks(knowledgePath) {
 
 /** Часто «субботник» + top_k=3: в промпт не попадал product_event… из‑за шума deeplink/каталога на токене event. */
 const PINNED_EVENT_PARTICIPANT_CHUNK_ID = 'product_event_group_chat_share';
+const PINNED_EVENT_MONEY_QA_CHUNK_ID = 'qa_event_money_after_approval_donations_stripe';
+
+function buildUserContextLinesForPinning(conversationContext) {
+  if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
+  return conversationContext
+    .map((x) => normalizeText(x.user_message || ''))
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 2000);
+}
+
+function buildMergedRagTextForPinning(message, effectiveAug, effectiveRaw, conversationContext) {
+  const userCtx = buildUserContextLinesForPinning(conversationContext);
+  return [userCtx, message, effectiveAug, effectiveRaw].map(normalizeText).filter(Boolean).join('\n');
+}
+
+function shouldPinEventMoneyQaKnowledge(mergedText) {
+  const t = String(mergedText || '').toLowerCase();
+  const hasEvent = /субботник|суботник|subbotnik|мероприят|ивент|событ(ие|ия|ию|ием)?|\bevent\b/.test(t);
+  const hasMoney = /деньг|получу|получит|заработ|выплат|stripe|донат|оплат/i.test(t);
+  if (!hasEvent || !hasMoney) return false;
+  if (
+    /как\s+создать\s+(новую\s+)?(заявк|субботник)|хочу\s+(создать|добавить)\s+заявк|how\s+to\s+create\s+(a\s+)?(new\s+)?(request|cleanup|event)/i.test(
+      t
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
 
 function shouldPinEventParticipantKnowledge(mergedText) {
   const t = String(mergedText || '').toLowerCase();
@@ -459,19 +505,44 @@ function shouldPinEventParticipantKnowledge(mergedText) {
   );
 }
 
+function collectPinnedKnowledgeChunkIds(mergedRagText) {
+  const ids = [];
+  if (shouldPinEventMoneyQaKnowledge(mergedRagText)) {
+    ids.push(PINNED_EVENT_MONEY_QA_CHUNK_ID);
+    if (shouldPinEventParticipantKnowledge(mergedRagText)) {
+      ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
+    }
+    return ids;
+  }
+  if (shouldPinEventParticipantKnowledge(mergedRagText)) {
+    ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
+  }
+  return ids;
+}
+
 function applyPinnedKnowledgeChunks(chunks, knowledgePath, mergedRagText, topK) {
   const k = Math.max(1, Number(topK) || DEFAULT_TOP_K);
   const base = Array.isArray(chunks) ? [...chunks] : [];
-  if (!shouldPinEventParticipantKnowledge(mergedRagText)) {
+  const pinIds = collectPinnedKnowledgeChunkIds(mergedRagText);
+  if (!pinIds.length) {
     return base.slice(0, k);
   }
   const all = loadKnowledgeChunks(knowledgePath);
-  const pinned = all.find((c) => c && c.chunk_id === PINNED_EVENT_PARTICIPANT_CHUNK_ID);
-  if (!pinned) {
+  const pinnedList = [];
+  const seen = new Set();
+  for (const id of pinIds) {
+    const c = all.find((x) => x && x.chunk_id === id);
+    if (c && !seen.has(id)) {
+      pinnedList.push(c);
+      seen.add(id);
+    }
+  }
+  if (!pinnedList.length) {
     return base.slice(0, k);
   }
-  const merged = [pinned, ...base.filter((c) => c.chunk_id !== PINNED_EVENT_PARTICIPANT_CHUNK_ID)];
-  return merged.slice(0, k);
+  const pinIdSet = new Set(pinIds);
+  const rest = base.filter((c) => !pinIdSet.has(c.chunk_id));
+  return [...pinnedList, ...rest].slice(0, k);
 }
 
 function retrieveTopChunks(question, knowledgePath, topK = DEFAULT_TOP_K) {
@@ -518,6 +589,9 @@ function buildSystemInstruction(answerLanguage) {
     'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
     'On follow-up turns, answer the new question first; do not paste the entire previous reply again unless the user explicitly asks to repeat.',
     'Use Conversation context to resolve short follow-ups (yes/no, «а где?», «через профиль?»): they refer to the previous topic unless the user clearly switches subject.',
+    answerLanguage === 'ru'
+      ? 'Если в Conversation уже шли про Event/субботник, а новый короткий вопрос про деньги («получу?», «а деньги?») — отвечайте по цепочке Event: сдача, одобрение создателя, модерация, донаты, Stripe; не начинайте с ответа про Waste Location «не пришёл за 24 часа», если пользователь не переключился на уборку мусора.'
+      : 'If Conversation was about Event/subbotnik and the user asks a short money follow-up, answer with the Event chain (submission, creator approval, moderation, donations, Stripe); do not lead with the Waste Location 24-hour no-show rule unless they clearly switched to trash-pin cleanups.',
     'Do not invent screens, buttons, or app behavior.',
     'Keep responses concise and practical.'
   ].join('\n');
@@ -789,11 +863,11 @@ async function normalizeQuestionForRag(message, locale) {
 function buildEffectiveRetrievalQueries(questionForModel, answerLocale, conversationContext) {
   const augmented = augmentMessageForRetrieval(questionForModel, conversationContext);
   const effectiveAug = enrichQuestionWithTypeAlias(
-    enrichQuestionForRetrievalKeywords(augmented, answerLocale),
+    enrichQuestionForRetrievalKeywords(augmented, answerLocale, conversationContext),
     answerLocale
   );
   const effectiveRaw = enrichQuestionWithTypeAlias(
-    enrichQuestionForRetrievalKeywords(questionForModel, answerLocale),
+    enrichQuestionForRetrievalKeywords(questionForModel, answerLocale, conversationContext),
     answerLocale
   );
   return { augmented, effectiveAug, effectiveRaw };
@@ -813,7 +887,7 @@ async function previewSupportRetrieval({ message, locale, topK, conversationCont
     conversationContext
   );
   const k = topK != null ? Number(topK) : DEFAULT_TOP_K;
-  const mergedRagText = [message, effectiveAug, effectiveRaw].map(normalizeText).filter(Boolean).join('\n');
+  const mergedRagText = buildMergedRagTextForPinning(message, effectiveAug, effectiveRaw, conversationContext);
   const chunks = applyPinnedKnowledgeChunks(
     retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, k),
     knowledgePath,
@@ -846,7 +920,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     answerLocale,
     conversationContext
   );
-  const mergedRagText = [message, effectiveAug, effectiveRaw].map(normalizeText).filter(Boolean).join('\n');
+  const mergedRagText = buildMergedRagTextForPinning(message, effectiveAug, effectiveRaw, conversationContext);
   const chunks = applyPinnedKnowledgeChunks(
     retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, DEFAULT_TOP_K),
     knowledgePath,
