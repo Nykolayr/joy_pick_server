@@ -277,6 +277,15 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    (/сколько\s+ждать|когда\s+закр|закрыти|модерац|одобр|how\s+long|moderation|approve/i.test(scoutLower)) &&
+    (/быстр|speed\s+cleanup|\bspeed\b|быстрая\s+заявк|quick\s+cleanup|донат|stripe|7\s*дн|seven\s*days/i.test(scoutLower))
+  ) {
+    return isRu
+      ? `${question} модерация администратор pending approved 7 дней донат stripe выплата начало работ закрытие заявки`
+      : `${question} admin moderation pending approved 7 days donation stripe payout work started close request`;
+  }
+
+  if (
     /registration.{0,40}required|required.{0,24}fields|sign\s*up.{0,30}required|регистрац.{0,40}пол|обязательн.{0,20}пол/i.test(
       t
     )
@@ -485,6 +494,7 @@ function loadKnowledgeChunks(knowledgePath) {
 const PINNED_EVENT_PARTICIPANT_CHUNK_ID = 'product_event_group_chat_share';
 const PINNED_EVENT_MONEY_QA_CHUNK_ID = 'qa_event_money_after_approval_donations_stripe';
 const PINNED_EVENT_NOBODY_JOINED_CHUNK_ID = 'qa_event_nobody_joined_creator_can_still_finish';
+const PINNED_MODERATION_7DAY_CHUNK_ID = 'qa_moderation_7day_stripe_all_requests';
 
 function buildUserContextLinesForPinning(conversationContext) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
@@ -513,6 +523,17 @@ function shouldPinEventMoneyQaKnowledge(mergedText) {
     return false;
   }
   return true;
+}
+
+function shouldPinModeration7DayKnowledge(mergedRagText, currentMessage) {
+  const bundle = `${String(currentMessage || '')}\n${String(mergedRagText || '')}`.toLowerCase();
+  const asksTimingOrClose =
+    /сколько\s+ждать|когда\s+закр|закрыти|модерац|одобр|how\s+long|moderation|approve|close\s+the\s+request/i.test(
+      bundle
+    );
+  const mentionsSpeedOrPayoutContext =
+    /быстр|speed\s+cleanup|\bspeed\b|быстрая\s+заявк|quick\s+cleanup|донат|stripe|7\s*дн|seven\s*days/i.test(bundle);
+  return Boolean(asksTimingOrClose && mentionsSpeedOrPayoutContext);
 }
 
 function shouldPinEventNobodyJoinedKnowledge(mergedText, currentMessage) {
@@ -550,6 +571,9 @@ function shouldPinEventParticipantKnowledge(mergedText, currentMessage) {
 
 function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const ids = [];
+  if (shouldPinModeration7DayKnowledge(mergedRagText, currentMessage)) {
+    ids.push(PINNED_MODERATION_7DAY_CHUNK_ID);
+  }
   if (shouldPinEventNobodyJoinedKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_EVENT_NOBODY_JOINED_CHUNK_ID);
   }

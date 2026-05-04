@@ -992,8 +992,14 @@
   {
     "chunk_id": "app_flow_speed_cleanup_start_timer_moderation",
     "title": "Speed Cleanup: Start, timer, moderation",
-    "text": "On Speed details while status is new, creator, assigned taker, or an allowed user sees a green Start button. Start is blocked without location enabled/warned. After Start the request becomes inProgress and SpeedCleanupTimerPage opens for photos and submission; finishing sends the request to pending for moderator review. Everyone else on details only gets Donate (UI enforces at least $1 for that donation path).",
-    "tags": ["speed cleanup", "start", "timer", "moderation", "pending", "location", "donate"]
+    "text": "On Speed details while status is new, creator, assigned taker, or an allowed user sees a green Start button. Start is blocked without location enabled/warned. After Start the request becomes inProgress and SpeedCleanupTimerPage opens for photos and submission; finishing sends the request to **pending**—**waiting for admin moderation**, not «fully closed» yet. Everyone else on details only gets Donate (UI enforces at least $1 for that donation path). Donation timing and payouts after approval—see the chunk «moderation for all requests and the ~7-day donation window».",
+    "tags": ["speed cleanup", "start", "timer", "moderation", "pending", "location", "donate", "how long to wait", "close request"]
+  },
+  {
+    "chunk_id": "qa_moderation_7day_stripe_all_requests",
+    "title": "Admin moderation for requests and the ~7-day donation window (Stripe)",
+    "text": "In Joy Pick, **doing the cleanup and submitting photos is not the end of the cycle**: the request goes to **admin moderation** (pending review). Treat it as **meaningfully finished** only after **moderator approval**. For **donations**, the rule of thumb is **about 7 days from the day work started** on that request (for Speed Cleanup—from actually starting in the app, e.g. after Start and finishing the flow); **donation payouts to participants with Stripe Connect** happen **after** that window and **if** the request was **approved** by admins. Do not say the request «auto-closes immediately after photos» with no moderation step.",
+    "tags": ["moderation", "admin", "pending", "approved", "close request", "how long to wait", "speed cleanup", "quick cleanup", "donation", "7 days", "seven days", "stripe", "payout", "participants", "waiting"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",
