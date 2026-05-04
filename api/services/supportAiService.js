@@ -225,6 +225,31 @@ function enrichQuestionForRetrievalKeywords(question, locale) {
       : `${question} stripe connect profile onboarding in app payouts`;
   }
 
+  if (
+    /минимум.{0,40}донат|донат.{0,40}минимум|ниже\s+минимум|minimum.{0,30}donation|donation.{0,20}minimum/i.test(t)
+  ) {
+    return isRu
+      ? `${question} минимальная сумма доната лимит 1 доллар stripe`
+      : `${question} minimum donation amount limit 1.00 stripe`;
+  }
+
+  if (
+    /отказаться|отменить участие|выйти из заяв|больше не участв|unjoin|cancel\s+participation|leave\s+(the\s+)?request/i.test(
+      t
+    ) &&
+    /заяв|request|участ|joined|принял/i.test(t)
+  ) {
+    return isRu
+      ? `${question} unjoin отменить участие детали заявки исполнитель`
+      : `${question} unjoin cancel participation request details executor`;
+  }
+
+  if (/забыл.{0,20}парол|forgot.{0,20}password|восстановить.{0,30}доступ|recover.{0,20}account/i.test(t)) {
+    return isRu
+      ? `${question} сброс пароля forgot password экран вход auth`
+      : `${question} password reset forgot password auth screen login`;
+  }
+
   if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
     return isRu
       ? `${question} донат donation donate детали деталей заявки заявку пожертвование отправить донат`

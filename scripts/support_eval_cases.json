@@ -47,5 +47,75 @@
     "locale": "en",
     "sourcesMustIncludeAny": ["donations_multiple_participants_who_receives"],
     "answerMustNotContain": ["stays on the platform", "platform policy"]
+  },
+  {
+    "id": "create_event_ru",
+    "message": "как создать заявку типа событие или мероприятие на карте?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_create_event"],
+    "answerMustNotContain": ["уточните, пожалуйста, какой тип заявки"]
+  },
+  {
+    "id": "donation_min_ru",
+    "message": "какой минимум суммы доната в приложении?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["donation_min_amount_limit"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "unjoin_ru",
+    "message": "как отказаться от участия в заявке которую уже принял?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_unjoin_request_flow"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "pending_status_ru",
+    "message": "заявка в статусе на проверке что это значит?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_status_pending_review_meaning"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "password_reset_ru",
+    "message": "забыл пароль как восстановить доступ к аккаунту?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["auth_password_reset_entry"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "location_off_ru",
+    "message": "приложение пишет что геолокация выключена что делать?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["location_service_disabled_warning", "location_open_settings_action"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "join_event_ru",
+    "message": "как присоединиться к событию на карте?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_join_event_flow"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "too_far_cleanup_ru",
+    "message": "пишет что я слишком далеко от точки уборки что это значит?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_distance_out_of_cleanup_radius"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "push_missing_ru",
+    "message": "не приходят push уведомления на телефон что проверить?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["notifications_push_permission_basics", "support_why_notifications_not_received"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "chat_request_ru",
+    "message": "как написать сообщение в чате заявки?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["chat_open_and_send_message"],
+    "answerMustNotContain": []
   }
 ]

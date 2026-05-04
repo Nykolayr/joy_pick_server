@@ -153,7 +153,7 @@
     "chunk_id": "request_unjoin_request_flow",
     "title": "How to cancel participation (unjoin)",
     "text": "From request details, use the Unjoin action to cancel your participation. On success, app shows unjoin confirmation and updates state. If unjoin fails, retry from the same request details screen.",
-    "tags": ["unjoin", "cancel participation", "leave request", "request details", "executor"]
+    "tags": ["refuse participation", "withdraw participation", "unjoin", "cancel participation", "leave request", "request details", "executor"]
   },
   {
     "chunk_id": "request_join_event_flow",
@@ -249,7 +249,7 @@
     "chunk_id": "donation_min_amount_limit",
     "title": "Minimum donation amount",
     "text": "Minimum donation amount is $1.00 in the app. If amount is below minimum, donation flow will not continue. Increase amount to at least $1.00 and retry.",
-    "tags": ["minimum donation", "donation amount", "1.00", "payment", "stripe"]
+    "tags": ["minimum", "minimum amount", "minimum donation", "donation amount", "1.00", "payment", "stripe"]
   },
   {
     "chunk_id": "donation_payment_failed",
@@ -483,7 +483,7 @@
     "chunk_id": "auth_password_reset_entry",
     "title": "Forgot password entry point",
     "text": "Password reset flow is available from authentication routing. If user cannot log in with current password, open reset password screen from auth flow and complete reset steps there. After reset, sign in with the new password.",
-    "tags": ["forgot password", "reset password", "cannot login", "auth", "recover account"]
+    "tags": ["forgot password", "forgot my password", "restore access", "reset password", "cannot login", "auth", "recover account"]
   },
   {
     "chunk_id": "location_permission_denied_recovery",

@@ -28,6 +28,7 @@
 - Прогон эталонов: **`npm run support:eval`** (`scripts/run_support_eval.js`, кейсы в `scripts/support_eval_cases.json`). Переменные: **`SUPPORT_EVAL_SECRET`** (обязательно), **`SUPPORT_EVAL_BASE_URL`** (по умолчанию `http://127.0.0.1:300/api`). Сервер должен быть запущен с тем же секретом в окружении.
 - **`npm run support:eval:direct`** — те же кейсы, вызов `getSupportAiAnswer` в процессе Node (нужны ключи AI). Если Node получает от Gemini `User location is not supported`, а Python с той же машины проходит — часто виноват маршрут/прокси; задайте **`OPENROUTER_API_KEY`** как fallback или гоняйте **`support:eval`** против уже задеплоенного API.
 - **`npm run support:eval:rag`** — только ретривал чанков (`previewSupportRetrieval`), без LLM; проверяет, что ожидаемые `chunk_id` попадают в top‑K.
+- Человекочитаемый план и таблица кейсов: **`docs/support_eval_checklist.md`**.
 
 ---
 

@@ -153,7 +153,7 @@
     "chunk_id": "request_unjoin_request_flow",
     "title": "Как отменить участие",
     "text": "В деталях заявки используйте действие Unjoin, чтобы отменить участие. При успехе приложение покажет подтверждение и обновит состояние. Если unjoin не сработал, повторите попытку на этом же экране деталей.",
-    "tags": ["отменить участие", "unjoin", "unjoin", "cancel participation", "leave request", "request details", "executor"]
+    "tags": ["отказаться от участия", "отказаться", "отменить участие", "уже принял", "unjoin", "cancel participation", "leave request", "request details", "executor"]
   },
   {
     "chunk_id": "request_join_event_flow",
@@ -249,7 +249,7 @@
     "chunk_id": "donation_min_amount_limit",
     "title": "Минимальная сумма доната",
     "text": "Минимальная сумма доната в приложении - $1.00. Если сумма меньше минимума, поток оплаты не продолжится. Увеличьте сумму до $1.00 или выше и повторите.",
-    "tags": ["минимум доната", "сумма доната", "minimum donation", "donation amount", "1.00", "payment", "stripe"]
+    "tags": ["минимум", "минимум доната", "какой минимум", "сумма доната", "суммы доната", "доната", "minimum donation", "donation amount", "1.00", "payment", "stripe"]
   },
   {
     "chunk_id": "donation_payment_failed",
@@ -483,7 +483,7 @@
     "chunk_id": "auth_password_reset_entry",
     "title": "Точка входа в восстановление пароля",
     "text": "Поток сброса пароля доступен из маршрутов авторизации. Если пользователь не может войти с текущим паролем, откройте экран reset password из auth-потока и выполните шаги сброса. После сброса войдите с новым паролем.",
-    "tags": ["забыли пароль", "сброс пароля", "forgot password", "reset password", "cannot login", "auth", "recover account"]
+    "tags": ["забыл пароль", "забыли пароль", "восстановить доступ", "сброс пароля", "forgot password", "reset password", "cannot login", "auth", "recover account"]
   },
   {
     "chunk_id": "location_permission_denied_recovery",
