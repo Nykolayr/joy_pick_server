@@ -4,7 +4,7 @@ const { SUPPORTED_LOCALES, translateOne } = require('./translateNews');
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 3);
+const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 // Держим таймаут заметно ниже клиентского (обычно 30s), чтобы вернуть fallback до обрыва запроса в приложении.
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
 const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 400);
@@ -439,6 +439,41 @@ function loadKnowledgeChunks(knowledgePath) {
   return list;
 }
 
+/** Часто «субботник» + top_k=3: в промпт не попадал product_event… из‑за шума deeplink/каталога на токене event. */
+const PINNED_EVENT_PARTICIPANT_CHUNK_ID = 'product_event_group_chat_share';
+
+function shouldPinEventParticipantKnowledge(mergedText) {
+  const t = String(mergedText || '').toLowerCase();
+  const hasEventLexem =
+    /субботник|суботник|subbotnik|мероприят|ивент|событ(ие|ия|ию|ием)?|\bevent\b/.test(t);
+  if (!hasEventLexem) return false;
+  if (
+    /как\s+создать\s+(новую\s+)?(заявк|субботник)|хочу\s+(создать|добавить)\s+заявк|новая\s+заявк|добавить\s+заявк|how\s+to\s+create\s+(a\s+)?(new\s+)?(request|cleanup|event)|want\s+to\s+(create|add)\s+(a\s+)?request|creating\s+an?\s+event/i.test(
+      t
+    )
+  ) {
+    return false;
+  }
+  return /участник|отчит|проделан|работ(е|у|ы)?|что\s+(мне\s+)?делать|как\s+действовать|приехать|прийти|фотоотч|фото\s*после|закрыть\s+(сво[её]\s+)?участ|выйти\s+из\s+участ|подтвержд.{0,16}создател|ожидает\s+создател|выполнить\s+задач|сдач[аи]\s+работ|submit\s+work|perform\s+task|photo\s+(after|report)|wait(ing)?\s+for\s+the\s+creator|close\s+(my\s+)?participation/i.test(
+    t
+  );
+}
+
+function applyPinnedKnowledgeChunks(chunks, knowledgePath, mergedRagText, topK) {
+  const k = Math.max(1, Number(topK) || DEFAULT_TOP_K);
+  const base = Array.isArray(chunks) ? [...chunks] : [];
+  if (!shouldPinEventParticipantKnowledge(mergedRagText)) {
+    return base.slice(0, k);
+  }
+  const all = loadKnowledgeChunks(knowledgePath);
+  const pinned = all.find((c) => c && c.chunk_id === PINNED_EVENT_PARTICIPANT_CHUNK_ID);
+  if (!pinned) {
+    return base.slice(0, k);
+  }
+  const merged = [pinned, ...base.filter((c) => c.chunk_id !== PINNED_EVENT_PARTICIPANT_CHUNK_ID)];
+  return merged.slice(0, k);
+}
+
 function retrieveTopChunks(question, knowledgePath, topK = DEFAULT_TOP_K) {
   return retrieveTopChunksFused([question], knowledgePath, topK);
 }
@@ -450,8 +485,8 @@ function buildSystemInstruction(answerLanguage) {
       : 'Answer in English only.';
   const inAppScopeRule =
     answerLanguage === 'ru'
-      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению».'
-      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Never reply with «not related to the app» for those.';
+      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению». Слова «субботник», «субботнике», subbotnik — в Joy Pick это тип заявки Event (экран заявки в приложении), а не общая «районная уборка»; не подменяй шаги приложения советами «организаторам во дворе», если в Knowledge есть флоу Event.'
+      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
   const offTopicRule =
     answerLanguage === 'ru'
       ? 'Фразу «вопрос не относится к приложению Joy Pick» используй только для явного оффтопа: погода, политика, кино, случайная болтовня без связи с уборками/экологией/приложением. Один только «привет» без вопроса по приложению можно ответить коротко дружелюбно и спросить, чем помочь по Joy Pick.'
@@ -778,7 +813,13 @@ async function previewSupportRetrieval({ message, locale, topK, conversationCont
     conversationContext
   );
   const k = topK != null ? Number(topK) : DEFAULT_TOP_K;
-  const chunks = retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, k);
+  const mergedRagText = [message, effectiveAug, effectiveRaw].map(normalizeText).filter(Boolean).join('\n');
+  const chunks = applyPinnedKnowledgeChunks(
+    retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, k),
+    knowledgePath,
+    mergedRagText,
+    k
+  );
   return {
     answerLocale,
     knowledgePath,
@@ -805,7 +846,13 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     answerLocale,
     conversationContext
   );
-  const chunks = retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, DEFAULT_TOP_K);
+  const mergedRagText = [message, effectiveAug, effectiveRaw].map(normalizeText).filter(Boolean).join('\n');
+  const chunks = applyPinnedKnowledgeChunks(
+    retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, DEFAULT_TOP_K),
+    knowledgePath,
+    mergedRagText,
+    DEFAULT_TOP_K
+  );
   const modelLanguage = answerLocale === 'ru' ? 'ru' : 'en';
   let aiResult = null;
   let lastAiError = null;

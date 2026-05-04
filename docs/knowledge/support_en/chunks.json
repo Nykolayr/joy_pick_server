@@ -819,7 +819,7 @@
     "chunk_id": "product_event_group_chat_share",
     "title": "Event: schedule, chat, donations, share link, and in-app flow",
     "text": "Event is a scheduled activity (subbotnik-style cleanup, planting, etc.): place, start time, description, participants, donations, group chat, and share link. Participant flow after the event start time: open the same request → bottom actions include Perform task / submit work → screen with after photos, completion geolocation, and comment (draft saved locally) → submit; your participant row waits for the creator. The creator uses Review on each participant when status is pending, then approve or reject. When ready, the creator taps Close request (orange, bottom sheet for creator while inProgress) → Event completion screen with after photos → request goes to moderator review (pending). Before start time there is no perform-work action; non-participants see Donate and Join at the bottom.",
-    "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations", "close request", "review", "perform task", "flow", "step by step"]
+    "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations", "close request", "review", "perform task", "flow", "step by step", "subbotnik", "photo report", "report work", "wait for creator", "app request"]
   },
   {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
