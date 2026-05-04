@@ -251,6 +251,15 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    (/никто\s+не\s+прид|никто\s+не\s+приш|не\s+придут|нет\s+участник|no\s+one\s+comes|nobody\s+(came|shows|joins)/i.test(scoutLower)) &&
+    (/субботник|суботник|subbotnik|\bevent\b|мероприят|ивент|событ/i.test(scoutLower))
+  ) {
+    return isRu
+      ? `${question} event создатель организатор выполнить один нет волонтёров завершение заявки холд расхолд не подменять`
+      : `${question} event creator organizer finish alone no volunteers completion hold refund do not conflate`;
+  }
+
+  if (
     /registration.{0,40}required|required.{0,24}fields|sign\s*up.{0,30}required|регистрац.{0,40}пол|обязательн.{0,20}пол/i.test(
       t
     )
@@ -458,6 +467,7 @@ function loadKnowledgeChunks(knowledgePath) {
 /** Часто «субботник» + top_k=3: в промпт не попадал product_event… из‑за шума deeplink/каталога на токене event. */
 const PINNED_EVENT_PARTICIPANT_CHUNK_ID = 'product_event_group_chat_share';
 const PINNED_EVENT_MONEY_QA_CHUNK_ID = 'qa_event_money_after_approval_donations_stripe';
+const PINNED_EVENT_NOBODY_JOINED_CHUNK_ID = 'qa_event_nobody_joined_creator_can_still_finish';
 
 function buildUserContextLinesForPinning(conversationContext) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
@@ -488,6 +498,16 @@ function shouldPinEventMoneyQaKnowledge(mergedText) {
   return true;
 }
 
+function shouldPinEventNobodyJoinedKnowledge(mergedText) {
+  const t = String(mergedText || '').toLowerCase();
+  const hasEvent = /субботник|суботник|subbotnik|мероприят|ивент|событ(ие|ия|ию|ием)?|\bevent\b/.test(t);
+  const nobody =
+    /никто\s+не\s+прид|никто\s+не\s+приш|не\s+придут|не\s+пришл|нет\s+участник|ни\s+один\s+не\s+приш|no\s+one\s+comes|nobody\s+(came|shows|joins)/i.test(
+      t
+    );
+  return hasEvent && nobody;
+}
+
 function shouldPinEventParticipantKnowledge(mergedText) {
   const t = String(mergedText || '').toLowerCase();
   const hasEventLexem =
@@ -507,12 +527,11 @@ function shouldPinEventParticipantKnowledge(mergedText) {
 
 function collectPinnedKnowledgeChunkIds(mergedRagText) {
   const ids = [];
+  if (shouldPinEventNobodyJoinedKnowledge(mergedRagText)) {
+    ids.push(PINNED_EVENT_NOBODY_JOINED_CHUNK_ID);
+  }
   if (shouldPinEventMoneyQaKnowledge(mergedRagText)) {
     ids.push(PINNED_EVENT_MONEY_QA_CHUNK_ID);
-    if (shouldPinEventParticipantKnowledge(mergedRagText)) {
-      ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
-    }
-    return ids;
   }
   if (shouldPinEventParticipantKnowledge(mergedRagText)) {
     ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
@@ -592,6 +611,9 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Если в Conversation уже шли про Event/субботник, а новый короткий вопрос про деньги («получу?», «а деньги?») — отвечайте по цепочке Event: сдача, одобрение создателя, модерация, донаты, Stripe; не начинайте с ответа про Waste Location «не пришёл за 24 часа», если пользователь не переключился на уборку мусора.'
       : 'If Conversation was about Event/subbotnik and the user asks a short money follow-up, answer with the Event chain (submission, creator approval, moderation, donations, Stripe); do not lead with the Waste Location 24-hour no-show rule unless they clearly switched to trash-pin cleanups.',
+    answerLanguage === 'ru'
+      ? 'Для Event вопрос «никто не пришёл / не придут участники» не равен «заявка не выполнена — донаты всем вернутся»: создатель может выполнить работу в приложении сам; возврат с холда — про реально невыполненную заявку по правилам, не про низкую явку.'
+      : 'For Event questions, «nobody came / no volunteers» is not the same as «unfulfilled—donors get refunded»: the creator can still complete the in-app work alone; donor hold release applies to truly unfulfilled requests per rules, not low attendance.',
     'Do not invent screens, buttons, or app behavior.',
     'Keep responses concise and practical.'
   ].join('\n');

@@ -828,6 +828,12 @@
     "tags": ["money", "get paid", "will i get paid", "payout", "donations", "stripe", "event", "subbotnik", "participant", "creator approval", "moderation", "equal split", "submit work"]
   },
   {
+    "chunk_id": "qa_event_nobody_joined_creator_can_still_finish",
+    "title": "Event: nobody else showed up—the creator can still finish the cleanup",
+    "text": "For an Event-type request (including a «subbotnik»), **having no extra volunteers does not automatically mean the request is «unfulfilled»**, and it is not a reason by itself to tell donors their money is refunded. The event creator is also a participant in the app: they can **complete the same in-app flow** (Perform task / submit work with required photos/geo, Close request, moderation) even if nobody else joined or showed up. Donor hold release applies when the request is **actually not completed under app rules**, not when attendance is low. Do not conflate these scenarios.",
+    "tags": ["nobody came", "no one came", "no volunteers", "alone", "creator", "organizer", "event", "subbotnik", "donations", "hold", "refund donor", "finish alone", "no attendance"]
+  },
+  {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
     "title": "Stripe in profile, routes to requests, notifications within ~10 miles",
     "text": "During registration you can connect Stripe to receive donations; the setup link appears in your profile. You can build a route to points that have requests. Users within about a 10-mile radius can receive notifications about relevant requests (wording may vary by build/region).",
@@ -896,7 +902,7 @@
   {
     "chunk_id": "payments_donation_hold_release_to_donor",
     "title": "Donation holds: if the request is not completed, donor funds",
-    "text": "Donation payments are placed on hold when paid. If the request with those donations is not completed under the app rules, the hold is released: funds return to the payer (the donor). Do not claim money «stays on the Joy Pick platform» or «is not returned automatically» instead of this flow, and do not hand-wave with «platform policy» for this case. Joy Pick does not accumulate users’ money as a platform cash pile: funds sit in hold within the payment stack (Stripe), and after the approved flow donors’ held amounts are distributed straight to recipients via Stripe—not parked on a Joy Pick balance in between.",
+    "text": "Donation payments are placed on hold when paid. If the request with those donations is not completed under the app rules, the hold is released: funds return to the payer (the donor). Do not claim money «stays on the Joy Pick platform» or «is not returned automatically» instead of this flow, and do not hand-wave with «platform policy» for this case. Joy Pick does not accumulate users’ money as a platform cash pile: funds sit in hold within the payment stack (Stripe), and after the approved flow donors’ held amounts are distributed straight to recipients via Stripe—not parked on a Joy Pick balance in between. For Events, «no volunteers showed up» is not automatically «unfulfilled»: the creator can still complete the work in-app—see the dedicated chunk «nobody joined—creator can still finish».",
     "tags": ["hold", "release hold", "refund donor", "unfulfilled", "nobody completed", "paid request", "donation request", "where money goes", "money back"]
   },
   {
