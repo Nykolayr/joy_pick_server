@@ -8,6 +8,7 @@
 
 - **Прод:** в `.env` локально задать `SUPPORT_EVAL_SECRET` (как на сервере) и `SUPPORT_EVAL_BASE_URL=https://joypick.world/api`, затем `npm run support:eval`.
 - **Только RAG (без LLM):** `npm run support:eval:rag` — проверка, что нужные чанки попадают в top‑K.
+- **Stress RAG (много формулировок):** `npm run support:eval:rag:stress` или `node scripts/run_support_rag_stress.js --locale=ru --per-chunk=6 --limit=2000 --seed=1` — вопросы собираются из `title`/`tags` чанков, для каждого проверяется, что **свой** `chunk_id` в top‑K. Отчёт: `tmp/rag_stress_last.json` (падения с `message`, `top`, `effectiveQuestion`). При падениях exit code 1.
 - **Без HTTP:** `npm run support:eval:direct` (нужны ключи AI в `.env`).
 
 Источник кейсов: **`scripts/support_eval_cases.json`** (поля `id`, `message`, `locale`, `sourcesMustIncludeAny`, `answerMustNotContain`).

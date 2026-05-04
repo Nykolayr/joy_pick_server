@@ -9,7 +9,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "support:eval": "node scripts/run_support_eval.js",
     "support:eval:direct": "node scripts/run_support_eval_direct.js",
-    "support:eval:rag": "node scripts/run_support_rag_eval.js"
+    "support:eval:rag": "node scripts/run_support_rag_eval.js",
+    "support:eval:rag:stress": "node scripts/run_support_rag_stress.js --locale=ru --per-chunk=6 --limit=2000 --seed=1"
   },
   "keywords": [
     "joy-pick",

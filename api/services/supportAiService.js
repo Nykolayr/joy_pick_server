@@ -292,14 +292,20 @@ function enrichQuestionForRetrievalKeywords(question, locale) {
   return question;
 }
 
+const knowledgeChunksCache = new Map();
+
 function loadKnowledgeChunks(knowledgePath) {
+  if (knowledgeChunksCache.has(knowledgePath)) {
+    return knowledgeChunksCache.get(knowledgePath);
+  }
   if (!fs.existsSync(knowledgePath)) {
     return [];
   }
   const raw = fs.readFileSync(knowledgePath, 'utf8');
   const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((x) => x && x.text);
+  const list = Array.isArray(parsed) ? parsed.filter((x) => x && x.text) : [];
+  knowledgeChunksCache.set(knowledgePath, list);
+  return list;
 }
 
 function retrieveTopChunks(question, knowledgePath, topK = DEFAULT_TOP_K) {
