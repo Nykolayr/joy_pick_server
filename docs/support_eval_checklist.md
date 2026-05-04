@@ -55,5 +55,19 @@
 | ☑ | faq_polluted_ru | Отметить загрязнение без статуса волонтёра |
 | ☑ | notifications_list_en | In-app notifications (EN) |
 | ☑ | join_request_en | Join waste/speed request (EN) |
+| ☑ | map_search_ru | Поиск и фильтры на карте |
+| ☑ | donation_payment_failed_ru | Ошибка оплаты доната |
+| ☑ | stripe_executor_ru | Stripe для исполнителя |
+| ☑ | auth_login_ru | Вход email / пароль |
+| ☑ | participant_complete_ru | Завершение участником |
+| ☑ | moderation_verification_ru | Верификация уборки (гео, фото, модератор) |
+| ☑ | volunteer_hours_typo_ru | «Чамы» / волонтёрские часы |
+| ☑ | status_approved_ru | Статус Approved |
+| ☑ | chat_empty_ru | Пустое сообщение в чате |
+| ☑ | deeplink_chat_ru | Deeplink на чат `/chat/` |
+| ☑ | profile_edit_ru | Редактирование полей профиля |
+| ☑ | map_search_en | Map search / filters (EN) |
+| ☑ | donation_failed_en | Donation payment failed (EN) |
+| ☑ | status_approved_en | Approved status (EN) |
 
-Последний прогон: **`npm run support:eval:rag`** и **`npm run support:eval`** на **joypick.world** — **39/39 OK** (выкат `supportAiService.js` + `chunks.json` RU/EN).
+Последний прогон: **`npm run support:eval:rag`** и **`npm run support:eval`** на **joypick.world** — **53/53 OK** (выкат `supportAiService.js` + `chunks.json` RU/EN).

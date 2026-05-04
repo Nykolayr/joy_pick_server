@@ -271,5 +271,103 @@
     "locale": "en",
     "sourcesMustIncludeAny": ["request_join_request_flow"],
     "answerMustNotContain": []
+  },
+  {
+    "id": "map_search_ru",
+    "message": "как на карте искать заявки по городу фильтры nearby america europe?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["map_search_and_filter_basics"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "donation_payment_failed_ru",
+    "message": "донат не прошёл ошибка оплаты stripe что делать повторить?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["donation_payment_failed"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "stripe_executor_ru",
+    "message": "нужно ли исполнителю подключать stripe чтобы получать деньги за уборки?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["stripe_executor_setup_requirement"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "auth_login_ru",
+    "message": "как войти в приложение по email и паролю на экране входа?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["auth_login_email_password"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "participant_complete_ru",
+    "message": "как участнику отправить завершение заявки с фото после уборки?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_complete_participant_flow"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "moderation_verification_ru",
+    "message": "как проверяется уборка модератором геолокация и фото из приложения?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["faq_cleanup_verification_geo_photos_moderator"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "volunteer_hours_typo_ru",
+    "message": "в профиле написано волонтёрские чамы это опечатка что имеется в виду?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["rewards_volunteer_hours_typo_alias"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "status_approved_ru",
+    "message": "что значит статус заявки approved одобрено модерацией?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_status_approved_meaning"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "chat_empty_ru",
+    "message": "почему пустое сообщение в чате не отправляется кнопка send?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["chat_empty_message_not_sent"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "deeplink_chat_ru",
+    "message": "как открыть чат по ссылке с chatId в маршруте deep link?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["deeplink_open_chat_route"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "profile_edit_ru",
+    "message": "как изменить имя город и поле about в профиле редактирование?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["profile_edit_basic_fields"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "map_search_en",
+    "message": "How do I search requests on the map by city or filter by Nearby?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["map_search_and_filter_basics"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "donation_failed_en",
+    "message": "My donation payment failed in the app. What should I do?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["donation_payment_failed"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "status_approved_en",
+    "message": "What does Approved status mean on a request?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["request_status_approved_meaning"],
+    "answerMustNotContain": []
   }
 ]

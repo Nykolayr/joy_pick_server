@@ -183,7 +183,7 @@
     "chunk_id": "request_complete_participant_flow",
     "title": "How participant completion submission works",
     "text": "Participant completion flow requires submitting cleanup result data, including after-photo evidence in relevant screens. After submit, request moves to review-dependent state. If submission fails, app shows retry-oriented error feedback.",
-    "tags": ["mark completed", "participant completion", "submit result", "after photo", "review"]
+    "tags": ["mark completed", "participant completion", "submit completion", "submit result", "after photo", "participant submit", "cleanup result", "review"]
   },
   {
     "chunk_id": "request_complete_missing_after_photo",

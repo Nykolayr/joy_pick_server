@@ -228,6 +228,21 @@ function enrichQuestionForRetrievalKeywords(question, locale) {
   }
 
   if (
+    (/участник|participant/i.test(t) && /завершен|completion|отправить|submit|mark\s+completed|результат/i.test(t)) ||
+    /participant\s+completion|завершение\s+участником/i.test(t)
+  ) {
+    return isRu
+      ? `${question} завершение участником отправка результата participant completion фото после`
+      : `${question} participant completion submit result after photo evidence`;
+  }
+
+  if (/chatid|\/chat\/|маршрут\s+чат|open\s+chat\s+route|chat\s+deep\s*link/i.test(t)) {
+    return isRu
+      ? `${question} deeplink чата chatId маршрут /chat/ navigation`
+      : `${question} chat deeplink chatId route /chat/ navigation`;
+  }
+
+  if (
     /поделиться|поделит|ссылк[\p{L}\p{N}_]*\s+на\s+заяв|сообщить[\p{L}\p{N}_]*\s+о\s+заяв|диплин|дипссыл|получить\s+так[\p{L}\p{N}_]*\s+ссылк/i.test(
       t
     ) ||
