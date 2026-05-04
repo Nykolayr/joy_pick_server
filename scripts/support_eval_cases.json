@@ -217,6 +217,17 @@
     "answerMustNotContain": []
   },
   {
+    "id": "waste_join_forgot_ru",
+    "message": "Если я нажал на участие в заявке Уборка мусора, но забыл про это, что случится?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["waste_join_executor_deadline_creator_remove"],
+    "answerMustNotContain": [
+      "не повлияет на заявку",
+      "участие будет зафиксировано",
+      "сделав донат на эту заявку"
+    ]
+  },
+  {
     "id": "deeplink_news_ru",
     "message": "как по ссылке открыть экран новости deeplink news в приложении?",
     "locale": "ru",

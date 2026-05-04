@@ -19,6 +19,12 @@ function isAiEnabled() {
   return !['0', 'false', 'off', 'no'].includes(value);
 }
 
+/** Если Gemini в регионе недоступен, а OpenRouter есть — удобно для локального eval (`npm run support:eval:direct`). */
+function isOpenRouterFirstEnabled() {
+  const v = String(process.env.AI_SUPPORT_OPENROUTER_FIRST || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(v);
+}
+
 /** Язык ответа по тексту вопроса (не только по locale из запроса). */
 function inferAnswerLocale(message, declaredLocale) {
   const safe = SUPPORTED_LOCALES.includes(declaredLocale) ? declaredLocale : 'en';
@@ -60,8 +66,11 @@ function normalizeAiErrorCode(reason) {
   if (!msg) return 'AI_UNAVAILABLE';
   if (msg.includes('ai_disabled')) return 'AI_DISABLED';
   if (msg.includes('location is not supported')) return 'AI_PROVIDER_REGION_BLOCKED';
+  if (msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource exhausted')) {
+    return 'AI_QUOTA_EXCEEDED';
+  }
   if (msg.includes('abort') || msg.includes('timed out') || msg.includes('timeout')) return 'AI_TIMEOUT';
-  if (msg.includes('api key')) return 'AI_CONFIG_ERROR';
+  if (msg.includes('api key') || msg.includes('is not configured')) return 'AI_CONFIG_ERROR';
   return 'AI_UNAVAILABLE';
 }
 
@@ -163,12 +172,114 @@ function overlapScore(questionTokens, chunk) {
   return score;
 }
 
+/** Короткий ответ в цепочке («да», «а через профиль?») — подмешиваем прошлый вопрос только в строку поиска, не в текст для пользователя. */
+function augmentMessageForRetrieval(questionForModel, conversationContext) {
+  const q = normalizeText(questionForModel);
+  if (!q) return q;
+  const ctx = Array.isArray(conversationContext) ? conversationContext : [];
+  if (!ctx.length) return q;
+  const last = ctx[ctx.length - 1];
+  const prev = normalizeText(last.user_message || '');
+  if (prev.length < 8 || prev.length > 800) return q;
+  const words = tokenize(q);
+  const shortFollowUp = q.length <= 160 && words.length > 0 && words.length <= 14;
+  if (!shortFollowUp) return q;
+  return `${prev}\n${q}`.slice(0, 2000);
+}
+
+/**
+ * Несколько формулировок запроса (обогащённые / без контекста): берём максимум скора по чанку — лучше recall и меньше ложных провалов.
+ */
+function retrieveTopChunksFused(questions, knowledgePath, topK = DEFAULT_TOP_K) {
+  const chunks = loadKnowledgeChunks(knowledgePath);
+  if (!chunks.length) {
+    return [];
+  }
+  const variantTokens = [];
+  const seen = new Set();
+  for (const qu of questions) {
+    const t = tokenize(normalizeText(qu));
+    const key = t.join('\u0001');
+    if (!t.length || seen.has(key)) continue;
+    seen.add(key);
+    variantTokens.push(t);
+  }
+  if (!variantTokens.length) {
+    return [];
+  }
+
+  const scored = chunks
+    .map((chunk) => {
+      let score = 0;
+      for (const qt of variantTokens) {
+        const s = overlapScore(qt, chunk);
+        if (s > score) score = s;
+      }
+      return { chunk, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, topK));
+
+  if (scored.length > 0) {
+    return scored.map((x) => x.chunk);
+  }
+  return [];
+}
+
 /** Подмешивает синонимы в строку поиска RAG (не в ответ пользователю), чтобы опечатки и «как …» не теряли тему. */
 function enrichQuestionForRetrievalKeywords(question, locale) {
   const raw = normalizeText(question);
   if (!raw) return question;
   const t = raw.toLowerCase();
   const isRu = locale === 'ru';
+
+  if (
+    /registration.{0,40}required|required.{0,24}fields|sign\s*up.{0,30}required|регистрац.{0,40}пол|обязательн.{0,20}пол/i.test(
+      t
+    )
+  ) {
+    return isRu
+      ? `${question} регистрация email пароль подтверждение terms согласие auth`
+      : `${question} registration sign up email password confirmation terms acceptance auth`;
+  }
+
+  if (
+    (/сообщен|написать|отправить/i.test(t) && /чат/i.test(t) && /заяв|request/i.test(t)) ||
+    (/message|send|write/i.test(t) && /chat/i.test(t) && /request|заяв/i.test(t))
+  ) {
+    return isRu
+      ? `${question} чат заявки открыть чат список отправить сообщение ввод текста send chat_open`
+      : `${question} request chat open send message input conversation chat list`;
+  }
+
+  if (
+    /изменить.{0,50}(имя|фамилию|город)|поле\s+about|редактир.{0,24}профил|профил.{0,20}редакт/i.test(t) ||
+    /edit.{0,40}(profile|name|city)|change.{0,20}(name|city).{0,30}about/i.test(t)
+  ) {
+    return isRu
+      ? `${question} редактирование профиля имя страна город about социальные ссылки сохранить`
+      : `${question} edit profile first last name country city about social links save`;
+  }
+
+  if (
+    /далеко|слишком\s+далеко|вне\s+радиус|out\s+of\s+radius|cleanup\s+radius/i.test(t) &&
+    /точк|уборк|cleanup|мест|location|task/i.test(t)
+  ) {
+    return isRu
+      ? `${question} вне радиуса уборки request_distance_out_of_cleanup_radius вернуться к месту геолокация`
+      : `${question} request_distance_out_of_cleanup_radius out of cleanup radius return to spot gps`;
+  }
+
+  if (
+    /donation\s+failed|payment\s+failed|донат.*не\s+прош|оплат.*не\s+прош|ошибк.*оплат|stripe.*ошибк/i.test(
+      t
+    )
+  ) {
+    return isRu
+      ? `${question} donation_payment_failed ошибка оплаты доната stripe повторить retry`
+      : `${question} donation_payment_failed stripe donation payment error retry`;
+  }
 
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
   if (
@@ -284,6 +395,26 @@ function enrichQuestionForRetrievalKeywords(question, locale) {
       : `${question} password reset forgot password auth screen login`;
   }
 
+  if (
+    (/участ|присоедин|нажал/i.test(t) && /забыл|не приш|не пришёл|forgot/i.test(t) && /мусор|waste|уборк/i.test(t)) ||
+    (/participat|joined|accepted/i.test(t) && /forgot|did not show|no show/i.test(t) && /waste|garbage|trash/i.test(t))
+  ) {
+    return isRu
+      ? `${question} waste location join_date 24 часа статус new исполнитель снят снова в списке крон напоминание создатель снять исполнителя не донат`
+      : `${question} waste location join_date 24 hours status new executor cleared list again cron reminder creator remove executor not donation substitute`;
+  }
+
+  if (
+    (/создал|создала|создали|автор|только создал|не участвую/i.test(t) &&
+      /заяв|уборк|мусор|waste|точк|деньг|донат|получ|положен/i.test(t)) ||
+    (/created.{0,40}request|only created|not participate|did not participate|creator/i.test(t) &&
+      /money|donat|payout|waste|garbage|cleanup|who gets/i.test(t))
+  ) {
+    return isRu
+      ? `${question} waste location уборка мусора создатель не исполнитель донаты волонтёр speed event субботник donations_who_receives`
+      : `${question} waste location creator not performer volunteer donations speed cleanup event subbotnik donations_who_receives`;
+  }
+
   if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
     return isRu
       ? `${question} донат donation donate детали деталей заявки заявку пожертвование отправить донат`
@@ -309,27 +440,7 @@ function loadKnowledgeChunks(knowledgePath) {
 }
 
 function retrieveTopChunks(question, knowledgePath, topK = DEFAULT_TOP_K) {
-  const chunks = loadKnowledgeChunks(knowledgePath);
-  if (!chunks.length) {
-    return [];
-  }
-
-  const questionTokens = tokenize(question);
-  const scored = chunks
-    .map((chunk) => ({
-      chunk,
-      score: overlapScore(questionTokens, chunk)
-    }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.max(1, topK));
-
-  if (scored.length > 0) {
-    return scored.map((x) => x.chunk);
-  }
-
-  // Нет пересечения с базой знаний — не подставляем случайные чанки (иначе модель опирается на нерелевантный текст).
-  return [];
+  return retrieveTopChunksFused([question], knowledgePath, topK);
 }
 
 function buildSystemInstruction(answerLanguage) {
@@ -362,9 +473,16 @@ function buildSystemInstruction(answerLanguage) {
     'If user already answered the clarifying question with a short synonym (for example: subbotnik, event, cleanup event), do not repeat the same clarifying question again.',
     'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
     'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval (and equal split among Stripe-connected Event participants per Knowledge).',
+    answerLanguage === 'ru'
+      ? 'Критично: для заявки «Уборка мусора» (Waste Location) автор только отмечает точку — он не получает донаты «за одно создание», если сам не был волонтёром-исполнителем. Донаты идут тем, кто пришёл и убрал. Быстрая уборка (Speed) — создатель = исполнитель своей уборки. Субботник/Event — организатор участвует; доли по Knowledge.'
+      : 'Critical: for Waste Location (trash pin on map), the creator only reports the spot—they do not automatically receive donation payouts for «just creating» the request if they did not join and perform the cleanup. Donations go to executing volunteers. Speed Cleanup: creator is the performer of their own cleanup. Event/subbotnik: organizer participates; splits per Knowledge.',
+    answerLanguage === 'ru'
+      ? 'Если спрашивают «присоединился к уборке мусора и забыл / не пришёл»: по Knowledge — автоматическое снятие исполнителя после дедлайна с join (на сервере 24 часа), заявка снова new и снова в выдаче; создатель может снять исполнителя вручную; отдельно есть долгий сценарий 7+1 суток от created_at для зависшего inProgress. Не утверждайте, что «участие ни на что не влияет». Не предлагайте донат как замену физической уборки.'
+      : 'If the user joined a Waste Location then forgot or did not show: per Knowledge/backend automation the executor slot is released after the join-based deadline (24 hours from join_date), request returns to new and becomes available again; creator may clear the executor manually; a separate long-stall path warns around 7 days from created_at. Do not claim joining «does not affect» the request. Never suggest donating instead of physically doing the cleanup.',
     'When the user asks what map colors, donation chips, wallet/news buttons, or incomplete banners mean, use the Help/UI Guide chunks and suggest opening Help in the app for the illustrated reference.',
     'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
     'On follow-up turns, answer the new question first; do not paste the entire previous reply again unless the user explicitly asks to repeat.',
+    'Use Conversation context to resolve short follow-ups (yes/no, «а где?», «через профиль?»): they refer to the previous topic unless the user clearly switches subject.',
     'Do not invent screens, buttons, or app behavior.',
     'Keep responses concise and practical.'
   ].join('\n');
@@ -496,13 +614,32 @@ async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversa
       throw new Error(msg);
     }
 
-    const answer = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const blockReason = json?.promptFeedback?.blockReason;
+    if (blockReason) {
+      throw new Error(`Gemini prompt blocked: ${blockReason}`);
+    }
+    const cand = json?.candidates?.[0];
+    if (!cand) {
+      throw new Error('Gemini returned no candidates');
+    }
+    const fr = cand.finishReason;
+    if (fr === 'SAFETY' || fr === 'RECITATION' || fr === 'BLOCKLIST') {
+      throw new Error(`Gemini finish: ${fr}`);
+    }
+    const parts = cand?.content?.parts;
+    let answer = '';
+    if (Array.isArray(parts)) {
+      for (const p of parts) {
+        if (p && typeof p.text === 'string') answer += p.text;
+      }
+    }
+    answer = answer.trim();
     if (!answer) {
-      throw new Error('Gemini returned empty response');
+      throw new Error(fr ? `Gemini empty (${fr})` : 'Gemini returned empty response');
     }
 
     return {
-      answer: answer.trim(),
+      answer,
       model
     };
   } finally {
@@ -614,23 +751,41 @@ async function normalizeQuestionForRag(message, locale) {
   };
 }
 
+function buildEffectiveRetrievalQueries(questionForModel, answerLocale, conversationContext) {
+  const augmented = augmentMessageForRetrieval(questionForModel, conversationContext);
+  const effectiveAug = enrichQuestionWithTypeAlias(
+    enrichQuestionForRetrievalKeywords(augmented, answerLocale),
+    answerLocale
+  );
+  const effectiveRaw = enrichQuestionWithTypeAlias(
+    enrichQuestionForRetrievalKeywords(questionForModel, answerLocale),
+    answerLocale
+  );
+  return { augmented, effectiveAug, effectiveRaw };
+}
+
 /**
  * Топ чанков RAG без вызова LLM (для офлайн-тестов и отладки ретривала).
  */
-async function previewSupportRetrieval({ message, locale, topK }) {
+async function previewSupportRetrieval({ message, locale, topK, conversationContext = [] }) {
   const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
   const answerLocale = inferAnswerLocale(message, safeLocale);
   const knowledgePath = getKnowledgePathByLocale(answerLocale);
   const { questionForModel } = await normalizeQuestionForRag(message, answerLocale);
-  const withKeywords = enrichQuestionForRetrievalKeywords(questionForModel, answerLocale);
-  const effectiveQuestion = enrichQuestionWithTypeAlias(withKeywords, answerLocale);
+  const { augmented, effectiveAug, effectiveRaw } = buildEffectiveRetrievalQueries(
+    questionForModel,
+    answerLocale,
+    conversationContext
+  );
   const k = topK != null ? Number(topK) : DEFAULT_TOP_K;
-  const chunks = retrieveTopChunks(effectiveQuestion, knowledgePath, k);
+  const chunks = retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, k);
   return {
     answerLocale,
     knowledgePath,
     questionForModel,
-    effectiveQuestion,
+    effectiveQuestion: effectiveAug,
+    effectiveQuestionAlt: effectiveRaw,
+    augmentedForRetrieval: augmented !== questionForModel ? augmented : undefined,
     chunkIds: chunks.map((x) => x.chunk_id || null).filter(Boolean),
     chunks
   };
@@ -645,29 +800,34 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
 
   const knowledgePath = getKnowledgePathByLocale(answerLocale);
   const { questionForModel } = await normalizeQuestionForRag(message, answerLocale);
-  const withKeywords = enrichQuestionForRetrievalKeywords(questionForModel, answerLocale);
-  const effectiveQuestion = enrichQuestionWithTypeAlias(withKeywords, answerLocale);
-  const chunks = retrieveTopChunks(effectiveQuestion, knowledgePath, DEFAULT_TOP_K);
+  const { effectiveAug, effectiveRaw } = buildEffectiveRetrievalQueries(
+    questionForModel,
+    answerLocale,
+    conversationContext
+  );
+  const chunks = retrieveTopChunksFused([effectiveAug, effectiveRaw], knowledgePath, DEFAULT_TOP_K);
   const modelLanguage = answerLocale === 'ru' ? 'ru' : 'en';
   let aiResult = null;
   let lastAiError = null;
+  const primaryProvider = isOpenRouterFirstEnabled() ? 'openrouter' : 'gemini';
+  const fallbackProvider = isOpenRouterFirstEnabled() ? 'gemini' : 'openrouter';
+  const llmArgs = {
+    userQuestion: questionForModel,
+    chunks,
+    answerLanguage: modelLanguage,
+    conversationContext
+  };
 
   try {
     try {
-      aiResult = await callGeminiAnswer({
-        userQuestion: questionForModel,
-        chunks,
-        answerLanguage: modelLanguage,
-        conversationContext
-      });
-    } catch (geminiErr) {
-      lastAiError = geminiErr;
-      aiResult = await callOpenRouterAnswer({
-        userQuestion: questionForModel,
-        chunks,
-        answerLanguage: modelLanguage,
-        conversationContext
-      });
+      aiResult = isOpenRouterFirstEnabled()
+        ? await callOpenRouterAnswer(llmArgs)
+        : await callGeminiAnswer(llmArgs);
+    } catch (primaryErr) {
+      lastAiError = primaryErr;
+      aiResult = isOpenRouterFirstEnabled()
+        ? await callGeminiAnswer(llmArgs)
+        : await callOpenRouterAnswer(llmArgs);
     }
 
     const { answer, model } = aiResult;
@@ -695,9 +855,10 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   } catch (err) {
-    const primaryError = (lastAiError && lastAiError.message) ? `gemini: ${lastAiError.message}` : '';
+    const primaryError =
+      lastAiError && lastAiError.message ? `${primaryProvider}: ${lastAiError.message}` : '';
     const currentError = err?.message || 'ai_unavailable';
-    const reason = primaryError ? `${primaryError}; openrouter: ${currentError}` : currentError;
+    const reason = primaryError ? `${primaryError}; ${fallbackProvider}: ${currentError}` : currentError;
     return buildUnavailableAnswer(answerLocale, reason);
   }
 }

@@ -1,6 +1,11 @@
 /**
  * Те же кейсы, что support_eval_cases.json, но вызов getSupportAiAnswer напрямую
- * (без HTTP и SUPPORT_EVAL_SECRET). Нужен .env с GEMINI_API_KEY (и при падении Gemini — OpenRouter).
+ * (без HTTP и SUPPORT_EVAL_SECRET).
+ *
+ * Ключи: GEMINI_API_KEY и/или OPENROUTER_API_KEY.
+ * Если Gemini недоступен по региону: задайте OPENROUTER_API_KEY и в .env добавьте
+ *   AI_SUPPORT_OPENROUTER_FIRST=true
+ * (сначала OpenRouter, потом Gemini).
  *
  * Запуск: npm run support:eval:direct
  */
@@ -33,10 +38,12 @@ async function main() {
     });
 
     if (data.degraded) {
-      console.error(
-        `FAIL ${id} ответ-заглушка (AI недоступен):`,
-        data.ai_error_code || data.degraded_reason || 'unknown'
-      );
+      const code = data.ai_error_code || 'unknown';
+      const detail = String(data.degraded_reason || data.ai_error_message || '').trim();
+      console.error(`FAIL ${id} ответ-заглушка (AI недоступен): ${code}`);
+      if (detail) {
+        console.error(`  причина: ${detail.slice(0, 500)}${detail.length > 500 ? '…' : ''}`);
+      }
       failed++;
       continue;
     }
@@ -67,6 +74,12 @@ async function main() {
 
   if (failed) {
     console.error(`\nИтого: ${failed}/${cases.length} ошибок`);
+    if (failed === cases.length) {
+      console.error(
+        '\nЕсли все ответы — заглушка AI: проверьте GEMINI_API_KEY / OPENROUTER_API_KEY и сеть. ' +
+          'При блокировке региона Gemini используйте OPENROUTER_API_KEY и AI_SUPPORT_OPENROUTER_FIRST=true в .env.'
+      );
+    }
     process.exit(1);
   }
   console.log(`\nВсе ${cases.length} кейсов прошли.`);

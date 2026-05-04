@@ -156,6 +156,12 @@
     "tags": ["refuse participation", "withdraw participation", "unjoin", "cancel participation", "leave request", "request details", "executor"]
   },
   {
+    "chunk_id": "waste_join_executor_deadline_creator_remove",
+    "title": "Waste Location: joined but did not finish — executor slot clears (no money advice instead of work)",
+    "text": "For Waste Location (trash cleanup) requests, after someone joins as executor the platform expects work to finish on time. Server automation clears the executor if **24 hours** passed since `join_date` without completion: status goes back to **new**, `joined_user_id` is cleared, and the request becomes **available again** for other volunteers on the map/list; notifications go to executor and creator. A reminder is sent about **2 hours** before that deadline. The creator can also remove the executor (clear joined executor via request update) so the request is open again—same practical outcome. Separately, if a request stays **in progress** without completion for a long time from **creation**, another job warns the creator around **7 days** and may archive around **8 days** from `created_at`—that is a different long-stall path than the post-join 24h reset. If **nobody ever joined** while the request is **new**, `expires_at` drives extension/removal messaging; do not mix that up with the executor 24h rule. **Never recommend donating as a fix for forgetting to show up and clean**—donations do not replace an absent volunteer or complete the physical work.",
+    "tags": ["forgot to join cleanup", "joined waste forgot", "executor timeout", "24 hours", "slot opens again", "creator remove executor", "no show", "participation waste", "what happens if i forget", "join_date expired"]
+  },
+  {
     "chunk_id": "request_join_event_flow",
     "title": "How to join an event",
     "text": "Open event details and tap Join when event participation is open. Success is confirmed by event-join success feedback. If joining is canceled later, app shows event-canceled participation feedback.",
@@ -242,7 +248,7 @@
   {
     "chunk_id": "donation_how_to_donate",
     "title": "How to send a donation to an existing request",
-    "text": "To send money to support someone else's cleanup, you do not need to create your own request first. Pick any existing request on the map or list, open its details screen, and tap Donate. That starts the in-app Stripe payment flow and shows success feedback when it completes. Receiving donated funds on your balance as a performer is a different flow: complete the work, pass verification/moderation as the app shows, and connect Stripe in your profile to withdraw.",
+    "text": "To send money to support someone else's cleanup, you do not need to create your own request first. Pick any existing request on the map or list, open its details screen, and tap Donate. That starts the in-app Stripe payment flow and shows success feedback when it completes. Receiving donated funds on your balance is for people who perform the cleanup (joined Waste Location as a volunteer, finished, and passed review)—not for only having created the trash pin. Speed/Event flows differ; see the Waste vs Speed vs Event chunk. Then connect Stripe in your profile to withdraw when eligible.",
     "tags": ["donate", "donation", "send donation", "stripe", "request details", "payment", "existing request", "support a request"]
   },
   {
@@ -788,14 +794,20 @@
   {
     "chunk_id": "product_onboarding_map_three_types",
     "title": "First launch: language, account, map, three eco request types",
-    "text": "After install, choose language and create an account with email, Google, or Apple. The home screen shows a map with eco-related locations. Tap plus (+) to create an initiative. Three formats exist: Waste Location (mark a polluted area), Speed Cleanup (you mark the place, before/after photos, your cleanup), and Event (planned cleanups, tree planting, etc., with time and participants).",
-    "tags": ["onboarding", "first launch", "home", "map", "plus", "waste location", "speed cleanup", "event", "how app works", "eco initiative"]
+    "text": "After install, choose language and sign in with email, Google, or Apple. The main shell has four bottom tabs: (1) map + request list, (2) recycling stations and partners, (3) news, (4) profile. On the Map tab, the center FAB opens the create-request menu. The bottom-left floating button with the psychology icon opens Support AI (RAG)—not the same as human support in Profile. From the + menu pick Waste Location (pollution pin), Speed Cleanup (your quick cleanup with before/after photos), or Event (scheduled activity with time and participants).",
+    "tags": ["onboarding", "first launch", "home", "map", "plus", "waste location", "speed cleanup", "event", "how app works", "eco initiative", "tabs", "support ai"]
   },
   {
     "chunk_id": "product_waste_location_mark_donation_haul_only",
     "title": "Waste Location: polluted spot, donation, optional haul-only",
     "text": "Waste Location marks a polluted area. User adds a photo, description, and can attach a donation. Donations go to volunteers who respond, clean the area, and submit photo proof. Others can add donations to draw attention; paid requests are shown distinctly. There is also an option that only trash haul-away is needed.",
     "tags": ["waste location", "polluted area", "donation", "photo", "trash haul", "garbage", "map pin", "report litter"]
+  },
+  {
+    "chunk_id": "donations_who_receives_waste_vs_speed_event",
+    "title": "Who receives donation money: Waste Location vs Speed vs Event creator",
+    "text": "Waste Location (mark trash / pollution on the map): the creator only reports the spot; they are not an executing volunteer on that request by default. Donations on that request are meant for volunteers who join, do the cleanup, pass verification, and get moderator approval—not for «only creating the pin». Speed Cleanup (quick cleanup for yourself): creator and performer are the same person, so after you finish and approval flows complete, donations can go to you per app rules. Event / subbotnik: the organizer participates in the event; donations are shared among participants who are eligible to receive them (see split/hold chunks). Never tell a Waste Location-only creator they automatically receive donation payouts as if they personally completed the cleanup when they did not join and perform as a volunteer.",
+    "tags": ["waste location creator", "who gets donations", "volunteer money", "not creator", "speed cleanup yourself", "event organizer", "subbotnik", "created request money", "only created request", "уборка мусора создатель"]
   },
   {
     "chunk_id": "product_speed_cleanup_before_after_coins_hours",
@@ -805,9 +817,9 @@
   },
   {
     "chunk_id": "product_event_group_chat_share",
-    "title": "Event: schedule, chat, donations to participants, share link",
-    "text": "Event is for planned cleanups, tree planting, and similar activities. You set place, time, and description; people can join. Like other requests, there is a participant chat and donations that go to cleanup participants. You can share the event link to social networks and messengers to attract volunteers.",
-    "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations"]
+    "title": "Event: schedule, chat, donations, share link, and in-app flow",
+    "text": "Event is a scheduled activity (subbotnik-style cleanup, planting, etc.): place, start time, description, participants, donations, group chat, and share link. Participant flow after the event start time: open the same request → bottom actions include Perform task / submit work → screen with after photos, completion geolocation, and comment (draft saved locally) → submit; your participant row waits for the creator. The creator uses Review on each participant when status is pending, then approve or reject. When ready, the creator taps Close request (orange, bottom sheet for creator while inProgress) → Event completion screen with after photos → request goes to moderator review (pending). Before start time there is no perform-work action; non-participants see Donate and Join at the bottom.",
+    "tags": ["event", "scheduled cleanup", "tree planting", "group chat", "share link", "participants", "donations", "close request", "review", "perform task", "flow", "step by step"]
   },
   {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
@@ -860,7 +872,7 @@
   {
     "chunk_id": "rewards_volunteer_earn_donations_payouts",
     "title": "How volunteers can receive money: donations and payouts",
-    "text": "Volunteers can receive money from donations attached to cleanup requests. Other users donate to fund a cleanup; after you complete the work, pass verification (location and in-app photos where required), and a moderator approves it, held donation funds can be credited to your balance. Set up Stripe from your profile to withdraw (instant payout or scheduled options, as shown in the app). These are voluntary peer-to-peer transfers for real cleanups—not a salary or wage paid by Joy Pick as an employer. You can also earn JoyCoins and accumulate volunteer hours shown in your profile.",
+    "text": "Volunteers who actually perform cleanup work (for example after joining someone else’s Waste Location) can receive money from donations attached to that request. Other users donate to fund a cleanup; after you complete the work, pass verification (location and in-app photos where required), and a moderator approves it, held donation funds can be credited to your balance. If you only created a Waste Location pin but did not join and execute the cleanup as a volunteer, you are not the donation recipient for that work—see the Waste vs Speed vs Event chunk. Set up Stripe from your profile to withdraw (instant payout or scheduled options, as shown in the app). These are voluntary peer-to-peer transfers for real cleanups—not a salary or wage paid by Joy Pick as an employer. You can also earn JoyCoins and accumulate volunteer hours shown in your profile.",
     "tags": ["earn", "earn money", "earning", "income", "get paid", "make money", "money", "donations", "payout", "stripe", "volunteer", "salary", "wages", "payment", "how to earn", "paid"]
   },
   {
@@ -925,9 +937,9 @@
   },
   {
     "chunk_id": "help_home_top_bar_wallet_profile_icons",
-    "title": "Help: home top bar and profile block icons",
-    "text": "Per Help: Chat opens chats with request creators and participants; red badge is unread count. Refresh reloads requests on the map and in the list. News is the Joy Pick feed; orange icon and pulsing dot mean new items. Wallet shows withdrawable balance and opens payouts. In the profile block: List icon opens completed requests (Coins) or payout history (Payouts); Exchange opens a partner QR to spend JoyCoins (Coins block); Pay Out opens payouts to withdraw balance (Payouts block).",
-    "tags": ["chat", "refresh", "news", "wallet", "balance", "payouts", "profile", "joycoins", "qr", "help", "home screen", "top bar"]
+    "title": "Help: Map tab actions, News tab, and Profile payouts/coins",
+    "text": "On the Map tab (first bottom tab), top-right has Chat (request-related chats + unread badge) and Refresh for map/list data. News is its own fourth-tab entry; the pulsing dot on the icon means there are news items you have not opened on that tab yet. Balance and withdrawals live under the Profile tab: the payouts card opens the payouts screen; switching to Profile refreshes user and payout data. On the Coins card in Profile, list/history and partner QR for spending JoyCoins follow the icons on that card. Do not confuse the bottom-left Support AI FAB (blue) with Profile → Support, which opens a human-operator chat thread.",
+    "tags": ["chat", "refresh", "news", "wallet", "balance", "payouts", "profile", "joycoins", "qr", "help", "home screen", "top bar", "map tab", "tabs", "support ai"]
   },
   {
     "chunk_id": "help_incomplete_request_banner",
@@ -946,5 +958,41 @@
     "title": "What Joy Pick is for and what you can do in the app",
     "text": "Joy Pick is an app for environmental cleanups and volunteer actions. You see requests and events on a map. You can create a Waste Location (report pollution), Speed Cleanup (quick cleanup with before/after photos), or Event (scheduled cleanup or gathering). The app supports donations, JoyCoins, volunteer hours, chats on requests, and profile payouts via Stripe. The goal is to help clean polluted areas and motivate volunteers.",
     "tags": ["what is joy pick", "what is the app for", "what to do in the app", "how to use", "getting started", "onboarding", "purpose", "beginner"]
+  },
+  {
+    "chunk_id": "app_flow_splash_navigation_branches",
+    "title": "After splash: where the app navigates",
+    "text": "After splash: if a partner-seller token is stored, the app opens the seller shell (no volunteer bottom tabs). Without a volunteer JWT you go to login. When signed in, you land on the main home shell. Deeplinks may navigate immediately; if a deeplink does not take you off splash, a short fallback opens the home shell. Location is requested during startup; with system location off, long splash hangs should be reduced and a warning with settings shortcut is shown.",
+    "tags": ["splash", "startup", "after splash", "login", "seller", "deeplink", "home", "stuck"]
+  },
+  {
+    "chunk_id": "app_flow_support_ai_vs_operator_chat",
+    "title": "Two supports: Support AI vs operator chat",
+    "text": "The blue bottom-left FAB on the main shell opens Support AI (RAG over app documentation)—support-chat route. Profile → Support opens or creates a normal support chat with a human operator (Chat screen). Do not describe them as the same «support» without clarifying which entry point the user used.",
+    "tags": ["support", "support ai", "operator", "human support", "psychology fab", "profile", "difference", "where to write"]
+  },
+  {
+    "chunk_id": "app_flow_waste_details_bottom_actions",
+    "title": "Waste Location: bottom actions on request details",
+    "text": "Creator sees only Donate at the bottom. Others see Donate + Join until they join; after joining, Perform task opens work submission (photos + geo) and Unjoin leaves the role, or Continue work / Cancel work if a draft exists. Archived, completed, or rejected requests hide the action sheet (rejected still shows reason). Creator may see extend when rules allow for new requests.",
+    "tags": ["waste", "waste location", "donate", "join", "perform task", "unjoin", "bottom sheet", "executor", "creator", "extend"]
+  },
+  {
+    "chunk_id": "app_flow_speed_cleanup_start_timer_moderation",
+    "title": "Speed Cleanup: Start, timer, moderation",
+    "text": "On Speed details while status is new, creator, assigned taker, or an allowed user sees a green Start button. Start is blocked without location enabled/warned. After Start the request becomes inProgress and SpeedCleanupTimerPage opens for photos and submission; finishing sends the request to pending for moderator review. Everyone else on details only gets Donate (UI enforces at least $1 for that donation path).",
+    "tags": ["speed cleanup", "start", "timer", "moderation", "pending", "location", "donate"]
+  },
+  {
+    "chunk_id": "app_flow_map_help_button_ui_guide",
+    "title": "Map help: question-mark opens UI Guide",
+    "text": "On the Map tab, the vertical control stack includes a help (question) button. It opens the UiGuide / interface guide: request types on the map, dollar icon meaning, gray circle, card border colors, donation chips, top buttons, and profile icons. Point users there for «what does this color mean» questions.",
+    "tags": ["help", "ui guide", "map", "question", "legend", "icons"]
+  },
+  {
+    "chunk_id": "app_flow_master_doc_reference",
+    "title": "Internal reference: master flow map in the app repo",
+    "text": "Screens, tabs, and waste/speed/event button matrices plus splash and profile are documented in the Flutter repo joy_pick at docs/joy_pick_app_master_flows.md (sections F onward). If older wording conflicts with the live app, prefer that document and lib/ code.",
+    "tags": ["documentation", "flow", "master", "joy_pick", "source of truth", "ui"]
   }
 ]

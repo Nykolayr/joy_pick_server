@@ -55,6 +55,16 @@ function shuffle(arr, seed) {
   return a;
 }
 
+/** Короткие/общие теги дают ложные срабатывания enrich (донат, шаринг, intent) — не используем их отдельным вопросом. */
+function isRiskTag(tag) {
+  const t = String(tag || '').toLowerCase().trim();
+  if (t.length < 6 || t.length > 48) return true;
+  if (t.length <= 12) return true;
+  return /поделиться|диплин|deeplink|share|донат|donat|stripe|минимум|minimum|^чат$|^chat$|выплат|payout|геолокац|geo|соцвход|регистрац|registr|временн|temporar|загрузк|loading|уведомлен|notif|профиль|profile/i.test(
+    t
+  );
+}
+
 function buildVariants(chunk, locale) {
   const title = String(chunk.title || '').trim();
   const tags = Array.isArray(chunk.tags) ? chunk.tags.map((x) => String(x).trim()).filter(Boolean) : [];
@@ -67,13 +77,13 @@ function buildVariants(chunk, locale) {
       out.add(`не понимаю: ${title}`);
       out.add(`где в приложении ${t0}?`);
       out.add(`подскажи про ${t0}`);
+      out.add(`Сценарий в Joy Pick: ${title}`);
     }
-    for (const tag of tags.slice(0, 8)) {
-      if (tag.length < 2) continue;
-      out.add(`что такое «${tag}» в joy pick?`);
-      out.add(`${tag} — как это работает?`);
+    const safe = tags.find((tag) => !isRiskTag(tag));
+    if (title && safe) {
+      out.add(`По теме «${title}»: уточнение про ${safe}`);
     }
-    if (title && tags[0]) {
+    if (title && tags[0] && !isRiskTag(tags[0])) {
       out.add(`${tags[0]} и ${title.toLocaleLowerCase('ru-RU')} — это про одно и то же?`);
     }
   } else {
@@ -83,13 +93,13 @@ function buildVariants(chunk, locale) {
       out.add(`I don't understand: ${title}`);
       out.add(`Joy Pick — ${title}: what should I know?`);
       out.add(`Tell me about ${t0}`);
+      out.add(`In Joy Pick, explain: ${title}`);
     }
-    for (const tag of tags.slice(0, 8)) {
-      if (tag.length < 2) continue;
-      out.add(`What is "${tag}" in Joy Pick?`);
-      out.add(`Explain ${tag} in the app`);
+    const safe = tags.find((tag) => !isRiskTag(tag));
+    if (title && safe) {
+      out.add(`About "${title}" — what does ${safe} mean here?`);
     }
-    if (title && tags[0]) {
+    if (title && tags[0] && !isRiskTag(tags[0])) {
       out.add(`Is ${tags[0]} related to ${title.toLowerCase()}?`);
     }
   }
