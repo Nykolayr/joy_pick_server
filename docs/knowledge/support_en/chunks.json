@@ -998,8 +998,8 @@
   {
     "chunk_id": "qa_moderation_7day_stripe_all_requests",
     "title": "Admin moderation for requests and the ~7-day donation window (Stripe)",
-    "text": "In Joy Pick, **doing the cleanup and submitting photos is not the end of the cycle**: the request goes to **admin moderation** (pending review). Treat it as **meaningfully finished** only after **moderator approval**. For **donations**, the rule of thumb is **about 7 days from the day work started** on that request (for Speed Cleanup—from actually starting in the app, e.g. after Start and finishing the flow); **donation payouts to participants with Stripe Connect** happen **after** that window and **if** the request was **approved** by admins. Do not say the request «auto-closes immediately after photos» with no moderation step.",
-    "tags": ["moderation", "admin", "pending", "approved", "close request", "how long to wait", "speed cleanup", "quick cleanup", "donation", "7 days", "seven days", "stripe", "payout", "participants", "waiting"]
+    "text": "In Joy Pick, **doing the cleanup and submitting photos is not the end of the cycle**: the request goes to **admin moderation** (pending review). Treat it as **meaningfully finished** only after **moderator approval**. **Donations** (including Speed Cleanup and Event): after **approval**, the platform typically waits **about 7 calendar days** before scheduled server payouts; **the backend timer** is based on the **request creation time in the app**, not on «the calendar day physical work began»—if the request was created earlier, the payout window may not line up with the day you tapped Start. **Donation payouts to participants with Stripe Connect** happen **after** that window and only when the request is **approved**. Do not say the request «auto-closes immediately after photos» with no moderation step.",
+    "tags": ["moderation", "admin", "pending", "approved", "close request", "how long to wait", "speed cleanup", "quick cleanup", "donation", "7 days", "seven days", "stripe", "payout", "participants", "waiting", "creation date", "request created"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",
