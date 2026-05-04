@@ -33,5 +33,15 @@
 | ☑ | too_far_cleanup_ru | Слишком далеко от точки уборки |
 | ☑ | push_missing_ru | Не приходят push |
 | ☑ | chat_request_ru | Сообщение в чате заявки |
+| ☑ | profile_language_ru | Язык / локализация в профиле |
+| ☑ | profile_photo_ru | Фото профиля / аватар |
+| ☑ | payout_tabs_ru | Вкладки Available / History на выплатах |
+| ☑ | news_pulse_ru | Точка непрочитанных на News |
+| ☑ | deeplink_request_missing_ru | Ссылка на заявку → «не найдена» |
+| ☑ | waste_create_ru | Создание waste / уборка мусора |
+| ☑ | speed_photo_ru | Фото до/после в speed cleanup |
+| ☑ | profile_language_en | Change app language (EN) |
+| ☑ | payout_minimum_en | Минимум instant payout (EN) |
+| ☑ | news_donate_en | Донат из новости (EN) |
 
-Последний автоматический прогон `npm run support:eval` на **joypick.world** (ответы + `sources` + запретные фразы): **17/17 OK** после выката `supportAiService.js` и `chunks.json` RU/EN.
+Последний автоматический прогон `npm run support:eval` на **joypick.world**: **27/27 OK** (только обновлённый `support_eval_cases.json` на машине прогона; код на сервере без изменений в этой волне).

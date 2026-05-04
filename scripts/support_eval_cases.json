@@ -117,5 +117,75 @@
     "locale": "ru",
     "sourcesMustIncludeAny": ["chat_open_and_send_message"],
     "answerMustNotContain": []
+  },
+  {
+    "id": "profile_language_ru",
+    "message": "где в профиле сменить язык приложения и локализацию?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["profile_language_change_behavior"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "profile_photo_ru",
+    "message": "как поменять фото профиля или аватар в приложении?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["profile_update_photo_behavior"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "payout_tabs_ru",
+    "message": "на экране выплат что показывают вкладки available и history?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["payout_page_available_and_history_tabs"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "news_pulse_ru",
+    "message": "что значит пульсирующая точка на вкладке новостей?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["news_unread_pulse_dot_behavior"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "deeplink_request_missing_ru",
+    "message": "по ссылке на заявку открывается экран заявка не найдена что проверить?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["deeplink_request_not_found_fallback"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "waste_create_ru",
+    "message": "как создать заявку на уборку мусора waste location через кнопку плюс?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_create_waste_cleanup"],
+    "answerMustNotContain": ["уточните, пожалуйста, какой тип заявки"]
+  },
+  {
+    "id": "speed_photo_ru",
+    "message": "для быстрой уборки speed cleanup какие фото обязательны до и после?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_create_speed_cleanup_photo_requirement"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "profile_language_en",
+    "message": "Where can I change the app language in my profile?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["profile_language_change_behavior"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "payout_minimum_en",
+    "message": "What is the minimum amount for an instant payout?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["payout_instant_minimum_amount"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "news_donate_en",
+    "message": "How do I donate from a news article in the app?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["news_detail_donation_actions"],
+    "answerMustNotContain": []
   }
 ]
