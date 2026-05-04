@@ -43,5 +43,17 @@
 | ☑ | profile_language_en | Change app language (EN) |
 | ☑ | payout_minimum_en | Минимум instant payout (EN) |
 | ☑ | news_donate_en | Донат из новости (EN) |
+| ☑ | notifications_list_ru | Список уведомлений |
+| ☑ | notifications_mark_all_ru | Отметить все уведомления прочитанными |
+| ☑ | profile_public_ru | Публичный профиль по ссылке / user id |
+| ☑ | join_request_ru | Join к waste/speed (не event) |
+| ☑ | deeplink_news_ru | Deeplink на новость |
+| ☑ | read_receipt_ru | Галочки прочтения в чате |
+| ☑ | request_not_visible_ru | Заявка не видна в списке |
+| ☑ | rewards_cleanup_ru | Награды за уборки (коины, часы) |
+| ☑ | volunteer_money_ru | Деньги волонтёру (донаты, выплаты) |
+| ☑ | faq_polluted_ru | Отметить загрязнение без статуса волонтёра |
+| ☑ | notifications_list_en | In-app notifications (EN) |
+| ☑ | join_request_en | Join waste/speed request (EN) |
 
-Последний автоматический прогон `npm run support:eval` на **joypick.world**: **27/27 OK** (только обновлённый `support_eval_cases.json` на машине прогона; код на сервере без изменений в этой волне).
+Последний прогон: **`npm run support:eval:rag`** и **`npm run support:eval`** на **joypick.world** — **39/39 OK** (выкат `supportAiService.js` + `chunks.json` RU/EN).

@@ -147,7 +147,7 @@
     "chunk_id": "request_join_request_flow",
     "title": "Как присоединиться к заявке",
     "text": "Откройте детали заявки и используйте действие Join, если оно доступно. При успехе приложение покажет подтверждение и обновит состояние участия. Если join не удался, повторите попытку и проверьте требования по локации.",
-    "tags": ["присоединиться", "участие", "join request", "participation", "how to join", "request details", "executor"]
+    "tags": ["присоединиться", "участие", "join request", "participation", "how to join", "request details", "executor", "waste", "speed", "cleanup", "join", "детал", "карточк", "уборк", "мусор"]
   },
   {
     "chunk_id": "request_unjoin_request_flow",

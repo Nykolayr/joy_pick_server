@@ -147,7 +147,7 @@
     "chunk_id": "request_join_request_flow",
     "title": "How to join a request",
     "text": "Open request details and use the Join action if available. On success, the app shows a join-success message and updates participation state. If join fails, retry and verify location-related requirements.",
-    "tags": ["join request", "participation", "how to join", "request details", "executor"]
+    "tags": ["join request", "participation", "how to join", "request details", "executor", "waste", "speed", "cleanup", "join", "details", "card"]
   },
   {
     "chunk_id": "request_unjoin_request_flow",

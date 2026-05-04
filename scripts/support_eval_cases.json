@@ -187,5 +187,89 @@
     "locale": "en",
     "sourcesMustIncludeAny": ["news_detail_donation_actions"],
     "answerMustNotContain": []
+  },
+  {
+    "id": "notifications_list_ru",
+    "message": "как открыть список уведомлений и посмотреть карточки?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["notifications_open_list"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "notifications_mark_all_ru",
+    "message": "как отметить все уведомления прочитанными разом?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["notifications_mark_all_as_read"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "profile_public_ru",
+    "message": "как открыть публичный профиль другого пользователя по user id или ссылке?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["profile_open_public_user_profile"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "join_request_ru",
+    "message": "как присоединиться к заявке waste или speed cleanup через join в деталях карточки?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_join_request_flow"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "deeplink_news_ru",
+    "message": "как по ссылке открыть экран новости deeplink news в приложении?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["deeplink_open_news_details"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "read_receipt_ru",
+    "message": "что значат галочки прочтения у моего сообщения в чате двойная галочка?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["chat_read_receipt_icon_for_own_messages"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "request_not_visible_ru",
+    "message": "почему моя заявка не видна в списке на карте пропала?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["support_request_not_visible_checklist"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "rewards_cleanup_ru",
+    "message": "что можно получить за подтверждённые уборки joycoins часы донаты?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["rewards_what_you_get_for_cleanups"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "volunteer_money_ru",
+    "message": "как волонтеру получать деньги за уборки через донаты и выплаты stripe?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["rewards_volunteer_earn_donations_payouts"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "faq_polluted_ru",
+    "message": "обязательно ли быть проверенным волонтёром чтобы отметить загрязнение на карте?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["faq_report_polluted_spot_without_volunteer"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "notifications_list_en",
+    "message": "How do I open the in-app notifications screen?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["notifications_open_list"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "join_request_en",
+    "message": "How do I join a waste or speed cleanup request from its details screen?",
+    "locale": "en",
+    "sourcesMustIncludeAny": ["request_join_request_flow"],
+    "answerMustNotContain": []
   }
 ]

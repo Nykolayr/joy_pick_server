@@ -209,6 +209,25 @@ function enrichQuestionForRetrievalKeywords(question, locale) {
   }
 
   if (
+    /новост|newsid|\/news\/|\bnews\b/i.test(t) &&
+    /deeplink|диплин|ссылк|link|открыть|open/i.test(t)
+  ) {
+    return isRu
+      ? `${question} deeplink новостей открыть экран новости newsId маршрут`
+      : `${question} news deeplink open news details newsId route`;
+  }
+
+  if (
+    (/\bjoin\b/i.test(t) || /присоедин/i.test(t)) &&
+    (/waste|speed|garbage|trash|уборк|мусор|cleanup\s+request|обычн|участник|participant|details/i.test(t)) &&
+    !/\bevent\b|мероприят|ивент|субботник|событие/i.test(t)
+  ) {
+    return isRu
+      ? `${question} join request details участие waste speed не event`
+      : `${question} join request details participation waste speed cleanup`;
+  }
+
+  if (
     /поделиться|поделит|ссылк[\p{L}\p{N}_]*\s+на\s+заяв|сообщить[\p{L}\p{N}_]*\s+о\s+заяв|диплин|дипссыл|получить\s+так[\p{L}\p{N}_]*\s+ссылк/i.test(
       t
     ) ||
@@ -331,7 +350,12 @@ function buildSystemInstruction(answerLanguage) {
 }
 
 function detectRequestTypeAlias(value, locale) {
-  const text = normalizeText(value).toLowerCase();
+  let text = normalizeText(value).toLowerCase();
+  const isRu = locale === 'ru';
+  if (!isRu) {
+    text = text.replace(/\bnot\s+an\s+event\b/gi, ' ');
+    text = text.replace(/\bnot\s+a\s+event\b/gi, ' ');
+  }
   const ruEvent = ['субботник', 'событие', 'ивент', 'мероприятие'];
   const ruWaste = ['уборка мусора', 'мусор', 'waste', 'waste location'];
   const ruSpeed = ['быстрая уборка', 'speed cleanup', 'speed', 'быстрая'];
@@ -339,7 +363,6 @@ function detectRequestTypeAlias(value, locale) {
   const enWaste = ['waste cleanup', 'waste', 'garbage', 'trash cleanup'];
   const enSpeed = ['speed cleanup', 'quick cleanup'];
   const has = (arr) => arr.some((x) => text === x || text.includes(x));
-  const isRu = locale === 'ru';
 
   if (isRu) {
     if (has(ruEvent)) return 'event';
