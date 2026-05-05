@@ -1028,8 +1028,14 @@
   {
     "chunk_id": "map_list_completed_requests_7_days_profile_my_requests",
     "title": "Completed requests on map/list, archive, and Profile › My requests",
-    "text": "Do **not** say the map/list shows **only active** requests: after the **user closes** their work, **`completed`** requests can stay visible for **about 7 days** so others can still **donate** (client-side window). On the **server**, the donation/payout window is anchored to **user submission** (**donation_window_started_at**); after it elapses, **approved** requests get payouts, **unapproved** ones go to **archive** per rules. Users can **always** open **Profile › My requests** for **their** history.",
-    "tags": ["completed requests", "archive", "only active", "where to see", "profile", "my requests", "donate after completion"]
+    "text": "Do **not** say the map/list shows **only active** requests: after the **user closes** their work, **`completed`** requests can stay visible for **about 7 days** so others can still **donate** (client-side window). On the **server**, the donation/payout window is anchored to **user submission** (**donation_window_started_at**); after it elapses, **approved** requests get payouts, **unapproved** ones go to **archive** per rules. Users can **always** open **Profile › My requests** for **their** history. **How completed requests look on the map** (gray circle on the icon, card border colors, donation chips, etc.) is explained in the in-app **Help / UI Guide**—send users there for visual legend questions.",
+    "tags": ["completed requests", "archive", "only active", "where to see", "profile", "my requests", "donate after completion", "help", "how completed looks", "gray circle", "border"]
+  },
+  {
+    "chunk_id": "qa_when_money_cleaning_profile_your_payouts_joycoins",
+    "title": "When payout for cleanups: 7-day window, Your payouts block, JoyCoins",
+    "text": "For «when do I get money for the cleanup» questions, **always** mention the **seven-calendar-day** window starting when the **user submitted their work** (donation window on the server; the clock does **not** start at moderator approval—see the moderation + 7 days chunk). After Joy Pick moderation, funds follow that window and Stripe rules—not instantly after photos. **Where to see money:** in **Profile**, the **Your payouts** block shows **how much** is available to withdraw and **when** it becomes available. Separately, **JoyCoins** are awarded for verified work; they can be spent with **partner shops** (coins/QR area in Profile). Do **not** reduce the answer to «upload photos and the creator approves»—Event has creator Review, other types differ; still cite **7 days**, **Your payouts**, and **coins** for money-timing questions.",
+    "tags": ["when money", "how soon", "payout", "cleanup", "get paid", "your payouts", "profile", "balance", "available", "when available", "joycoins", "coins", "partners", "shops", "7 days", "money for cleaning"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",

@@ -480,8 +480,18 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
 
   if (/сортиров|обнов.{0,8}список|refresh.{0,12}list|новые\s+заявк.{0,20}верх/i.test(t)) {
     return isRu
-      ? `${question} refresh список группы сортировка archived rejected completed 24 часа`
-      : `${question} refresh list sort groups archived rejected completed 24h`;
+      ? `${question} refresh список группы сортировка archived rejected completed`
+      : `${question} refresh list sort groups archived rejected completed`;
+  }
+
+  if (
+    /когда.{0,50}деньг|деньг.{0,40}убор|скоро.{0,30}получ|ваш[ии]\s+выплат|your\s+payouts|joycoins|выплат.{0,15}профил/i.test(
+      t
+    )
+  ) {
+    return isRu
+      ? `${question} 7 дней ваши выплаты профиль joycoins коины партнёры модерация уборка`
+      : `${question} 7 days your payouts profile joycoins partners moderation cleanup`;
   }
 
   if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
@@ -518,6 +528,7 @@ const PINNED_NEWS_TAB_CHUNK_ID = 'product_news_tab_and_requests_are_different';
 const PINNED_TERMINOLOGY_CHUNK_ID = 'support_terminology_executor_participant_not_volunteer';
 const PINNED_LIST_SORT_CHUNK_ID = 'list_requests_filters_sorting_groups_refresh_button';
 const PINNED_COMPLETED_VISIBILITY_CHUNK_ID = 'map_list_completed_requests_7_days_profile_my_requests';
+const PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID = 'qa_when_money_cleaning_profile_your_payouts_joycoins';
 const MAX_PINNED_KNOWLEDGE_CHUNKS = 6;
 
 function buildUserContextLinesForPinning(conversationContext) {
@@ -628,6 +639,21 @@ function shouldPinCompletedVisibilityKnowledge(bundleLower) {
   );
 }
 
+/** «Когда деньги за уборку» / сроки выплат — 7 дней, блок «Ваши выплаты», JoyCoins (не подменять только Event-чанком). */
+function shouldPinMoneyCleaningPayoutKnowledge(bundleLower) {
+  if (/субботник|subbotnik|\bevent\b|мероприят|ивент/i.test(bundleLower)) {
+    return false;
+  }
+  const moneyTiming =
+    /когда.{0,40}деньг|деньг.{0,30}убор|скоро.{0,25}получ|получу.{0,20}деньг|получить.{0,15}деньг|how\s+soon.{0,30}money|money\s+for\s+clean|get\s+paid.{0,20}clean|when.{0,25}payout/i.test(
+      bundleLower
+    );
+  const cleanupCtx =
+    /уборк|clean|cleanup|убрал|выполнил.{0,15}работ|деньг\s+за\s+убор/i.test(bundleLower);
+  const payoutsHelp = /ваш[ии]\s+выплат|your\s+payouts|joycoins|джойкойн|койн.{0,12}магазин/i.test(bundleLower);
+  return (moneyTiming && cleanupCtx) || payoutsHelp;
+}
+
 function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const bundle = `${String(currentMessage || '')}\n${String(mergedRagText || '')}`.toLowerCase();
   const ids = [];
@@ -645,6 +671,9 @@ function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   }
   if (shouldPinCompletedVisibilityKnowledge(bundle)) {
     ids.push(PINNED_COMPLETED_VISIBILITY_CHUNK_ID);
+  }
+  if (shouldPinMoneyCleaningPayoutKnowledge(bundle)) {
+    ids.push(PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID);
   }
   if (shouldPinModeration7DayKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_MODERATION_7DAY_CHUNK_ID);
