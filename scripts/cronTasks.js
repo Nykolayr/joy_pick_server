@@ -57,16 +57,15 @@ async function logCronAction(actionType, requestId, requestCategory, actionDescr
 }
 
 /**
- * Автоматический перевод speedCleanup в archived через 7 дней с создания (после выплат и окончания срока).
+ * Автоматический перевод speedCleanup в archived после 7 дней с первой сдачи пользователем (donation_window_started_at), иначе от created_at.
  * Перед переводом: выплата по донатам после одобрения (payoutSpeedCleanupNewDonationsBeforeArchive).
- * Первая выплата — при одобрении (в requests.js).
  */
 async function autoCompleteSpeedCleanup() {
   try {
     const [requests] = await pool.execute(
       `SELECT id, created_by FROM requests 
        WHERE category = 'speedCleanup' AND status = 'approved' 
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
+         AND COALESCE(donation_window_started_at, created_at) <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
     );
 
     if (requests.length === 0) {
@@ -104,7 +103,7 @@ async function autoCompleteSpeedCleanup() {
           'autoCompleteSpeedCleanup',
           requestId,
           'speedCleanup',
-          `Заявка ${requestId} переведена в archived (7 дней с создания)`,
+          `Заявка ${requestId} переведена в archived (7 дней с donation_window_started_at/created_at)`,
           'completed',
           {}
         );
@@ -550,7 +549,8 @@ async function checkExecutorStaleness() {
 }
 
 /**
- * pending на модерации: 7 суток — пуш админам; 8 суток — архив + рефанд донатов, без отката коинов и без удаления чата.
+ * pending на модерации: окно 7 суток с первой сдачи (donation_window_started_at / submitted_for_review_at).
+ * На 6–7 сутки — пуш админам; после 7 — архив + рефанд донатов (как раньше по смыслу, SLA под новое окно донатов).
  */
 async function checkModerationReviewStale() {
   const { sendModerationStaleReminderNotification } = require('../api/services/pushNotification');
@@ -561,31 +561,33 @@ async function checkModerationReviewStale() {
 
   try {
     const [toArchive] = await pool.execute(
-      `SELECT id, name, category, created_by, submitted_for_review_at, updated_at
+      `SELECT id, name, category, created_by, submitted_for_review_at, updated_at, donation_window_started_at
        FROM requests
        WHERE status = 'pending'
          AND category IN ('wasteLocation', 'speedCleanup', 'event')
          AND (
-           (submitted_for_review_at IS NOT NULL AND submitted_for_review_at <= DATE_SUB(NOW(), INTERVAL 8 DAY))
-           OR (submitted_for_review_at IS NULL AND updated_at <= DATE_SUB(NOW(), INTERVAL 8 DAY))
+           (COALESCE(donation_window_started_at, submitted_for_review_at) IS NOT NULL
+            AND COALESCE(donation_window_started_at, submitted_for_review_at) <= DATE_SUB(NOW(), INTERVAL 7 DAY))
+           OR (COALESCE(donation_window_started_at, submitted_for_review_at) IS NULL
+            AND updated_at <= DATE_SUB(NOW(), INTERVAL 7 DAY))
          )`
     );
 
     const [toWarn] = await pool.execute(
-      `SELECT id, name, category, created_by, submitted_for_review_at, updated_at
+      `SELECT id, name, category, created_by, submitted_for_review_at, updated_at, donation_window_started_at
        FROM requests
        WHERE status = 'pending'
          AND category IN ('wasteLocation', 'speedCleanup', 'event')
          AND (
            (
-             submitted_for_review_at IS NOT NULL
-             AND submitted_for_review_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-             AND submitted_for_review_at > DATE_SUB(NOW(), INTERVAL 8 DAY)
+             COALESCE(donation_window_started_at, submitted_for_review_at) IS NOT NULL
+             AND COALESCE(donation_window_started_at, submitted_for_review_at) <= DATE_SUB(NOW(), INTERVAL 6 DAY)
+             AND COALESCE(donation_window_started_at, submitted_for_review_at) > DATE_SUB(NOW(), INTERVAL 7 DAY)
            )
            OR (
-             submitted_for_review_at IS NULL
-             AND updated_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-             AND updated_at > DATE_SUB(NOW(), INTERVAL 8 DAY)
+             COALESCE(donation_window_started_at, submitted_for_review_at) IS NULL
+             AND updated_at <= DATE_SUB(NOW(), INTERVAL 6 DAY)
+             AND updated_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
            )
          )`
     );
@@ -599,7 +601,7 @@ async function checkModerationReviewStale() {
           'moderationTimeoutArchive',
           request.id,
           request.category,
-          'Архив: нет апрува модератора 8+ суток с момента отправки на модерацию (донаты возвращены)',
+          'Архив: нет апрува модератора 7+ суток с момента сдачи пользователем (донаты возвращены)',
           'completed',
           {}
         );
@@ -890,7 +892,7 @@ async function notifySuperadminsRequestNotClosed() {
 }
 
 /**
- * Выплаты и коины для speedCleanup/event: не при одобрении, а когда одобрено и прошло 7 дней с создания.
+ * Выплаты и коины для speedCleanup/event: когда одобрено модератором и прошло 7 дней с первой сдачи работы пользователем (donation_window_started_at), иначе fallback created_at.
  */
 async function processPayoutAfter7Days() {
   try {
@@ -899,7 +901,7 @@ async function processPayoutAfter7Days() {
        FROM requests 
        WHERE category IN ('speedCleanup', 'event')
          AND status = 'approved'
-         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
+         AND COALESCE(donation_window_started_at, created_at) <= DATE_SUB(NOW(), INTERVAL 7 DAY)`
     );
     if (requests.length === 0) {
       return { processed: 0, errors: 0 };

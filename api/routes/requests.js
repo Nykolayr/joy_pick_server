@@ -1101,6 +1101,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     }
     if (statusChangedToPending) {
       updates.push('submitted_for_review_at = NOW()');
+      updates.push('donation_window_started_at = COALESCE(donation_window_started_at, NOW())');
     }
     if (priority !== undefined && priority !== null && priority !== '') {
       updates.push('priority = ?');
@@ -2901,7 +2902,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     if (request.category === 'wasteLocation') {
       // Меняем статус заявки на pending (отправка на модерацию)
       await pool.execute(
-        'UPDATE requests SET status = ?, submitted_for_review_at = NOW(), updated_at = NOW() WHERE id = ?',
+        'UPDATE requests SET status = ?, submitted_for_review_at = NOW(), donation_window_started_at = COALESCE(donation_window_started_at, NOW()), updated_at = NOW() WHERE id = ?',
         ['pending', requestId]
       );
 
@@ -3094,7 +3095,12 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     }
 
     // Обновляем статус заявки на pending
-    const updates = ['status = ?', 'submitted_for_review_at = NOW()', 'updated_at = NOW()'];
+    const updates = [
+      'status = ?',
+      'submitted_for_review_at = NOW()',
+      'donation_window_started_at = COALESCE(donation_window_started_at, NOW())',
+      'updated_at = NOW()'
+    ];
     const params = ['pending'];
 
     if (completion_comment) {
