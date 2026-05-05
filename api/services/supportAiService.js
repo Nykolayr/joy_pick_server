@@ -485,13 +485,21 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
-    /когда.{0,50}деньг|деньг.{0,40}убор|скоро.{0,30}получ|ваш[ии]\s+выплат|your\s+payouts|joycoins|выплат.{0,15}профил/i.test(
-      t
-    )
+    /койн|joycoin|joy\s*coin|\bcoins?\b|монет/i.test(t) &&
+    (/зачем|для чего|что такое|что значит|куда трат|обмен|спецмагаз|партн|нужн|использов|трат|why|what\s+(are|do)|purpose|spend|redeem/i.test(t) ||
+      (/донат|donat|privilege|привилег/i.test(t) && /койн|joycoin|coin|коин/i.test(t)))
   ) {
     return isRu
-      ? `${question} 7 дней ваши выплаты профиль joycoins коины партнёры модерация уборка`
-      : `${question} 7 days your payouts profile joycoins partners moderation cleanup`;
+      ? `${question} joycoins партнёры спецмагазины обмен не донаты stripe отдельно joycoins_purpose`
+      : `${question} joycoins partner shops redemption not donations stripe separate joycoins_purpose`;
+  }
+
+  if (
+    /когда.{0,50}деньг|деньг.{0,40}убор|скоро.{0,30}получ|ваш[ии]\s+выплат|your\s+payouts|выплат.{0,15}профил/i.test(t)
+  ) {
+    return isRu
+      ? `${question} 7 дней ваши выплаты профиль модерация уборка коины отдельно партнёры`
+      : `${question} 7 days your payouts profile moderation cleanup coins separate partners`;
   }
 
   if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
@@ -529,7 +537,8 @@ const PINNED_TERMINOLOGY_CHUNK_ID = 'support_terminology_executor_participant_no
 const PINNED_LIST_SORT_CHUNK_ID = 'list_requests_filters_sorting_groups_refresh_button';
 const PINNED_COMPLETED_VISIBILITY_CHUNK_ID = 'map_list_completed_requests_7_days_profile_my_requests';
 const PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID = 'qa_when_money_cleaning_profile_your_payouts_joycoins';
-const MAX_PINNED_KNOWLEDGE_CHUNKS = 6;
+const PINNED_JOYCOINS_PURPOSE_CHUNK_ID = 'joycoins_purpose_partner_shops_only_not_donations';
+const MAX_PINNED_KNOWLEDGE_CHUNKS = 7;
 
 function buildUserContextLinesForPinning(conversationContext) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
@@ -639,7 +648,20 @@ function shouldPinCompletedVisibilityKnowledge(bundleLower) {
   );
 }
 
-/** «Когда деньги за уборку» / сроки выплат — 7 дней, блок «Ваши выплаты», JoyCoins (не подменять только Event-чанком). */
+/** Зачем коины / не путать с донатами — только партнёрские магазины. */
+function shouldPinJoyCoinsPurposeKnowledge(bundleLower) {
+  const hasCoin = /койн|joycoin|joy\s*coin|\bcoins?\b|монет|коинов/i.test(bundleLower);
+  if (!hasCoin) return false;
+  const asksPurpose =
+    /зачем|для чего|что такое|что значит|куда трат|обмен|спецмагаз|партн.{0,12}магаз|нужн.{0,15}коин|использов|тратить|why\s+.*coin|what\s+(are|do).{0,12}coins|purpose|spend|redeem|partner\s+shop/i.test(
+      bundleLower
+    );
+  const coinsVsDonations =
+    /донат|donation|привилег|privilege/i.test(bundleLower) && /койн|joycoin|coin|коин/i.test(bundleLower);
+  return asksPurpose || coinsVsDonations;
+}
+
+/** «Когда деньги за уборку» / сроки выплат — 7 дней, блок «Ваши выплаты» (не пинить только из‑за слова joycoins — см. отдельный чанк про назначение коинов). */
 function shouldPinMoneyCleaningPayoutKnowledge(bundleLower) {
   if (/субботник|subbotnik|\bevent\b|мероприят|ивент/i.test(bundleLower)) {
     return false;
@@ -650,13 +672,16 @@ function shouldPinMoneyCleaningPayoutKnowledge(bundleLower) {
     );
   const cleanupCtx =
     /уборк|clean|cleanup|убрал|выполнил.{0,15}работ|деньг\s+за\s+убор/i.test(bundleLower);
-  const payoutsHelp = /ваш[ии]\s+выплат|your\s+payouts|joycoins|джойкойн|койн.{0,12}магазин/i.test(bundleLower);
+  const payoutsHelp = /ваш[ии]\s+выплат|your\s+payouts/i.test(bundleLower);
   return (moneyTiming && cleanupCtx) || payoutsHelp;
 }
 
 function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const bundle = `${String(currentMessage || '')}\n${String(mergedRagText || '')}`.toLowerCase();
   const ids = [];
+  if (shouldPinJoyCoinsPurposeKnowledge(bundle)) {
+    ids.push(PINNED_JOYCOINS_PURPOSE_CHUNK_ID);
+  }
   if (shouldPinPhotosGalleryKnowledge(bundle)) {
     ids.push(PINNED_PHOTOS_GALLERY_CHUNK_ID);
   }
@@ -739,18 +764,23 @@ function buildSystemInstruction(answerLanguage) {
       : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
   const offTopicRule =
     answerLanguage === 'ru'
-      ? 'Фразу «вопрос не относится к приложению Joy Pick» используй только для явного оффтопа: погода, политика, кино, случайная болтовня без связи с уборками/экологией/приложением. Один только «привет» без вопроса по приложению можно ответить коротко дружелюбно и спросить, чем помочь по Joy Pick.'
-      : 'Say «not related to the Joy Pick app» only for clear off-topic: weather, politics, random chitchat unrelated to the app. A bare «hello» may get a short friendly reply and an offer to help with Joy Pick.';
+      ? 'Явный оффтоп (погода, политика, кино, случайная болтовня, бытовой small talk, одно только приветствие без вопроса по Joy Pick — всё, что не про приложение): не начинай с «Привет» и не отвечай как на дружескую болтовню. Кратко и по делу: сообщение не относится к приложению Joy Pick; ты отвечаешь только на вопросы по приложению; предложи задать вопрос по Joy Pick. Эту формулировку не используй для вопросов про само приложение (см. правило выше про «что это за приложение», функции, заявки).'
+      : 'Clear off-topic (weather, politics, movies, random chitchat, small talk, or a bare greeting with no Joy Pick question): do NOT open with «Hello» or chat casually. Briefly state the message is not about the Joy Pick app; you only answer questions about the app; invite an app-related question. Never use this wording for genuine in-app questions (see the rule above about what Joy Pick is, features, requests).';
   const inAppNoKnowledgeRule =
     answerLanguage === 'ru'
       ? 'Если вопрос про приложение, но в Knowledge нет деталей — ответь по общему назначению Joy Pick (эко-инициативы, карта, заявки, донаты, коины) в пределах известного, без выдуманных кнопок; при необходимости скажи, что точной инструкции в справочнике нет и можно написать в поддержку.'
       : 'If the question is in-scope but Knowledge lacks details, answer with high-level truthful info about Joy Pick (cleanups, map, requests, donations, coins) without inventing UI; say the help base may not cover specifics and support can help.';
+  const joyCoinsVsDonationsRule =
+    answerLanguage === 'ru'
+      ? 'JoyCoins (коины): только обмен у партнёров в специальных магазинах (блок монет в профиле, QR). Никогда не пиши, что коины нужны для получения донатов или «привилегий» в денежном смысле — донаты это Stripe и «Ваши выплаты», отдельно от коинов. Если пользователь уточняет формулировку про коины и донаты — ответь по сути новым текстом, не повторяй предыдущий ответ дословно.'
+      : 'JoyCoins are redeemed only at partner shops (Profile coins block / QR). Never claim coins are for receiving donations or cash-like «privileges»—donations use Stripe / Your payouts, separate from coins. If the user clarifies coins vs donations, answer directly with new wording—do not repeat the previous reply verbatim.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
     inAppScopeRule,
     offTopicRule,
     inAppNoKnowledgeRule,
+    joyCoinsVsDonationsRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
     'Do not use Markdown (no **bold**, no *italics*, no backticks). Plain text only so chat UI shows no asterisks.',
     'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',

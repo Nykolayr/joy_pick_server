@@ -1038,6 +1038,12 @@
     "tags": ["when money", "how soon", "payout", "cleanup", "get paid", "your payouts", "profile", "balance", "available", "when available", "joycoins", "coins", "partners", "shops", "7 days", "money for cleaning"]
   },
   {
+    "chunk_id": "joycoins_purpose_partner_shops_only_not_donations",
+    "title": "JoyCoins: partner shops only—not donations or cash «privileges»",
+    "text": "For **why coins**, **what are JoyCoins**, **where to spend coins**: JoyCoins are earned for verified activity and **can only be redeemed with Joy Pick partners in special partner shops** (discounts/purchases per partner rules; Profile has the coins card, history, and partner QR). **Do not** say coins are for «receiving donations» or vague in-app «privileges» meaning money from donors: **cash donations** are separate (balance and withdrawal via **Stripe**, **Your payouts**). JoyCoins **do not** replace donations and are **not** described as how you receive donor money. If the user asks **«what does using coins for donations mean»** or challenges that wording—explain they are different: **donations are money**, **coins are partner-shop redemption only**; answer the follow-up directly without repeating the prior paragraph verbatim.",
+    "tags": ["joycoins", "coins", "why coins", "partner shops", "special shops", "not donations", "not privileges", "redeem", "qr", "what donations mean"]
+  },
+  {
     "chunk_id": "app_flow_map_help_button_ui_guide",
     "title": "Map help: question-mark opens UI Guide",
     "text": "On the Map tab, the vertical control stack includes a help (question) button. It opens the UiGuide / interface guide: request types on the map, dollar icon meaning, gray circle, card border colors, donation chips, top buttons, and profile icons. Point users there for «what does this color mean» questions.",
