@@ -248,7 +248,7 @@
   {
     "chunk_id": "donation_how_to_donate",
     "title": "How to send a donation to an existing request",
-    "text": "To send money to support someone else's cleanup, you do not need to create your own request first. Pick any existing request on the map or list, open its details screen, and tap Donate. That starts the in-app Stripe payment flow and shows success feedback when it completes. Receiving donated funds on your balance is for people who perform the cleanup (joined Waste Location as a volunteer, finished, and passed review)—not for only having created the trash pin. Speed/Event flows differ; see the Waste vs Speed vs Event chunk. Then connect Stripe in your profile to withdraw when eligible.",
+    "text": "To send money to support someone else's cleanup, you do not need to create your own request first. Pick any existing request on the map or list, open its details screen, and tap Donate. That starts the in-app Stripe payment flow and shows success feedback when it completes. Receiving donated funds on your balance is for people who perform the cleanup (joined Waste Location as an **executor**, finished, and passed review)—not for only having created the trash pin. Speed/Event flows differ; see the Waste vs Speed vs Event chunk. Then connect Stripe in your profile to withdraw when eligible.",
     "tags": ["donate", "donation", "send donation", "stripe", "request details", "payment", "existing request", "support a request"]
   },
   {
@@ -794,19 +794,19 @@
   {
     "chunk_id": "product_onboarding_map_three_types",
     "title": "First launch: language, account, map, three eco request types",
-    "text": "After install, choose language and sign in with email, Google, or Apple. The main shell has four bottom tabs: (1) map + request list, (2) recycling stations and partners, (3) news, (4) profile. On the Map tab, the center FAB opens the create-request menu. The bottom-left floating button with the psychology icon opens Support AI (RAG)—not the same as human support in Profile. From the + menu pick Waste Location (pollution pin), Speed Cleanup (your quick cleanup with before/after photos), or Event (scheduled activity with time and participants).",
+    "text": "If you have no account yet, **register** first (email/Google/Apple) and **sign in**. Stripe for inbound donations is **not** required on day one—connect it in **Profile** when you need payouts. Then decide your goal: **create your own request** (center **+** on the Map tab) or **join/participate** in someone else's from the map/list. Choose language after install. Four bottom tabs: (1) map + request list, (2) recycling stations and partners, (3) **News** (its own tab), (4) profile. Bottom-left psychology FAB opens Support AI—not human support under Profile. From **+** choose Waste Location (pollution pin), Speed Cleanup (quick cleanup), or Event (scheduled activity). To have **someone else** pick up trash for you, create a **Waste Location** request.",
     "tags": ["onboarding", "first launch", "home", "map", "plus", "waste location", "speed cleanup", "event", "how app works", "eco initiative", "tabs", "support ai"]
   },
   {
     "chunk_id": "product_waste_location_mark_donation_haul_only",
     "title": "Waste Location: polluted spot, donation, optional haul-only",
-    "text": "Waste Location marks a polluted area. User adds a photo, description, and can attach a donation. Donations go to volunteers who respond, clean the area, and submit photo proof. Others can add donations to draw attention; paid requests are shown distinctly. There is also an option that only trash haul-away is needed.",
+    "text": "Waste Location marks a polluted area. User adds a photo, description, and can attach a donation. Donations go to **executors** who respond, clean the area, and submit photo proof. Others can add donations to draw attention; paid requests are shown distinctly. There is also an option that only trash haul-away is needed.",
     "tags": ["waste location", "polluted area", "donation", "photo", "trash haul", "garbage", "map pin", "report litter"]
   },
   {
     "chunk_id": "donations_who_receives_waste_vs_speed_event",
     "title": "Who receives donation money: Waste Location vs Speed vs Event creator",
-    "text": "Waste Location (mark trash / pollution on the map): the creator only reports the spot; they are not an executing volunteer on that request by default. Donations on that request are meant for volunteers who join, do the cleanup, pass verification, and get moderator approval—not for «only creating the pin». Speed Cleanup (quick cleanup for yourself): creator and performer are the same person, so after you finish and approval flows complete, donations can go to you per app rules. Event / subbotnik: the organizer participates in the event; donations are shared among participants who are eligible to receive them (see split/hold chunks). Never tell a Waste Location-only creator they automatically receive donation payouts as if they personally completed the cleanup when they did not join and perform as a volunteer.",
+    "text": "Waste Location (mark trash / pollution on the map): the creator only reports the spot; they are not an **executor** on that request by default. Donations are for **executors** who join, do the cleanup, pass verification, and get moderator approval—not for «only creating the pin». Speed Cleanup: creator and performer are the same person; donations can go to you per app rules after approvals. Event / subbotnik: the organizer participates; donations are shared among **participants** who are eligible (see split/hold chunks). Never tell a Waste Location-only creator they automatically get payouts as if they personally cleaned when they did not execute the work. **Do not use the word «volunteer» as a role**—use **executor** and **participant**.",
     "tags": ["waste location creator", "who gets donations", "volunteer money", "not creator", "speed cleanup yourself", "event organizer", "subbotnik", "created request money", "only created request", "уборка мусора создатель"]
   },
   {
@@ -830,19 +830,19 @@
   {
     "chunk_id": "qa_event_nobody_joined_creator_can_still_finish",
     "title": "Event: nobody else showed up—the creator can still finish the cleanup",
-    "text": "For an Event-type request (including a «subbotnik»), **having no extra volunteers does not automatically mean the request is «unfulfilled»**, and it is not a reason by itself to tell donors their money is refunded. The event creator is also a participant in the app: they can **complete the same in-app flow** (Perform task / submit work with required photos/geo, Close request, moderation) even if nobody else joined or showed up. Donor hold release applies when the request is **actually not completed under app rules**, not when attendance is low. Do not conflate these scenarios.",
+    "text": "For an Event-type request (including a «subbotnik»), **having no other participants show up does not automatically mean the request is «unfulfilled»**, and it is not a reason by itself to tell donors their money is refunded. The event creator is also a participant in the app: they can **complete the same in-app flow** (Perform task / submit work with required photos/geo, Close request, moderation) even if nobody else joined or showed up. Donor hold release applies when the request is **actually not completed under app rules**, not when attendance is low. Do not conflate these scenarios.",
     "tags": ["nobody came", "no one came", "no volunteers", "alone", "creator", "organizer", "event", "subbotnik", "donations", "hold", "refund donor", "finish alone", "no attendance"]
   },
   {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
-    "title": "Stripe in profile, routes to requests, notifications within ~10 miles",
-    "text": "During registration you can connect Stripe to receive donations; the setup link appears in your profile. You can build a route to points that have requests. Users within about a 10-mile radius can receive notifications about relevant requests (wording may vary by build/region).",
+    "title": "Stripe in profile and routing (do not conflate with push for every new request)",
+    "text": "Connect Stripe in **Profile** when you need to receive donation payouts—it is **not** a mandatory first step after sign-up. You can build a route to request locations. **There is no dedicated push feed that announces every brand-new request**—users discover requests on the **map and list** and use **refresh**. Do **not** confuse that with the **News** tab (editorial/news content).",
     "tags": ["stripe", "profile", "connect account", "route", "navigation", "notifications", "10 miles", "radius", "nearby"]
   },
   {
     "chunk_id": "features_geo_photos_required_completion",
-    "title": "Physical presence, geolocation, in-app photos to finish work",
-    "text": "Work for verification and completion is tied to being physically present and using geolocation. You cannot complete the work without live photos taken through the app as required by the flow. This supports fair verification of cleanups.",
+    "title": "Photos: gallery vs in-app capture depends on the screen (create vs submit)",
+    "text": "Do **not** give one absolute rule like «always gallery» vs «never gallery». Some steps (e.g. parts of **creating** a request) may allow picking from the **gallery**; **submitting / closing** work often requires capture **inside the app flow** for verification. Separate **request creation** screens from **work completion** screens. Avoid contradicting yourself across messages.",
     "tags": ["geolocation", "gps", "photos", "complete", "verification", "physical presence", "cannot complete", "camera"]
   },
   {
@@ -866,7 +866,7 @@
   {
     "chunk_id": "faq_cleanup_verification_geo_photos_moderator",
     "title": "How cleanup verification works: distance check, photos, moderator",
-    "text": "Volunteer arrives at the marked location and starts through the app. Geolocation is checked—if they are too far from the designated point (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, required photos are taken in the app and the user completes the task; finishing without being there and without those photos is not possible. A moderator then reviews the submission; after approval, held donations are distributed to recipients via Stripe (Joy Pick does not accumulate that float on its own balance—hold then direct distribution).",
+    "text": "The **executor** arrives at the marked location and starts through the app. Geolocation is checked—if they are too far (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, proof follows the **photo/geo rules for that request type** (see the gallery vs in-app capture chunk). A moderator reviews the submission; after approval, held donations are distributed via Stripe (hold then direct distribution—not a Joy Pick cash pile).",
     "tags": ["verification", "moderator", "50 meters", "50m", "geolocation", "photos", "complete", "donation hold", "approve"]
   },
   {
@@ -883,8 +883,8 @@
   },
   {
     "chunk_id": "rewards_volunteer_earn_donations_payouts",
-    "title": "How volunteers can receive money: donations and payouts",
-    "text": "Start with request type: donation payouts differ for Waste Location, Speed Cleanup, and Event (subbotnik)—see the Waste vs Speed vs Event chunk. For Waste Location: volunteers who joined someone else’s request, actually cleaned, and passed moderation can receive donation money on that request; if you only created the pin but did not execute the cleanup as a volunteer, you are not the payout recipient for that performed work. For Event participants: after creator approval of your submission, moderation, existing donations, and Stripe Connect (splits—see the Event split chunk). After verification and moderator approval, held donations can credit your balance. Set up Stripe in your profile to withdraw. These are voluntary peer-to-peer transfers for real cleanups—not a salary from Joy Pick. You can also earn JoyCoins and volunteer hours in your profile.",
+    "title": "Donations and payouts: executor / participant—do not say «volunteer» as a role",
+    "text": "Lead with **request type**—see Waste vs Speed vs Event. Use **executor** and **participant**; **do not** call users «volunteers» as a role. If the user already says **they finished someone else’s request**, do **not** interrogate whether they were «really a volunteer»—explain **moderation + ~7-day window + Stripe** and **profile payouts**. Waste: payouts go to the **executor** who cleaned and passed moderation, not the pin-only creator. Event: chain is submission → creator Review when applicable → **Joy Pick moderation** → donations → Stripe splits. Withdraw via **Profile / payouts**. JoyCoins and printed hours letters are separate from cash.",
     "tags": ["earn", "earn money", "earning", "income", "get paid", "make money", "money", "donations", "payout", "stripe", "volunteer", "salary", "wages", "payment", "how to earn", "paid"]
   },
   {
@@ -902,7 +902,7 @@
   {
     "chunk_id": "payments_donation_hold_release_to_donor",
     "title": "Donation holds: if the request is not completed, donor funds",
-    "text": "Donation payments are placed on hold when paid. If the request with those donations is not completed under the app rules, the hold is released: funds return to the payer (the donor). Do not claim money «stays on the Joy Pick platform» or «is not returned automatically» instead of this flow, and do not hand-wave with «platform policy» for this case. Joy Pick does not accumulate users’ money as a platform cash pile: funds sit in hold within the payment stack (Stripe), and after the approved flow donors’ held amounts are distributed straight to recipients via Stripe—not parked on a Joy Pick balance in between. For Events, «no volunteers showed up» is not automatically «unfulfilled»: the creator can still complete the work in-app—see the dedicated chunk «nobody joined—creator can still finish».",
+    "text": "Donation payments are placed on hold when paid. If the request with those donations is not completed under the app rules, the hold is released: funds return to the payer (the donor). Do not claim money «stays on the Joy Pick platform» or «is not returned automatically» instead of this flow, and do not hand-wave with «platform policy» for this case. Joy Pick does not accumulate users’ money as a platform cash pile: funds sit in hold within the payment stack (Stripe), and after the approved flow donors’ held amounts are distributed straight to recipients via Stripe—not parked on a Joy Pick balance in between. For Events, low attendance alone is not automatically «unfulfilled»: the creator can still complete the work in-app—see the dedicated chunk «nobody joined—creator can still finish».",
     "tags": ["hold", "release hold", "refund donor", "unfulfilled", "nobody completed", "paid request", "donation request", "where money goes", "money back"]
   },
   {
@@ -998,8 +998,38 @@
   {
     "chunk_id": "qa_moderation_7day_stripe_all_requests",
     "title": "Admin moderation for requests and the ~7-day donation window (Stripe)",
-    "text": "In Joy Pick, **doing the cleanup and submitting photos is not the end of the cycle**: the request goes to **admin moderation** (pending review). Treat it as **meaningfully finished** only after **moderator approval**. **Donations** (including Speed Cleanup and Event): after **approval**, the platform typically waits **about 7 calendar days** before scheduled server payouts; **the backend timer** is based on the **request creation time in the app**, not on «the calendar day physical work began»—if the request was created earlier, the payout window may not line up with the day you tapped Start. **Donation payouts to participants with Stripe Connect** happen **after** that window and only when the request is **approved**. Do not say the request «auto-closes immediately after photos» with no moderation step.",
-    "tags": ["moderation", "admin", "pending", "approved", "close request", "how long to wait", "speed cleanup", "quick cleanup", "donation", "7 days", "seven days", "stripe", "payout", "participants", "waiting", "creation date", "request created"]
+    "text": "Submitting work **is not the end**: the request enters **Joy Pick admin moderation**. Treat it as truly closed only after **moderator approval**. **Money from donations**: after work on the request is done and **moderators approve**, there is typically **about a 7-calendar-day** stage before funds move to **Stripe-connected participants**; **withdraw** through **Profile / payouts**. Backend dates may use DB fields such as **creation time**—give users the **concept** (moderation + ~one week + profile), not an argument about timestamps. Never imply cash arrives instantly right after photos with **no** moderation. **Do not introduce the role «volunteer»**—use **executor** / **participant**.",
+    "tags": ["moderation", "admin", "pending", "approved", "close request", "how long to wait", "speed cleanup", "quick cleanup", "donation", "7 days", "seven days", "stripe", "payout", "participants", "waiting", "profile payouts", "executor"]
+  },
+  {
+    "chunk_id": "support_terminology_executor_participant_not_volunteer",
+    "title": "Terminology: executor and participant—not «volunteer» as a role",
+    "text": "In user-facing answers **do not call people «volunteers» as a job title**. Joy Pick uses **executor** (e.g. joined Waste Location and cleaned) and **participant** (Event). Printed «volunteer hours» letters are a **document name**, not an excuse to invent a «volunteer» gate for payouts. If someone says **I completed a request**, answer with **type-specific rules, moderation timing, Stripe**—do not ask «were you really a volunteer».",
+    "tags": ["volunteer", "executor", "participant", "terminology", "role", "completed request", "do not ask"]
+  },
+  {
+    "chunk_id": "product_photos_gallery_vs_in_app_depends_on_screen",
+    "title": "Photos: gallery vs camera depends on step (create vs complete)",
+    "text": "Never claim both «always gallery» and «never gallery». Rules differ by screen: **creating** a request vs **submitting / closing** work may allow gallery pick in one place and require in-flow capture in another. Mention both possibilities briefly instead of contradicting yourself.",
+    "tags": ["gallery", "camera", "photos", "create request", "submit work", "completion", "before after", "live photo"]
+  },
+  {
+    "chunk_id": "product_news_tab_and_requests_are_different",
+    "title": "News tab ≠ request list and ≠ push for every new request",
+    "text": "Joy Pick has a dedicated bottom-tab **News** section—**do not** tell users «there is no news feed». That tab is **not** the same as the **map/list of requests**, and it is **not** a push stream of every new cleanup request. **There is no notification that fires for every brand-new request**—people refresh the **list** and new items surface **at the top** through sorting. Keep News (articles) and Requests (cleanup pins/events) mentally separate.",
+    "tags": ["news", "news tab", "news feed", "notifications", "new requests", "refresh list", "volunteers discover"]
+  },
+  {
+    "chunk_id": "list_requests_filters_sorting_groups_refresh_button",
+    "title": "Request list: filters, five-group sorting, refresh",
+    "text": "Drop **archived** and **rejected**. Hide **completed** when **≥ 24 hours** passed since **updated_at** (recently completed may still appear). If **currentUserId** is empty, sort everything with `_sortByDateWithOverdueLast`. If logged in, split into five priority buckets (each request once): (1) **My created** `createdBy == currentUserId`; (2) **Where I participate**—joined waste/speed or Event participant (`isJoinedBy` / `isParticipant`); (3) **Where I donated** (`isDonor` / `isContributor`); (4) **Nearby** `distance` between 0 and **10 000 m**; (5) **Everything else**. Inside a bucket, push `isOverdue == true` to the **bottom** of that bucket; otherwise sort by **`created_at` descending** (newer first). Use the list **refresh** action so newly loaded requests appear toward the **top**.",
+    "tags": ["sorting", "request list", "refresh", "new requests on top", "filter", "archived", "rejected", "completed", "nearby", "my requests", "donated", "joined"]
+  },
+  {
+    "chunk_id": "map_list_completed_requests_7_days_profile_my_requests",
+    "title": "Completed requests on map/list, archive, and Profile › My requests",
+    "text": "Do **not** say the map/list shows **only active** requests: **`completed`** items can remain visible for a **limited time** so people can still **donate** (current client filtering often uses **~24 hours after `updated_at`** for showing completed in the main browse experience—do not promise an arbitrary «seven days» here unless product copy explicitly requires it). Later the card ages into **archive-style** visibility rules. Users can **always** open **Profile › My requests** (wording may vary) to see **their own** created requests/history.",
+    "tags": ["completed requests", "archive", "only active", "where to see", "profile", "my requests", "donate after completion"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",

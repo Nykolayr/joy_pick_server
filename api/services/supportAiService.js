@@ -462,8 +462,26 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       /money|donat|payout|waste|garbage|cleanup|who gets/i.test(t))
   ) {
     return isRu
-      ? `${question} waste location уборка мусора создатель не исполнитель донаты волонтёр speed event субботник donations_who_receives`
-      : `${question} waste location creator not performer volunteer donations speed cleanup event subbotnik donations_who_receives`;
+      ? `${question} waste location уборка мусора создатель не исполнитель донаты исполнитель участник speed event субботник donations_who_receives`
+      : `${question} waste location creator not performer executor participant donations speed cleanup event subbotnik donations_who_receives`;
+  }
+
+  if (/галере|gallery|из\s+галере|from\s+gallery|стандартн.{0,12}фото/i.test(t)) {
+    return isRu
+      ? `${question} создание заявки сдача работы фото галерея камера разные экраны product_photos`
+      : `${question} create request vs submit work gallery camera different screens product_photos`;
+  }
+
+  if (/новостн|новостная\s+лента|\bnews\s+feed\b|news\s+tab|есть\s+ли\s+лента/i.test(t)) {
+    return isRu
+      ? `${question} вкладка News новости карта список заявок отдельно обновить список`
+      : `${question} News tab map list requests separate refresh list`;
+  }
+
+  if (/сортиров|обнов.{0,8}список|refresh.{0,12}list|новые\s+заявк.{0,20}верх/i.test(t)) {
+    return isRu
+      ? `${question} refresh список группы сортировка archived rejected completed 24 часа`
+      : `${question} refresh list sort groups archived rejected completed 24h`;
   }
 
   if (/донат|donat|донейш|пожертв|donation|donate/i.test(t)) {
@@ -495,6 +513,12 @@ const PINNED_EVENT_PARTICIPANT_CHUNK_ID = 'product_event_group_chat_share';
 const PINNED_EVENT_MONEY_QA_CHUNK_ID = 'qa_event_money_after_approval_donations_stripe';
 const PINNED_EVENT_NOBODY_JOINED_CHUNK_ID = 'qa_event_nobody_joined_creator_can_still_finish';
 const PINNED_MODERATION_7DAY_CHUNK_ID = 'qa_moderation_7day_stripe_all_requests';
+const PINNED_PHOTOS_GALLERY_CHUNK_ID = 'product_photos_gallery_vs_in_app_depends_on_screen';
+const PINNED_NEWS_TAB_CHUNK_ID = 'product_news_tab_and_requests_are_different';
+const PINNED_TERMINOLOGY_CHUNK_ID = 'support_terminology_executor_participant_not_volunteer';
+const PINNED_LIST_SORT_CHUNK_ID = 'list_requests_filters_sorting_groups_refresh_button';
+const PINNED_COMPLETED_VISIBILITY_CHUNK_ID = 'map_list_completed_requests_7_days_profile_my_requests';
+const MAX_PINNED_KNOWLEDGE_CHUNKS = 6;
 
 function buildUserContextLinesForPinning(conversationContext) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
@@ -569,8 +593,59 @@ function shouldPinEventParticipantKnowledge(mergedText, currentMessage) {
   );
 }
 
+function shouldPinPhotosGalleryKnowledge(bundleLower) {
+  return /галере|gallery|из\s+галере|from\s+gallery|стандартн.{0,16}фото|iphone\s+photos|native\s+camera/i.test(
+    bundleLower
+  );
+}
+
+function shouldPinNewsTabKnowledge(bundleLower) {
+  return (
+    /новостн|новостная\s+лента|лента\s+новост|таб\s+новост|\bnews\s+tab\b|news\s+feed|no\s+separate\s+news|нет\s+отдельн.{0,20}новост/i.test(
+      bundleLower
+    ) ||
+    (/узнают.{0,40}нов|новые\s+заявк.{0,40}уведом|volunteers.{0,40}find.{0,30}new\s+requests/i.test(bundleLower) &&
+      !/deeplink|диплин|\/news\//i.test(bundleLower))
+  );
+}
+
+function shouldPinTerminologyVolunteerKnowledge(bundleLower) {
+  const moneyish = /деньг|money|stripe|paid|payout|donat|donation|получу|заработ/i.test(bundleLower);
+  const volunteerLex = /волонт|volunteer/i.test(bundleLower);
+  const completedClaim = /выполнил|completed|finished|сделал\s+работ/i.test(bundleLower);
+  return volunteerLex || (moneyish && completedClaim);
+}
+
+function shouldPinListSortingKnowledge(bundleLower) {
+  return /сортиров|обнов|refresh|список.{0,20}заяв|новые\s+заявк.{0,30}верх|появляются\s+сверху|как\s+(найти|увидеть).{0,25}нов/i.test(
+    bundleLower
+  );
+}
+
+function shouldPinCompletedVisibilityKnowledge(bundleLower) {
+  return /выполнен|completed\s+requests|только\s+активн|only\s+active|где\s+.{0,20}выполнен|архив.{0,12}заяв/i.test(
+    bundleLower
+  );
+}
+
 function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
+  const bundle = `${String(currentMessage || '')}\n${String(mergedRagText || '')}`.toLowerCase();
   const ids = [];
+  if (shouldPinPhotosGalleryKnowledge(bundle)) {
+    ids.push(PINNED_PHOTOS_GALLERY_CHUNK_ID);
+  }
+  if (shouldPinNewsTabKnowledge(bundle)) {
+    ids.push(PINNED_NEWS_TAB_CHUNK_ID);
+  }
+  if (shouldPinTerminologyVolunteerKnowledge(bundle)) {
+    ids.push(PINNED_TERMINOLOGY_CHUNK_ID);
+  }
+  if (shouldPinListSortingKnowledge(bundle)) {
+    ids.push(PINNED_LIST_SORT_CHUNK_ID);
+  }
+  if (shouldPinCompletedVisibilityKnowledge(bundle)) {
+    ids.push(PINNED_COMPLETED_VISIBILITY_CHUNK_ID);
+  }
   if (shouldPinModeration7DayKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_MODERATION_7DAY_CHUNK_ID);
   }
@@ -583,7 +658,7 @@ function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   if (shouldPinEventParticipantKnowledge(mergedRagText, currentMessage)) {
     ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
   }
-  return ids;
+  return ids.slice(0, MAX_PINNED_KNOWLEDGE_CHUNKS);
 }
 
 /** У денежного фоллоуапа убираем из RAG «длинный флоу» и «никто не пришёл» — иначе модель снова их пересказывает. */
@@ -655,8 +730,8 @@ function buildSystemInstruction(answerLanguage) {
     'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
     'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval (and equal split among Stripe-connected Event participants per Knowledge).',
     answerLanguage === 'ru'
-      ? 'Критично: для заявки «Уборка мусора» (Waste Location) автор только отмечает точку — он не получает донаты «за одно создание», если сам не был волонтёром-исполнителем. Донаты идут тем, кто пришёл и убрал. Быстрая уборка (Speed) — создатель = исполнитель своей уборки. Субботник/Event — организатор участвует; доли по Knowledge.'
-      : 'Critical: for Waste Location (trash pin on map), the creator only reports the spot—they do not automatically receive donation payouts for «just creating» the request if they did not join and perform the cleanup. Donations go to executing volunteers. Speed Cleanup: creator is the performer of their own cleanup. Event/subbotnik: organizer participates; splits per Knowledge.',
+      ? 'Критично: для Waste Location автор точки не получает донаты «за одно создание», если сам не был исполнителем уборки. Донаты идут исполнителю, который убрал и прошёл проверку. Не называйте роль «волонтёр» — в продукте «исполнитель» и «участник». Speed: создатель = исполнитель своей уборки. Event: организатор участвует; доли по Knowledge.'
+      : 'Critical: for Waste Location the pin creator does not get donation payouts for creating the pin alone if they did not execute the cleanup. Donations go to the executor who cleaned and passed review. Do not call users «volunteers» as a role—use executor and participant. Speed Cleanup: creator is the performer. Event: organizer participates; splits per Knowledge.',
     answerLanguage === 'ru'
       ? 'Если спрашивают «присоединился к уборке мусора и забыл / не пришёл»: по Knowledge — автоматическое снятие исполнителя после дедлайна с join (на сервере 24 часа), заявка снова new и снова в выдаче; создатель может снять исполнителя вручную; отдельно есть долгий сценарий 7+1 суток от created_at для зависшего inProgress. Не утверждайте, что «участие ни на что не влияет». Не предлагайте донат как замену физической уборки.'
       : 'If the user joined a Waste Location then forgot or did not show: per Knowledge/backend automation the executor slot is released after the join-based deadline (24 hours from join_date), request returns to new and becomes available again; creator may clear the executor manually; a separate long-stall path warns around 7 days from created_at. Do not claim joining «does not affect» the request. Never suggest donating instead of physically doing the cleanup.',
@@ -673,6 +748,12 @@ function buildSystemInstruction(answerLanguage) {
       ? 'Для Event вопрос «никто не пришёл / не придут участники» не равен «заявка не выполнена — донаты всем вернутся»: создатель может выполнить работу в приложении сам; возврат с холда — про реально невыполненную заявку по правилам, не про низкую явку.'
       : 'For Event questions, «nobody came / no volunteers» is not the same as «unfulfilled—donors get refunded»: the creator can still complete the in-app work alone; donor hold release applies to truly unfulfilled requests per rules, not low attendance.',
     'Do not invent screens, buttons, or app behavior.',
+    answerLanguage === 'ru'
+      ? 'В приложении есть нижняя вкладка News / «Новости» — не утверждайте, что «новостной ленты нет». Лента новостей — это не список заявок на уборку и не push о каждой новой заявке.'
+      : 'Joy Pick has a bottom News tab—do not claim there is «no news feed». News content is not the same as the cleanup request list or a push for every new request.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь уже написал, что выполнил заявку, не выясняйте «вы были волонтёром?» — такой роли нет; отвечайте по модерации, срокам и Stripe.'
+      : 'If the user already said they completed a request, do not grill them about being a «volunteer»—answer moderation timing and Stripe.',
     'Keep responses concise and practical.'
   ].join('\n');
 }
