@@ -495,6 +495,21 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    /вкладк|tab|главн|main\s+screen|unified|партн|станц|support\s+ai|психолог|news|новост/i.test(t) &&
+    /как(ая|ой|ие|ое)\s+(вкладк|таб)|нумер|порядок|where\s+(is|are)|which\s+tab|four\s+tabs|сколько\s+вклад/i.test(t)
+  ) {
+    return isRu
+      ? `${question} atlas четыре таба карта партнёры новости профиль support ai плюс создание`
+      : `${question} atlas four tabs map partners news profile support ai plus create`;
+  }
+
+  if (/выплат|payout|кошел|wallet/i.test(t) && /карт|map|список|list|шапк|header|где\s+найти|where/i.test(t)) {
+    return isRu
+      ? `${question} выплаты шапка карты списка профиль payouts`
+      : `${question} payouts map tab header profile atlas`;
+  }
+
+  if (
     /койн|joycoin|joy\s*coin|\bcoins?\b|монет/i.test(t) &&
     (/зачем|для чего|что такое|что значит|куда трат|обмен|спецмагаз|партн|нужн|использов|трат|why|what\s+(are|do)|purpose|spend|redeem/i.test(t) ||
       (/донат|donat|privilege|привилег/i.test(t) && /койн|joycoin|coin|коин/i.test(t)))

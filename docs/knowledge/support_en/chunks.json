@@ -854,7 +854,7 @@
   {
     "chunk_id": "features_profile_stats_hours_qr_coins_partners",
     "title": "Profile: requests, donations total, hours, print letter, QR for coins",
-    "text": "Profile shows your requests and completed work, total donations received, volunteer hours, a button to print a volunteer-hours letter, and a QR flow for spending JoyCoins. JoyCoins can be exchanged for discounts at partner businesses.",
+    "text": "Profile tab: Payouts card, JoyCoins card, Volunteer hours card (tracked minutes). On the hours card, the printer icon generates a PDF/certificate of cleanup participation for third parties; the list icon opens hour entries. On the coins card, completed-request history and partner QR redemption when coins are available. Do not mix JoyCoins with cash donations.",
     "tags": ["profile", "volunteer hours", "print letter", "qr code", "joycoins", "partners", "discount", "donations total"]
   },
   {
@@ -950,7 +950,7 @@
   {
     "chunk_id": "help_home_top_bar_wallet_profile_icons",
     "title": "Help: Map tab actions, News tab, and Profile payouts/coins",
-    "text": "On the Map tab (first bottom tab), top-right has Chat (request-related chats + unread badge) and Refresh for map/list data. News is its own fourth-tab entry; the pulsing dot on the icon means there are news items you have not opened on that tab yet. Balance and withdrawals live under the Profile tab: the payouts card opens the payouts screen; switching to Profile refreshes user and payout data. On the Coins card in Profile, list/history and partner QR for spending JoyCoins follow the icons on that card. Do not confuse the bottom-left Support AI FAB (blue) with Profile → Support, which opens a human-operator chat thread.",
+    "text": "On the first tab (map + request list), top-right: Chats list (unread badge) and Refresh; payout/wallet icons in that header also open the payouts flow. News is the third bottom tab (not fourth); the dot on the icon means unseen articles until you open that tab. Payouts are also available from the Profile tab (fourth): payouts card and full payouts screen. Coins card: history and partner QR. Do not confuse the bottom-left Support AI FAB with Profile → Support (human operator via the regular chat stack).",
     "tags": ["chat", "refresh", "news", "wallet", "balance", "payouts", "profile", "joycoins", "qr", "help", "home screen", "top bar", "map tab", "tabs", "support ai"]
   },
   {
@@ -1046,8 +1046,38 @@
   {
     "chunk_id": "qa_volunteer_hours_self_tracking_pdf_printer",
     "title": "Why volunteer hours: personal tally; printer icon PDF—not donations",
-    "text": "For **why track volunteer hours** / **what hours are for**: verified cleanup time is recorded as **your personal tally**. It is **not** how you receive **donations** and **not** an in-app money «privilege»—donations and Stripe payouts are separate. In **Profile**, the **printer icon** yields a **PDF certificate** that you participated in **trash cleanup**, to show schools, employers, or others. **Do not** say hours exist «to get donations».",
+    "text": "For **why track volunteer hours** / **what hours are for**: verified cleanup time is **your personal tally**—not donations or payouts (Stripe is separate). On the **Volunteer hours card in Profile**, tap the **printer icon** for a **PDF certificate** of **trash-cleanup participation** for schools, employers, etc. **Do not** say hours exist «to get donations».",
     "tags": ["volunteer hours", "why hours", "track hours", "printer icon", "pdf", "certificate", "documentation", "trash cleanup", "not donations", "school", "employer"]
+  },
+  {
+    "chunk_id": "atlas_unified_home_four_tabs_and_fabs",
+    "title": "Main shell: four tabs, request map vs partners, Support AI FAB and +",
+    "text": "After sign-in, one shell (`UnifiedHome` / `MainPageWidget`). **Four bottom tabs (left to right):** (0) **map + request list** with an internal Map/List switch; (1) **recycle stations and partners**—separate data, not the same as request pins on tab 0; (2) **News**; (3) **Profile**. **Bottom-left FAB** (psychology icon) opens **Support AI** at `/support-chat`. **Center-bottom “+”** / create-type menu appears **only on tab 0** and routes to `/speed-cleanup-creation`, `/waste-location-creation`, `/event-creation`. **UiGuide** opens from the help control on tab 0. If location services are off, a warning may appear after a short delay.",
+    "tags": ["main screen", "tabs", "map", "list", "news", "profile", "partners", "stations", "support ai", "plus", "create request", "unified home", "fab", "ui guide"]
+  },
+  {
+    "chunk_id": "atlas_payouts_chats_map_header_and_profile",
+    "title": "Payouts and chats: map/list header and Profile",
+    "text": "The **payouts** screen is reachable from the **Profile payouts card** and from the **first tab header** (map/list) via wallet/payout actions. **Chats list** `/chats` opens **top-right** on tab 0—request-related threads, **not** Support AI. **Profile → Support** provisions/opens a **human support** `ChatPage`. **Support AI** is only the psychology FAB and `/support-chat`.",
+    "tags": ["payouts", "wallet", "chats", "chat list", "header", "map", "profile", "support", "support ai", "operator"]
+  },
+  {
+    "chunk_id": "atlas_request_details_route_and_flow_screens",
+    "title": "Request details: URL pattern, three detail UIs, timer/completion screens",
+    "text": "GoRouter path **`/request/:category/:requestId`**, but the actual page is chosen from **API `request.category`**: waste → `WasteLocationDetailsPage`, speed → `SpeedCleanupDetailsPage`, event → `EventDetailsPage`. Follow-up screens (speed **timer**, **cleanup result**, event/**participant completion**) are often opened via **Navigator.push** (e.g. `/speed-cleanup-timer`, `/cleanup-result`, `/event-completion`, `/participant-completion`) and may not be top-level GoRoutes. **Public user profile:** `/user/:userId`.",
+    "tags": ["request details", "waste", "speed", "event", "route", "timer", "completion", "deeplink", "user profile"]
+  },
+  {
+    "chunk_id": "atlas_auth_splash_login_registration",
+    "title": "Splash, login, registration, first-time profile",
+    "text": "**Splash** `/`: no JWT → **`/login`**; JWT → **`/unifiedHome`**; **deeplink** may override. Other routes include **`/registration`**, **`/email-verification`** (code from email, `email` query), **`/resetPassword`**, first-time **`/userInfo`**, **`/enterPage`**, **`/successReg`**, and **`/editProfile`** for editing.",
+    "tags": ["login", "registration", "splash", "jwt", "email", "password reset", "verification", "profile", "sign in"]
+  },
+  {
+    "chunk_id": "atlas_partners_tab_stations_map_independent",
+    "title": "Partners & stations tab (second tab)",
+    "text": "The **second** bottom tab is **stations & partners** (`StationPartnersPage`). Detail routes **`/partner-details/:id`** and **`/station-details/:id`**. This layer is **independent** from the **request map** on tab 0—do not conflate partner/station pins with cleanup request pins unless the user clearly navigated there.",
+    "tags": ["partners", "stations", "recycling", "second tab", "partner", "station", "request map", "difference"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",
