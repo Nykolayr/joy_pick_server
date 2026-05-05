@@ -890,13 +890,13 @@
   {
     "chunk_id": "rewards_what_you_get_for_cleanups",
     "title": "What you can get for cleanups",
-    "text": "For verified cleanups you can receive: donation money from other users (after moderation approval, funds go to your balance; withdraw via Stripe once connected), JoyCoins for verified work, and volunteer hours with an option to print an official-style hours letter from your profile. For Event-type requests, participants may receive donations according to that request’s rules.",
+    "text": "Verified cleanups may bring separate things: **donation money** from users (after moderation—balance and Stripe withdrawal), **JoyCoins** (partner redemption—see dedicated chunk), **volunteer hours** as your **personal tally** plus an optional **PDF certificate via the printer icon** in Profile for third parties—**not** donations or payouts. For Event-type requests, participants may receive donation shares per that request’s rules.",
     "tags": ["what do i get", "what can i get", "rewards", "cleanups", "benefits", "joycoins", "volunteer hours", "donations", "compensation", "for cleanups"]
   },
   {
     "chunk_id": "rewards_volunteer_hours_official_letter",
     "title": "Volunteer hours tracking and official letter",
-    "text": "The app tracks time spent on verified cleanups as volunteer hours. In your profile you can print a letter documenting your hours on an official-style form. This supports school, work, or other programs that require documented volunteer time.",
+    "text": "The app tracks verified cleanup time as volunteer hours for **your own record**. In Profile, use the **printer icon** to get a **PDF certificate** showing you participated in **trash cleanup**—for schools, employers, or others. This is **documentation**, not donations or in-app payout perks.",
     "tags": ["volunteer hours", "hours letter", "print letter", "official", "school", "tracking", "documentation"]
   },
   {
@@ -1042,6 +1042,12 @@
     "title": "JoyCoins: partner shops only—not donations or cash «privileges»",
     "text": "For **why coins**, **what are JoyCoins**, **where to spend coins**: JoyCoins are earned for verified activity and **can only be redeemed with Joy Pick partners in special partner shops** (discounts/purchases per partner rules; Profile has the coins card, history, and partner QR). **Do not** say coins are for «receiving donations» or vague in-app «privileges» meaning money from donors: **cash donations** are separate (balance and withdrawal via **Stripe**, **Your payouts**). JoyCoins **do not** replace donations and are **not** described as how you receive donor money. If the user asks **«what does using coins for donations mean»** or challenges that wording—explain they are different: **donations are money**, **coins are partner-shop redemption only**; answer the follow-up directly without repeating the prior paragraph verbatim.",
     "tags": ["joycoins", "coins", "why coins", "partner shops", "special shops", "not donations", "not privileges", "redeem", "qr", "what donations mean"]
+  },
+  {
+    "chunk_id": "qa_volunteer_hours_self_tracking_pdf_printer",
+    "title": "Why volunteer hours: personal tally; printer icon PDF—not donations",
+    "text": "For **why track volunteer hours** / **what hours are for**: verified cleanup time is recorded as **your personal tally**. It is **not** how you receive **donations** and **not** an in-app money «privilege»—donations and Stripe payouts are separate. In **Profile**, the **printer icon** yields a **PDF certificate** that you participated in **trash cleanup**, to show schools, employers, or others. **Do not** say hours exist «to get donations».",
+    "tags": ["volunteer hours", "why hours", "track hours", "printer icon", "pdf", "certificate", "documentation", "trash cleanup", "not donations", "school", "employer"]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",

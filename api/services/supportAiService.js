@@ -485,6 +485,16 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    (/волонт|volunteer/i.test(t) && /час|hours/i.test(t)) &&
+    (/зачем|для чего|отслежив|учёт|учет|справк|принтер|pdf|why\s+track|what.{0,25}for|printer|certificat/i.test(t) ||
+      /track(ing)?\s+volunteer|volunteer\s+hours.{0,30}(why|what|for)/i.test(t))
+  ) {
+    return isRu
+      ? `${question} волонтёрские часы собственный учёт принтер pdf справка уборка мусора не донаты`
+      : `${question} volunteer hours personal tally printer pdf certificate trash cleanup not donations`;
+  }
+
+  if (
     /койн|joycoin|joy\s*coin|\bcoins?\b|монет/i.test(t) &&
     (/зачем|для чего|что такое|что значит|куда трат|обмен|спецмагаз|партн|нужн|использов|трат|why|what\s+(are|do)|purpose|spend|redeem/i.test(t) ||
       (/донат|donat|privilege|привилег/i.test(t) && /койн|joycoin|coin|коин/i.test(t)))
@@ -538,7 +548,8 @@ const PINNED_LIST_SORT_CHUNK_ID = 'list_requests_filters_sorting_groups_refresh_
 const PINNED_COMPLETED_VISIBILITY_CHUNK_ID = 'map_list_completed_requests_7_days_profile_my_requests';
 const PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID = 'qa_when_money_cleaning_profile_your_payouts_joycoins';
 const PINNED_JOYCOINS_PURPOSE_CHUNK_ID = 'joycoins_purpose_partner_shops_only_not_donations';
-const MAX_PINNED_KNOWLEDGE_CHUNKS = 7;
+const PINNED_VOLUNTEER_HOURS_PURPOSE_CHUNK_ID = 'qa_volunteer_hours_self_tracking_pdf_printer';
+const MAX_PINNED_KNOWLEDGE_CHUNKS = 8;
 
 function buildUserContextLinesForPinning(conversationContext) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
@@ -661,6 +672,20 @@ function shouldPinJoyCoinsPurposeKnowledge(bundleLower) {
   return asksPurpose || coinsVsDonations;
 }
 
+/** Зачем волонтёрские часы — учёт + PDF по принтеру; не донаты. */
+function shouldPinVolunteerHoursPurposeKnowledge(bundleLower) {
+  const volHours =
+    (/волонт/i.test(bundleLower) && /час|hours/i.test(bundleLower)) ||
+    /volunteer\s+hours/i.test(bundleLower);
+  if (!volHours) return false;
+  const asksPurpose =
+    /зачем|для чего|отслежив|надо\s+ли\s+отслеж|why\s+track|what.{0,35}(for|purpose)|purpose\s+of/i.test(
+      bundleLower
+    );
+  const docPdf = /принтер|print|pdf|справк|certificat|letter\s+hours/i.test(bundleLower);
+  return asksPurpose || docPdf;
+}
+
 /** «Когда деньги за уборку» / сроки выплат — 7 дней, блок «Ваши выплаты» (не пинить только из‑за слова joycoins — см. отдельный чанк про назначение коинов). */
 function shouldPinMoneyCleaningPayoutKnowledge(bundleLower) {
   if (/субботник|subbotnik|\bevent\b|мероприят|ивент/i.test(bundleLower)) {
@@ -681,6 +706,9 @@ function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const ids = [];
   if (shouldPinJoyCoinsPurposeKnowledge(bundle)) {
     ids.push(PINNED_JOYCOINS_PURPOSE_CHUNK_ID);
+  }
+  if (shouldPinVolunteerHoursPurposeKnowledge(bundle)) {
+    ids.push(PINNED_VOLUNTEER_HOURS_PURPOSE_CHUNK_ID);
   }
   if (shouldPinPhotosGalleryKnowledge(bundle)) {
     ids.push(PINNED_PHOTOS_GALLERY_CHUNK_ID);
@@ -774,6 +802,10 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'JoyCoins (коины): только обмен у партнёров в специальных магазинах (блок монет в профиле, QR). Никогда не пиши, что коины нужны для получения донатов или «привилегий» в денежном смысле — донаты это Stripe и «Ваши выплаты», отдельно от коинов. Если пользователь уточняет формулировку про коины и донаты — ответь по сути новым текстом, не повторяй предыдущий ответ дословно.'
       : 'JoyCoins are redeemed only at partner shops (Profile coins block / QR). Never claim coins are for receiving donations or cash-like «privileges»—donations use Stripe / Your payouts, separate from coins. If the user clarifies coins vs donations, answer directly with new wording—do not repeat the previous reply verbatim.';
+  const volunteerHoursVsDonationsRule =
+    answerLanguage === 'ru'
+      ? 'Волонтёрские часы: учёт времени для себя; PDF-справка по иконке принтера в профиле о участии в уборке мусора для предъявления третьим лицам. Не связывай учёт часов с донатами или «привилегиями» выплат.'
+      : 'Volunteer hours are a personal time tally; the printer icon in Profile gives a PDF certificate of trash-cleanup participation for third parties. Never tie hours tracking to donations or payout privileges.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
@@ -781,6 +813,7 @@ function buildSystemInstruction(answerLanguage) {
     offTopicRule,
     inAppNoKnowledgeRule,
     joyCoinsVsDonationsRule,
+    volunteerHoursVsDonationsRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
     'Do not use Markdown (no **bold**, no *italics*, no backticks). Plain text only so chat UI shows no asterisks.',
     'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',
