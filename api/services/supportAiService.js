@@ -116,6 +116,152 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+const SUPPORT_SCOPE_DICTIONARY_PATH = path.join(KNOWLEDGE_ROOT, 'support_scope_dictionary.v1.json');
+const DEFAULT_SCOPE_DICTIONARY = {
+  force_in_app_regex: '\\b(app|application)\\b|приложен|апп|апка|joy\\s*pick|joypick|джой\\s*пик|джойпик',
+  in_app_strong: {
+    ru: ['joypick', 'joy pick', 'приложен', 'заявк', 'уборк', 'субботник', 'донат', 'выплат'],
+    en: ['joypick', 'joy pick', 'app', 'application', 'request', 'cleanup', 'event', 'donation', 'stripe']
+  },
+  in_app_soft: {
+    ru: ['что это за приложение', 'как пользоваться', 'как работает'],
+    en: ['what is this app', 'how to use', 'how it works']
+  },
+  off_topic_strong: {
+    ru: ['погода', 'прогноз', 'политик', 'кино', 'фильм', 'гороскоп'],
+    en: ['weather', 'forecast', 'politics', 'movie', 'joke', 'horoscope']
+  },
+  greeting_only: {
+    ru: ['привет', 'здравствуйте', 'добрый день'],
+    en: ['hi', 'hello', 'hey']
+  }
+};
+
+let scopeDictionaryCache = null;
+
+function loadScopeDictionary() {
+  if (scopeDictionaryCache) return scopeDictionaryCache;
+  try {
+    if (fs.existsSync(SUPPORT_SCOPE_DICTIONARY_PATH)) {
+      const raw = fs.readFileSync(SUPPORT_SCOPE_DICTIONARY_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      scopeDictionaryCache = parsed;
+      return parsed;
+    }
+  } catch (_) {
+    // fallback ниже
+  }
+  scopeDictionaryCache = DEFAULT_SCOPE_DICTIONARY;
+  return scopeDictionaryCache;
+}
+
+function normalizeScopeTerm(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function flattenScopeTerms(group = {}) {
+  const ru = Array.isArray(group.ru) ? group.ru : [];
+  const en = Array.isArray(group.en) ? group.en : [];
+  return [...ru, ...en].map(normalizeScopeTerm).filter(Boolean);
+}
+
+function tokenizeScopeText(value) {
+  return new Set(
+    String(value || '')
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) || []
+  );
+}
+
+function hasAnyScopeTerm(textLower, tokenSet, terms) {
+  return terms.some((term) => {
+    if (!term) return false;
+    if (term.includes(' ')) return textLower.includes(term);
+    return tokenSet.has(term);
+  });
+}
+
+function isGreetingOnly(textLower, greetings) {
+  const compact = textLower.replace(/\s+/g, ' ').trim();
+  return greetings.some((greet) => {
+    const g = String(greet).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!g) return false;
+    const re = new RegExp(`^${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[!.?\\s]*$`, 'i');
+    return re.test(compact);
+  });
+}
+
+/**
+ * Детерминированный scope-check перед LLM:
+ * - блокируем только явный оффтоп;
+ * - всё спорное пропускаем дальше (fail-open), чтобы не резать валидные in-app вопросы.
+ */
+function classifySupportQuestionScope(message) {
+  const text = normalizeText(message);
+  if (!text) return { scope: 'unknown', reason: 'empty_message' };
+  const lower = text.toLowerCase();
+  const tokenSet = tokenizeScopeText(lower);
+  const dict = loadScopeDictionary();
+
+  // Жесткое правило: любые вопросы с app/application/приложение считаем in-app.
+  const forceInAppRe = new RegExp(String(dict.force_in_app_regex || DEFAULT_SCOPE_DICTIONARY.force_in_app_regex), 'i');
+  if (forceInAppRe.test(text)) {
+    return { scope: 'in_app', reason: 'app_force_in_app' };
+  }
+
+  const inAppStrong = flattenScopeTerms(dict.in_app_strong);
+  if (hasAnyScopeTerm(lower, tokenSet, inAppStrong)) {
+    return { scope: 'in_app', reason: 'has_in_app_hint' };
+  }
+
+  const greetings = flattenScopeTerms(dict.greeting_only);
+  if (isGreetingOnly(lower, greetings)) {
+    return { scope: 'off_topic', reason: 'bare_greeting' };
+  }
+
+  const offTopicStrong = flattenScopeTerms(dict.off_topic_strong);
+  if (hasAnyScopeTerm(lower, tokenSet, offTopicStrong)) {
+    return { scope: 'off_topic', reason: 'clear_offtopic_topic' };
+  }
+
+  const inAppSoft = flattenScopeTerms(dict.in_app_soft);
+  if (hasAnyScopeTerm(lower, tokenSet, inAppSoft)) {
+    return { scope: 'in_app', reason: 'has_in_app_soft_hint' };
+  }
+
+  return { scope: 'unknown', reason: 'no_clear_signals' };
+}
+
+function buildOffTopicScopeAnswer(locale, scopeReason) {
+  if (locale === 'ru') {
+    return {
+      answer: 'Похоже, это не вопрос о приложении Joy Pick. Я помогаю только с вопросами по Joy Pick — напишите, что именно хотите сделать в приложении.',
+      answer_en:
+        'It seems this is not about the Joy Pick app. I can help only with Joy Pick app questions—tell me what exactly you want to do in the app.',
+      locale: 'ru',
+      model: 'scope-guard-v1',
+      translation_fallback: false,
+      sources: [],
+      degraded: false,
+      scope_guard: true,
+      scope_reason: scopeReason
+    };
+  }
+  const answerEn =
+    'It seems this is not about the Joy Pick app. I can help only with Joy Pick app questions—tell me what exactly you want to do in the app.';
+  return {
+    answer: answerEn,
+    answer_en: answerEn,
+    locale,
+    model: 'scope-guard-v1',
+    translation_fallback: locale !== 'en',
+    sources: [],
+    degraded: false,
+    scope_guard: true,
+    scope_reason: scopeReason
+  };
+}
+
 /** Чат на сайте не рендерит Markdown — убираем ** и ` чтобы не показывались «звёздочки». */
 function stripSupportAnswerMarkdown(text) {
   let s = String(text || '').trim();
@@ -803,8 +949,8 @@ function buildSystemInstruction(answerLanguage) {
       : 'Answer in English only.';
   const inAppScopeRule =
     answerLanguage === 'ru'
-      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению». Слова «субботник», «субботнике», subbotnik — в Joy Pick это тип заявки Event (экран заявки в приложении), а не общая «районная уборка»; не подменяй шаги приложения советами «организаторам во дворе», если в Knowledge есть флоу Event.'
-      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
+      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Короткие формулировки вроде «что насчёт приложения?», «что насчёт вашего/этого app?», «what about this app?», «what about your app?», «what about JoyPick app?» тоже всегда про приложение. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению». Слова «субботник», «субботнике», subbotnik — в Joy Pick это тип заявки Event (экран заявки в приложении), а не общая «районная уборка»; не подменяй шаги приложения советами «организаторам во дворе», если в Knowledge есть флоу Event.'
+      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Short phrasings like "what about this app?", "what about your app?", and "what about JoyPick app?" are also always in-app. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
   const offTopicRule =
     answerLanguage === 'ru'
       ? 'Явный оффтоп (погода, политика, кино, случайная болтовня, бытовой small talk, одно только приветствие без вопроса по Joy Pick — всё, что не про приложение): не начинай с «Привет» и не отвечай как на дружескую болтовню. Кратко и по делу: сообщение не относится к приложению Joy Pick; ты отвечаешь только на вопросы по приложению; предложи задать вопрос по Joy Pick. Эту формулировку не используй для вопросов про само приложение (см. правило выше про «что это за приложение», функции, заявки).'
@@ -1180,6 +1326,10 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
   const answerLocale = inferAnswerLocale(message, safeLocale);
   if (!isAiEnabled()) {
     return buildUnavailableAnswer(answerLocale, 'ai_disabled');
+  }
+  const scope = classifySupportQuestionScope(message);
+  if (scope.scope === 'off_topic') {
+    return buildOffTopicScopeAnswer(answerLocale, scope.reason);
   }
 
   const knowledgePath = getKnowledgePathByLocale(answerLocale);
