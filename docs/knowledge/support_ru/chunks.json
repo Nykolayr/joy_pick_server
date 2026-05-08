@@ -3,1092 +3,2828 @@
     "chunk_id": "auth_login_email_password",
     "title": "Вход по email и паролю",
     "text": "Откройте экран входа и введите email и пароль. Нажмите «Войти», чтобы продолжить. Если вход успешен, приложение откроет главный экран. Если данные неверные, вы останетесь на экране входа и увидите ошибку авторизации.",
-    "tags": ["вход", "email и пароль", "login", "sign in", "email", "password", "auth"]
+    "tags": [
+      "вход",
+      "email и пароль",
+      "login",
+      "sign in",
+      "email",
+      "password",
+      "auth"
+    ]
   },
   {
     "chunk_id": "auth_login_google_apple",
     "title": "Вход через Google или Apple",
     "text": "В потоке авторизации можно войти через соцсети. Приложение поддерживает Google и Apple, после чего использует ту же логику сессии, что и при входе по email. Если соцвход не сработал, повторите попытку на этом же экране.",
-    "tags": ["соцвход", "вход через google apple", "google login", "apple login", "social sign in", "auth", "oauth"]
+    "tags": [
+      "соцвход",
+      "вход через google apple",
+      "google login",
+      "apple login",
+      "social sign in",
+      "auth",
+      "oauth"
+    ]
   },
   {
     "chunk_id": "auth_registration_required_fields",
     "title": "Обязательные поля регистрации",
     "text": "Перед отправкой данных регистрация проверяет формат email и правила пароля. Пароль должен быть не короче 6 символов, а подтверждение должно совпадать. Для создания аккаунта также нужно принять условия использования.",
-    "tags": ["регистрация", "обязательные поля", "register", "sign up", "password", "email validation", "terms"]
+    "tags": [
+      "регистрация",
+      "обязательные поля",
+      "register",
+      "sign up",
+      "password",
+      "email validation",
+      "terms"
+    ]
   },
   {
     "chunk_id": "auth_registration_terms_required",
     "title": "Принятие условий при регистрации",
     "text": "Если условия использования не приняты, регистрацию продолжить нельзя. Включите чекбокс с условиями и отправьте форму снова. Это обязательный шаг регистрации.",
-    "tags": ["условия использования", "регистрация", "terms of use", "registration", "sign up", "cannot register", "auth"]
+    "tags": [
+      "условия использования",
+      "регистрация",
+      "terms of use",
+      "registration",
+      "sign up",
+      "cannot register",
+      "auth"
+    ]
   },
   {
     "chunk_id": "auth_email_verification_code_flow",
     "title": "Подтверждение email кодом",
     "text": "После регистрации email подтверждается на экране ввода кода. Введите код подтверждения. Если код не пришел или истек, нажмите «Отправить код повторно» и попробуйте снова.",
-    "tags": ["подтверждение email", "код подтверждения", "email verification", "verify code", "resend code", "auth", "registration"]
+    "tags": [
+      "подтверждение email",
+      "код подтверждения",
+      "email verification",
+      "verify code",
+      "resend code",
+      "auth",
+      "registration"
+    ]
   },
   {
     "chunk_id": "auth_validation_email_required",
     "title": "Ошибка: email обязателен",
     "text": "Если поле email пустое, приложение покажет сообщение, что email обязателен. Введите корректный email и отправьте снова. Эта проверка используется и во входе, и в регистрации.",
-    "tags": ["email обязателен", "валидация", "email required", "validation", "login error", "registration error", "auth"]
+    "tags": [
+      "email обязателен",
+      "валидация",
+      "email required",
+      "validation",
+      "login error",
+      "registration error",
+      "auth"
+    ]
   },
   {
     "chunk_id": "auth_validation_email_format",
     "title": "Ошибка: неверный формат email",
     "text": "Если формат email некорректный, приложение не даст отправить форму и попросит ввести валидный адрес. Исправьте email и повторите вход или регистрацию.",
-    "tags": ["неверный email", "формат email", "invalid email", "email format", "auth error", "login", "register"]
+    "tags": [
+      "неверный email",
+      "формат email",
+      "invalid email",
+      "email format",
+      "auth error",
+      "login",
+      "register"
+    ]
   },
   {
     "chunk_id": "auth_validation_password_min_length",
     "title": "Минимальная длина пароля",
     "text": "Пароль должен содержать минимум 6 символов. Если пароль короче, регистрацию завершить нельзя. Обновите пароль и отправьте форму снова.",
-    "tags": ["короткий пароль", "минимум пароля", "password too short", "password min", "register", "auth", "validation"]
+    "tags": [
+      "короткий пароль",
+      "минимум пароля",
+      "password too short",
+      "password min",
+      "register",
+      "auth",
+      "validation"
+    ]
   },
   {
     "chunk_id": "auth_validation_password_mismatch",
     "title": "Пароль и подтверждение не совпадают",
     "text": "Если пароль и подтверждение разные, приложение покажет ошибку и заблокирует регистрацию. Введите одинаковые значения в оба поля и отправьте снова.",
-    "tags": ["пароли не совпадают", "подтверждение пароля", "password mismatch", "confirm password", "registration", "auth", "validation"]
+    "tags": [
+      "пароли не совпадают",
+      "подтверждение пароля",
+      "password mismatch",
+      "confirm password",
+      "registration",
+      "auth",
+      "validation"
+    ]
   },
   {
     "chunk_id": "auth_logout_profile_menu",
     "title": "Как работает выход из аккаунта",
     "text": "Выход доступен в профиле. При выходе приложение очищает данные сессии и возвращает на стартовый экран/вход. После logout защищенные действия снова требуют авторизации.",
-    "tags": ["выход", "сессия", "logout", "sign out", "profile", "session", "auth"]
+    "tags": [
+      "выход",
+      "сессия",
+      "logout",
+      "sign out",
+      "profile",
+      "session",
+      "auth"
+    ]
   },
   {
     "chunk_id": "location_disclosure_before_permission",
     "title": "Пояснение о геолокации до запроса доступа",
     "text": "Перед системным запросом доступа к локации приложение показывает диалог с пояснением. Если выбрать Not now, запрос разрешения в этом шаге не отправляется. Пользователь может продолжить работу, но функции с геолокацией будут ограничены.",
-    "tags": ["геолокация", "разрешение", "location disclosure", "geolocation", "permission", "not now", "privacy"]
+    "tags": [
+      "геолокация",
+      "разрешение",
+      "location disclosure",
+      "geolocation",
+      "permission",
+      "not now",
+      "privacy"
+    ]
   },
   {
     "chunk_id": "location_permission_request_on_start",
     "title": "Запрос геолокации при запуске",
     "text": "Во время запуска приложение после пояснения запрашивает доступ к локации. Если доступ выдан, инициализация сервиса продолжается. Если доступ отклонен, функции, зависящие от локации, останутся ограниченными до выдачи разрешения позже.",
-    "tags": ["доступ к локации", "запуск", "startup", "location permission", "gps", "geolocation", "onboarding"]
+    "tags": [
+      "доступ к локации",
+      "запуск",
+      "startup",
+      "location permission",
+      "gps",
+      "geolocation",
+      "onboarding"
+    ]
   },
   {
     "chunk_id": "location_service_disabled_warning",
     "title": "Сервис геолокации выключен",
     "text": "Если на устройстве выключена геолокация, приложение показывает предупреждение, что действия исполнителя ограничены. В предупреждении есть кнопка открытия системных настроек локации. Включите геолокацию в настройках и вернитесь в приложение.",
-    "tags": ["геолокация выключена", "предупреждение", "location off", "gps disabled", "open settings", "geolocation", "warning"]
+    "tags": [
+      "геолокация выключена",
+      "предупреждение",
+      "location off",
+      "gps disabled",
+      "open settings",
+      "geolocation",
+      "warning"
+    ]
   },
   {
     "chunk_id": "location_open_settings_action",
     "title": "Кнопка открытия настроек геолокации",
     "text": "В предупреждении о выключенной локации нажмите кнопку, чтобы сразу открыть настройки устройства. Включите геолокацию и вернитесь в приложение. После возврата приложение повторно проверит состояние локации.",
-    "tags": ["открыть настройки локации", "исправить gps", "open location settings", "gps settings", "location service", "resumed", "fix"]
+    "tags": [
+      "открыть настройки локации",
+      "исправить gps",
+      "open location settings",
+      "gps settings",
+      "location service",
+      "resumed",
+      "fix"
+    ]
   },
   {
     "chunk_id": "location_startup_no_wait_when_disabled",
     "title": "Поведение при запуске, если геолокация выключена",
     "text": "Если разрешение есть, но системная геолокация выключена, запуск не ждет реальные координаты слишком долго. Это убирает долгую загрузку после splash. Пользователь может продолжить и включить локацию позже через предупреждение/настройки.",
-    "tags": ["splash загрузка", "локация при запуске", "splash", "loading", "gps off", "startup", "location timeout"]
+    "tags": [
+      "splash загрузка",
+      "локация при запуске",
+      "splash",
+      "loading",
+      "gps off",
+      "startup",
+      "location timeout"
+    ]
   },
   {
     "chunk_id": "location_executor_limitations",
     "title": "Почему без геолокации блокируются действия исполнителя",
     "text": "Без разрешения на локацию или при выключенной геолокации пользователь может донатить и создавать заявки, но действия исполнителя ограничены. Присоединение и выполнение задач требуют проверки локации. Включите разрешение и сервис геолокации, чтобы снять ограничения.",
-    "tags": ["ограничения исполнителя", "требуется локация", "cannot join", "cannot perform", "executor", "location required", "restriction"]
+    "tags": [
+      "ограничения исполнителя",
+      "требуется локация",
+      "cannot join",
+      "cannot perform",
+      "executor",
+      "location required",
+      "restriction"
+    ]
   },
   {
     "chunk_id": "request_create_waste_cleanup",
     "title": "Как создать заявку на уборку мусора",
     "text": "На главном экране нажмите кнопку «+» и выберите тип заявки «Уборка мусора» (Waste Location). Заполните обязательные поля: локация, название и описание, затем добавьте обязательные фото и детали мусора (размер/тип/доступ). После этого отправьте заявку и дождитесь подтверждения.",
-    "tags": ["создать заявку", "уборка мусора", "кнопка плюс", "+", "create request", "waste cleanup", "garbage", "trash", "how to create"]
+    "tags": [
+      "создать заявку",
+      "уборка мусора",
+      "кнопка плюс",
+      "+",
+      "create request",
+      "waste cleanup",
+      "garbage",
+      "trash",
+      "how to create"
+    ]
   },
   {
     "chunk_id": "request_create_waste_location_required",
     "title": "Для уборки мусора нужна выбранная локация",
     "text": "Если локация не выбрана, при создании появится ошибка и отправка не произойдет. Сначала выберите точку на карте, затем отправьте снова. Это обязательная проверка.",
-    "tags": ["локация не выбрана", "ошибка создания", "location not selected", "waste cleanup", "creation error", "request", "validation"]
+    "tags": [
+      "локация не выбрана",
+      "ошибка создания",
+      "location not selected",
+      "waste cleanup",
+      "creation error",
+      "request",
+      "validation"
+    ]
   },
   {
     "chunk_id": "request_create_speed_cleanup",
     "title": "Как создать быструю уборку",
     "text": "Откройте создание Speed Cleanup и заполните обязательные поля, включая локацию и детали уборки. Добавьте обязательные фото. Отправьте форму и дождитесь сообщения об успехе.",
-    "tags": ["speed cleanup", "быстрая уборка", "speed cleanup", "create", "quick cleanup", "request", "how to"]
+    "tags": [
+      "speed cleanup",
+      "быстрая уборка",
+      "speed cleanup",
+      "create",
+      "quick cleanup",
+      "request",
+      "how to"
+    ]
   },
   {
     "chunk_id": "request_create_speed_cleanup_photo_requirement",
     "title": "Требования к фото в быстрой уборке",
     "text": "В потоке speed cleanup используется логика фото до/после на этапах создания и завершения. Если обязательных фото нет, приложение попросит их добавить до отправки. Добавьте фото и повторите отправку.",
-    "tags": ["фото до после", "обязательные фото", "before after photos", "speed cleanup", "photo required", "cannot submit", "validation"]
+    "tags": [
+      "фото до после",
+      "обязательные фото",
+      "before after photos",
+      "speed cleanup",
+      "photo required",
+      "cannot submit",
+      "validation"
+    ]
   },
   {
     "chunk_id": "request_create_event",
     "title": "Как создать заявку-событие",
     "text": "Откройте создание Event и заполните обязательные поля: локация, заголовок, описание, дата и время события. Добавьте фото события, если это требуется формой. Отправьте создание и проверьте сообщение об успехе.",
-    "tags": ["создать событие", "event заявка", "субботник", "мероприятие", "create event", "event request", "cleanup event", "how to create", "request"]
+    "tags": [
+      "создать событие",
+      "event заявка",
+      "субботник",
+      "мероприятие",
+      "create event",
+      "event request",
+      "cleanup event",
+      "how to create",
+      "request"
+    ]
   },
   {
     "chunk_id": "request_create_event_date_time_required",
     "title": "Для создания события нужны дата и время",
     "text": "При создании Event обязательно выбрать дату и время. Если эти поля не заполнены, создание корректно завершить нельзя. Укажите расписание события и отправьте снова.",
-    "tags": ["дата и время события", "валидация event", "event date time", "event validation", "cannot create event", "required fields", "request"]
+    "tags": [
+      "дата и время события",
+      "валидация event",
+      "event date time",
+      "event validation",
+      "cannot create event",
+      "required fields",
+      "request"
+    ]
   },
   {
     "chunk_id": "request_creation_fill_required_error",
     "title": "Ошибка: заполните все обязательные поля",
     "text": "Когда обязательные поля заявки не заполнены, приложение показывает сообщение fill-required. Проверьте все обязательные поля на текущем экране. Заполните недостающее и отправьте снова.",
-    "tags": ["заполните обязательные поля", "ошибка формы", "fill required fields", "creation error", "request validation", "cannot submit", "form"]
+    "tags": [
+      "заполните обязательные поля",
+      "ошибка формы",
+      "fill required fields",
+      "creation error",
+      "request validation",
+      "cannot submit",
+      "form"
+    ]
   },
   {
     "chunk_id": "request_creation_failed_generic",
     "title": "Не удалось создать заявку",
     "text": "Если создание заявки не удалось, приложение покажет ошибку и оставит вас в потоке создания. Проверьте обязательные поля и интернет, затем попробуйте снова. Повторная отправка с этого же экрана поддерживается.",
-    "tags": ["создание не удалось", "повторить отправку", "request failed", "creation failed", "submit error", "retry", "network"]
+    "tags": [
+      "создание не удалось",
+      "повторить отправку",
+      "request failed",
+      "creation failed",
+      "submit error",
+      "retry",
+      "network"
+    ]
   },
   {
     "chunk_id": "request_join_request_flow",
     "title": "Как присоединиться к заявке",
     "text": "Откройте детали заявки и используйте действие Join, если оно доступно. При успехе приложение покажет подтверждение и обновит состояние участия. Если join не удался, повторите попытку и проверьте требования по локации.",
-    "tags": ["присоединиться", "участие", "join request", "participation", "how to join", "request details", "executor", "waste", "speed", "cleanup", "join", "детал", "карточк", "уборк", "мусор"]
+    "tags": [
+      "присоединиться",
+      "участие",
+      "join request",
+      "participation",
+      "how to join",
+      "request details",
+      "executor",
+      "waste",
+      "speed",
+      "cleanup",
+      "join",
+      "детал",
+      "карточк",
+      "уборк",
+      "мусор"
+    ]
   },
   {
     "chunk_id": "request_unjoin_request_flow",
     "title": "Как отменить участие",
     "text": "В деталях заявки используйте действие Unjoin, чтобы отменить участие. При успехе приложение покажет подтверждение и обновит состояние. Если unjoin не сработал, повторите попытку на этом же экране деталей.",
-    "tags": ["отказаться от участия", "отказаться", "отменить участие", "уже принял", "unjoin", "cancel participation", "leave request", "request details", "executor"]
+    "tags": [
+      "отказаться от участия",
+      "отказаться",
+      "отменить участие",
+      "уже принял",
+      "unjoin",
+      "cancel participation",
+      "leave request",
+      "request details",
+      "executor"
+    ]
   },
   {
     "chunk_id": "waste_join_executor_deadline_creator_remove",
     "title": "Уборка мусора: присоединился и забыл — слот снова свободен (без денежных советов вместо уборки)",
     "text": "Для заявки типа Waste Location (уборка мусора / отметка на карте): после того как исполнитель присоединился, платформа ждёт выполнения в срок. На сервере крон **checkExpiredWasteJoins**: если с момента **join_date** прошло **24 часа** без завершения работы, исполнитель **снимается** — статус заявки возвращается в **new**, поле исполнителя обнуляется, и заявка **снова видна** другим волонтёрам на карте и в списках; у исполнителя и создателя уходят уведомления об истечении срока. За примерно **2 часа** до дедлайна исполнителю уходит напоминание (checkWasteReminders). Создатель заявки может **снять исполнителя** через редактирование заявки (обнулить присоединившегося) — по смыслу то же: слот снова свободен. Отдельно: если заявка долго «висит» в **inProgress** без сдачи с момента **создания**, другой крон (checkExecutorStaleness) на **7 суток** шлёт предупреждение создателю, на **8 суток** от created_at может уйти в архив — это про очень долгий простой, не путать с правилом «24 часа после join». Если **никто не присоединялся**, пока заявка **new**, действует **expires_at** и сценарий продления/снятия без исполнителя — тоже не смешивать с 24 часами после join. **Не советуйте «просто задонатьте»**, если человек не пришёл убирать: донат **не заменяет** физическую уборку и не закрывает отсутствие исполнителя.",
-    "tags": ["забыл про уборку", "присоединился забыл", "участие уборка мусора", "что будет если не пришёл", "24 часа исполнитель", "снят исполнитель", "создатель убрал", "no show waste", "join_date истёк"]
+    "tags": [
+      "забыл про уборку",
+      "присоединился забыл",
+      "участие уборка мусора",
+      "что будет если не пришёл",
+      "24 часа исполнитель",
+      "снят исполнитель",
+      "создатель убрал",
+      "no show waste",
+      "join_date истёк"
+    ]
   },
   {
     "chunk_id": "request_join_event_flow",
     "title": "Как присоединиться к событию",
-    "text": "Откройте детали события и нажмите Join, когда участие доступно. Успех подтверждается сообщением о присоединении. Если участие позже отменено, приложение покажет соответствующее уведомление.",
-    "tags": ["присоединиться к событию", "участие в event", "join event", "event participation", "cleanup event", "request details", "join"]
+    "text": "Откройте детали Event и нажмите Join, если кнопка доступна. В текущем клиентском флоу отдельного «лаг-окна -30/-60 минут до старта» не задано явно: ориентируйтесь на доступность кнопки Join в карточке. После начала события доступны действия выполнения/сдачи для участников по правилам экрана.",
+    "tags": [
+      "join event",
+      "event participation",
+      "join button",
+      "event start",
+      "субботник"
+    ]
   },
   {
     "chunk_id": "request_event_not_started_limit",
     "title": "Событие еще не началось",
     "text": "Если вы пытаетесь выполнить действия по событию слишком рано, приложение может показать, что событие еще не началось. Дождитесь времени старта и повторите действия выполнения/завершения. Это ожидаемое ограничение по времени.",
-    "tags": ["событие не началось", "ограничение по времени", "event not started", "cannot perform", "time restriction", "event", "completion"]
+    "tags": [
+      "событие не началось",
+      "ограничение по времени",
+      "event not started",
+      "cannot perform",
+      "time restriction",
+      "event",
+      "completion"
+    ]
   },
   {
     "chunk_id": "request_event_distance_limit",
     "title": "Ограничение по расстоянию для действий в событии",
     "text": "При выполнении действий по событию проверяется расстояние до локации события. Если вы вне допустимого радиуса, приложение покажет ограничение и заблокирует действие. Подойдите ближе и попробуйте снова.",
-    "tags": ["ограничение по расстоянию", "радиус события", "distance", "radius", "event", "cannot perform", "location check"]
+    "tags": [
+      "ограничение по расстоянию",
+      "радиус события",
+      "distance",
+      "radius",
+      "event",
+      "cannot perform",
+      "location check"
+    ]
   },
   {
     "chunk_id": "request_distance_out_of_cleanup_radius",
     "title": "Сообщение: вне радиуса уборки",
     "text": "Во время действий по уборке приложение может показать, что вы вне допустимого радиуса. Вернитесь к месту задачи и попробуйте снова. Эта проверка защищает логику завершения задач по локации.",
-    "tags": ["вне радиуса", "радиус уборки", "out of radius", "cleanup radius", "location", "task completion", "error"]
+    "tags": [
+      "вне радиуса",
+      "радиус уборки",
+      "out of radius",
+      "cleanup radius",
+      "location",
+      "task completion",
+      "error"
+    ]
   },
   {
     "chunk_id": "request_complete_participant_flow",
     "title": "Как работает отправка завершения участником",
     "text": "Поток завершения участником требует отправки результата, включая фото после в соответствующих экранах. После отправки заявка переходит в состояние, зависящее от проверки. Если отправка не удалась, приложение покажет ошибку с предложением повторить.",
-    "tags": ["завершение участником", "участнику", "участник", "отправить завершение", "завершение заявки", "отправка результата", "mark completed", "participant completion", "submit result", "after photo", "фото после", "уборк", "review"]
+    "tags": [
+      "завершение участником",
+      "участнику",
+      "участник",
+      "отправить завершение",
+      "завершение заявки",
+      "отправка результата",
+      "mark completed",
+      "participant completion",
+      "submit result",
+      "after photo",
+      "фото после",
+      "уборк",
+      "review"
+    ]
   },
   {
     "chunk_id": "request_complete_missing_after_photo",
     "title": "Нельзя завершить без фото после",
     "text": "Если фото после обязательно и отсутствует, поток завершения попросит сначала добавить его. Загрузите фото после и отправьте завершение еще раз. Это частая причина ошибки отправки завершения.",
-    "tags": ["нужно фото после", "нельзя завершить", "after photo required", "cannot complete", "completion error", "cleanup", "proof"]
+    "tags": [
+      "нужно фото после",
+      "нельзя завершить",
+      "after photo required",
+      "cannot complete",
+      "completion error",
+      "cleanup",
+      "proof"
+    ]
   },
   {
     "chunk_id": "request_completion_request_id_missing",
     "title": "В потоке завершения отсутствует ID заявки",
     "text": "Если экран завершения не может определить request ID, отправка блокируется и показывается ошибка. Откройте завершение заново из деталей заявки, а не из устаревшей навигации. Затем повторите отправку.",
-    "tags": ["нет request id", "ошибка завершения", "request id missing", "completion", "navigation issue", "submit blocked", "error"]
+    "tags": [
+      "нет request id",
+      "ошибка завершения",
+      "request id missing",
+      "completion",
+      "navigation issue",
+      "submit blocked",
+      "error"
+    ]
   },
   {
     "chunk_id": "request_completion_submit_error_retry",
     "title": "Ошибка отправки завершения",
     "text": "Когда отправка завершения работы не удается, приложение показывает ошибку и предлагает повторить. Проверьте стабильность сети и попробуйте снова на этом же экране. Если ошибка повторяется, откройте детали заявки заново и повторите поток.",
-    "tags": ["ошибка отправки завершения", "повторить", "completion failed", "submit error", "retry", "network", "mark as completed"]
+    "tags": [
+      "ошибка отправки завершения",
+      "повторить",
+      "completion failed",
+      "submit error",
+      "retry",
+      "network",
+      "mark as completed"
+    ]
   },
   {
     "chunk_id": "request_status_pending_review_meaning",
     "title": "Что значит статус «на проверке»",
     "text": "Статус Pending означает, что заявка или завершение ждут этапа проверки/модерации. Это еще не финальный approved/rejected результат. Дождитесь обновления статуса или решения автора/админа по сценарию.",
-    "tags": ["статус pending", "ожидает проверку", "pending", "waiting review", "moderation", "status", "request status"]
+    "tags": [
+      "статус pending",
+      "ожидает проверку",
+      "pending",
+      "waiting review",
+      "moderation",
+      "status",
+      "request status"
+    ]
   },
   {
     "chunk_id": "request_status_in_progress_meaning",
     "title": "Что значит статус «в процессе»",
     "text": "In Progress означает, что выполнение активно и еще не завершено. Продолжайте работу из деталей заявки, если доступно действие Continue. Отправьте завершение, когда результат готов.",
-    "tags": ["статус в работе", "продолжить работу", "in progress", "status", "continue work", "active task", "request"]
+    "tags": [
+      "статус в работе",
+      "продолжить работу",
+      "in progress",
+      "status",
+      "continue work",
+      "active task",
+      "request"
+    ]
   },
   {
     "chunk_id": "request_status_approved_meaning",
     "title": "Что значит статус «одобрено»",
     "text": "Статус Approved означает, что проверка приняла результат в этом потоке. Это положительный финальный или почти финальный итог модерации. После approval некоторые действия могут стать недоступны в зависимости от экрана.",
-    "tags": ["статус approved", "принято модерацией", "approved", "status", "moderation result", "request", "completion"]
+    "tags": [
+      "статус approved",
+      "принято модерацией",
+      "approved",
+      "status",
+      "moderation result",
+      "request",
+      "completion"
+    ]
   },
   {
     "chunk_id": "request_status_rejected_meaning",
     "title": "Что значит статус «отклонено»",
     "text": "Статус Rejected означает, что проверка отклонила отправленный результат. В потоках модерации участника может быть причина отклонения. Проверьте детали и доступные следующие действия на экране заявки.",
-    "tags": ["статус rejected", "отклонено", "rejected", "status", "rejection reason", "moderation", "request"]
+    "tags": [
+      "статус rejected",
+      "отклонено",
+      "rejected",
+      "status",
+      "rejection reason",
+      "moderation",
+      "request"
+    ]
   },
   {
     "chunk_id": "request_status_completed_meaning",
     "title": "Что значит статус «завершено»",
     "text": "Статус Completed означает, что задача/заявка перешла в состояние завершения в логике приложения. Обычно у завершенных заявок уже нет активных действий исполнителя. Откройте детали, чтобы посмотреть итоговые данные.",
-    "tags": ["статус completed", "завершено", "completed", "status", "finished request", "task done", "request details"]
+    "tags": [
+      "статус completed",
+      "завершено",
+      "completed",
+      "status",
+      "finished request",
+      "task done",
+      "request details"
+    ]
   },
   {
     "chunk_id": "request_archived_not_visible_behavior",
     "title": "Почему заявка может быть не видна (архив)",
     "text": "Архивные заявки фильтруются из обычных списков активных заявок. Если заявка архивирована, она может не отображаться в стандартном просмотре. Откройте прямую ссылку на детали или историю/админ-раздел, если они доступны.",
-    "tags": ["заявка не видна", "архив", "not visible", "archived", "request missing", "status", "list filtering"]
+    "tags": [
+      "заявка не видна",
+      "архив",
+      "not visible",
+      "archived",
+      "request missing",
+      "status",
+      "list filtering"
+    ]
   },
   {
     "chunk_id": "donation_how_to_donate",
     "title": "Как отправить донат по уже созданной заявке",
     "text": "Чтобы поддержать чужую уборку деньгами, не нужно создавать свою заявку: на карте или в списке выберите любую существующую заявку, откройте экран её деталей (карточка заявки) и нажмите действие доната (Donate). Донат запускает оплату через Stripe; при успехе приложение покажет подтверждение. Получать донаты на баланс могут те, кто реально выполнил уборку (присоединился к Waste Location как **исполнитель**, завершил и прошёл проверку) — не за одно только создание точки на карте. Для Speed/Event логика другая; см. чанк «кому донаты: уборка мусора vs быстрая vs субботник». Stripe в профиле — для вывода при соблюдении условий.",
-    "tags": ["донат", "пожертвование", "donate", "donation", "stripe", "request details", "payment", "донейшены", "донейшн", "отправить донат", "поддержать заявку", "детали заявки", "уже созданная заявка"]
+    "tags": [
+      "донат",
+      "пожертвование",
+      "donate",
+      "donation",
+      "stripe",
+      "request details",
+      "payment",
+      "донейшены",
+      "донейшн",
+      "отправить донат",
+      "поддержать заявку",
+      "детали заявки",
+      "уже созданная заявка"
+    ]
   },
   {
     "chunk_id": "donation_min_amount_limit",
     "title": "Минимальная сумма доната",
     "text": "Минимальная сумма доната в приложении - $1.00. Если сумма меньше минимума, поток оплаты не продолжится. Увеличьте сумму до $1.00 или выше и повторите.",
-    "tags": ["минимум", "минимум доната", "какой минимум", "сумма доната", "суммы доната", "доната", "minimum donation", "donation amount", "1.00", "payment", "stripe"]
+    "tags": [
+      "минимум",
+      "минимум доната",
+      "какой минимум",
+      "сумма доната",
+      "суммы доната",
+      "доната",
+      "minimum donation",
+      "donation amount",
+      "1.00",
+      "payment",
+      "stripe"
+    ]
   },
   {
     "chunk_id": "donation_payment_failed",
     "title": "Ошибка оплаты доната",
     "text": "Если создание платежа для доната не удалось, приложение покажет ошибку и оставит вас в текущем потоке. Повторите донат из деталей заявки. Если пользователь сам отменил оплату, отобразится состояние payment canceled.",
-    "tags": ["оплата не прошла", "ошибка доната", "payment failed", "donation failed", "stripe error", "retry payment", "payment cancelled"]
+    "tags": [
+      "оплата не прошла",
+      "ошибка доната",
+      "payment failed",
+      "donation failed",
+      "stripe error",
+      "retry payment",
+      "payment cancelled"
+    ]
   },
   {
     "chunk_id": "stripe_executor_setup_requirement",
     "title": "Настройка Stripe для получения выплат от донатов",
     "text": "Приложение предупреждает: без полностью настроенного аккаунта Stripe и привязанной дебетовой карты выплаты донатов могут быть недоступны. Завершите настройку Stripe в платежном разделе профиля. Затем повторите действия, связанные с выплатами.",
-    "tags": ["настройка stripe", "выплаты донатов", "stripe setup", "debit card", "payout eligibility", "donation money", "profile payments"]
+    "tags": [
+      "настройка stripe",
+      "выплаты донатов",
+      "stripe setup",
+      "debit card",
+      "payout eligibility",
+      "donation money",
+      "profile payments"
+    ]
   },
   {
     "chunk_id": "payout_page_available_and_history_tabs",
     "title": "Вкладки экрана выплат",
     "text": "На странице выплат есть две вкладки: Available и History. Available показывает текущие суммы и действие выплаты, а History - прошлые выплаты. Эти вкладки помогают понять текущее и прошлое состояние выплат.",
-    "tags": ["выплаты", "available и history", "payouts", "available", "history", "withdraw", "balance"]
+    "tags": [
+      "выплаты",
+      "available и history",
+      "payouts",
+      "available",
+      "history",
+      "withdraw",
+      "balance"
+    ]
   },
   {
     "chunk_id": "payout_instant_minimum_amount",
     "title": "Минимальная сумма мгновенной выплаты",
     "text": "Instant payout доступен только от $1.00 и выше. Для меньших сумм приложение показывает поведение запланированного перевода. Если кнопка instant payout не срабатывает, проверьте сумму и доступность метода выплаты.",
-    "tags": ["мгновенная выплата", "минимум 1 доллар", "instant payout", "minimum 1", "withdraw", "balance", "payout limit"]
+    "tags": [
+      "мгновенная выплата",
+      "минимум 1 доллар",
+      "instant payout",
+      "minimum 1",
+      "withdraw",
+      "balance",
+      "payout limit"
+    ]
   },
   {
     "chunk_id": "payout_no_funds_message",
     "title": "Нет доступных средств для выплаты",
     "text": "Если баланс недоступен, приложение показывает сообщение no funds в потоке выплат. В этом состоянии выплату выполнить нельзя. Дождитесь обновления доступного баланса и попробуйте позже.",
-    "tags": ["нет средств", "недоступный баланс", "no funds", "payout", "withdrawal", "balance unavailable", "payments"]
+    "tags": [
+      "нет средств",
+      "недоступный баланс",
+      "no funds",
+      "payout",
+      "withdrawal",
+      "balance unavailable",
+      "payments"
+    ]
   },
   {
     "chunk_id": "payout_no_methods_available",
     "title": "Нет доступных методов выплаты",
     "text": "Если не привязан метод выплаты, в instant payout показывается сообщение no payout methods. Сначала добавьте/включите метод выплаты в настройке Stripe. Затем вернитесь в выплаты и повторите.",
-    "tags": ["нет метода выплаты", "метод stripe", "no payout methods", "stripe method", "withdraw error", "payout", "payments"]
+    "tags": [
+      "нет метода выплаты",
+      "метод stripe",
+      "no payout methods",
+      "stripe method",
+      "withdraw error",
+      "payout",
+      "payments"
+    ]
   },
   {
     "chunk_id": "chat_open_and_send_message",
     "title": "Как открыть чат и отправить сообщение",
     "text": "Откройте чат из списка или поддерживаемого маршрута, введите текст и нажмите Send. Пустые сообщения блокируются валидацией. Отправленные сообщения отображаются в диалоге с пузырем отправителя.",
-    "tags": ["чат", "отправить сообщение", "chat", "send message", "message input", "conversation", "how to"]
+    "tags": [
+      "чат",
+      "отправить сообщение",
+      "chat",
+      "send message",
+      "message input",
+      "conversation",
+      "how to"
+    ]
   },
   {
     "chunk_id": "chat_empty_message_not_sent",
     "title": "Почему пустое сообщение не отправляется",
     "text": "Поле ввода в чате обрезает пробелы и блокирует пустые сообщения. Если в сообщении только пробелы или оно пустое, действие Send ничего не сделает. Введите текст и отправьте снова.",
-    "tags": ["пустое сообщение", "не отправляется чат", "chat message not sent", "empty message", "chat input", "send blocked", "validation"]
+    "tags": [
+      "пустое сообщение",
+      "не отправляется чат",
+      "chat message not sent",
+      "empty message",
+      "chat input",
+      "send blocked",
+      "validation"
+    ]
   },
   {
     "chunk_id": "chat_typing_indicator_behavior",
     "title": "Индикатор набора текста в чате",
     "text": "Экран чата может показывать индикатор набора, когда от участников приходят события typing. В интерфейсе это выглядит как someone typing. Индикатор временный и зависит от обновлений состояния чата в реальном времени.",
-    "tags": ["индикатор печати", "набор текста", "typing indicator", "chat typing", "real time", "messages", "chat ui"]
+    "tags": [
+      "индикатор печати",
+      "набор текста",
+      "typing indicator",
+      "chat typing",
+      "real time",
+      "messages",
+      "chat ui"
+    ]
   },
   {
     "chunk_id": "chat_mark_read_on_open",
     "title": "Как обновляется прочтение при открытии чата",
     "text": "Когда вы открываете чат, приложение отмечает его как прочитанный и сбрасывает счетчик непрочитанных для этого чата. Это использует backend-эндпоинты read. Если бейдж остается старым, откройте чат повторно и вернитесь в список чатов.",
-    "tags": ["прочитано в чате", "сброс непрочитанных", "chat read", "unread count", "mark as read", "chat badge", "open chat"]
+    "tags": [
+      "прочитано в чате",
+      "сброс непрочитанных",
+      "chat read",
+      "unread count",
+      "mark as read",
+      "chat badge",
+      "open chat"
+    ]
   },
   {
     "chunk_id": "chat_read_receipt_icon_for_own_messages",
     "title": "Иконка прочтения на ваших сообщениях",
     "text": "Для ваших сообщений в пузыре показываются галочки на основе данных read-by. В UI используются одинарная и двойная галочки для статуса доставки/прочтения. Точное время прочтения зависит от обновлений сервера.",
-    "tags": ["галочки прочтения", "статус сообщения", "read receipt", "double check", "message seen", "chat status", "readBy"]
+    "tags": [
+      "галочки прочтения",
+      "статус сообщения",
+      "read receipt",
+      "double check",
+      "message seen",
+      "chat status",
+      "readBy"
+    ]
   },
   {
     "chunk_id": "chat_unread_badge_in_chat_list",
     "title": "Бейдж непрочитанных в списке чатов",
     "text": "Список чатов показывает счетчики непрочитанных по каждому чату и обновляет их из состояния чата. Открытие чата обычно очищает счетчик этого чата. Очень большие числа сокращаются логикой отображения бейджа.",
-    "tags": ["бейдж непрочитанных", "список чатов", "unread badge", "chat list", "unread count", "messages", "chat"]
+    "tags": [
+      "бейдж непрочитанных",
+      "список чатов",
+      "unread badge",
+      "chat list",
+      "unread count",
+      "messages",
+      "chat"
+    ]
   },
   {
     "chunk_id": "chat_invalid_chat_id_route",
     "title": "Поведение при неверном маршруте чата",
     "text": "Если маршрут чата открыт без валидного ID чата, страница не сможет корректно инициализировать диалог. Используйте валидную ссылку с параметром chatId. По возможности открывайте чат из списка в приложении.",
-    "tags": ["неверный chat id", "ошибка маршрута чата", "chat id required", "invalid chat link", "chat route", "cannot open chat", "deeplink"]
+    "tags": [
+      "неверный chat id",
+      "ошибка маршрута чата",
+      "chat id required",
+      "invalid chat link",
+      "chat route",
+      "cannot open chat",
+      "deeplink"
+    ]
   },
   {
     "chunk_id": "chat_private_chat_not_found_error",
     "title": "Личный чат не найден",
     "text": "Если приложение не может определить private chat для текущего контекста, оно может показать сообщение private chat not found. Откройте связанный поток заявки/деталей заново и повторите действие чата. Если чат все еще отсутствует, связь чата могла еще не быть создана.",
-    "tags": ["private chat не найден", "ошибка чата", "private chat not found", "chat error", "request chat", "cannot message", "support"]
+    "tags": [
+      "private chat не найден",
+      "ошибка чата",
+      "private chat not found",
+      "chat error",
+      "request chat",
+      "cannot message",
+      "support"
+    ]
   },
   {
     "chunk_id": "notifications_open_list",
     "title": "Как открыть и проверить уведомления",
     "text": "Страница уведомлений показывает список с пагинацией и обновлением. Нажмите на карточку уведомления, чтобы открыть детали в bottom sheet. Открытие карточки также помечает уведомление как прочитанное.",
-    "tags": ["уведомления", "список уведомлений", "notifications", "notification list", "open details", "read", "in-app notifications"]
+    "tags": [
+      "уведомления",
+      "список уведомлений",
+      "notifications",
+      "notification list",
+      "open details",
+      "read",
+      "in-app notifications"
+    ]
   },
   {
     "chunk_id": "notifications_mark_all_as_read",
     "title": "Отметить все уведомления как прочитанные",
     "text": "Если есть непрочитанные уведомления, используйте действие «Отметить все как прочитанные» в верхней панели страницы уведомлений. Приложение вызывает массовую отметку прочитанного и обновляет локальное состояние списка. Успех подтверждается всплывающим сообщением.",
-    "tags": ["отметить все прочитанным", "непрочитанные уведомления", "mark all read", "notifications", "unread", "done all", "notification center"]
+    "tags": [
+      "отметить все прочитанным",
+      "непрочитанные уведомления",
+      "mark all read",
+      "notifications",
+      "unread",
+      "done all",
+      "notification center"
+    ]
   },
   {
     "chunk_id": "notifications_refresh_and_retry",
     "title": "Обновление и повторная загрузка уведомлений",
     "text": "Страница уведомлений поддерживает обновление свайпом вниз и кнопку обновления в верхней панели. Если загрузка не удалась, в состоянии ошибки есть кнопка «Повторить». Используйте обновление и повтор, чтобы снова получить актуальные уведомления.",
-    "tags": ["обновить уведомления", "повторная загрузка", "refresh notifications", "retry", "loading error", "notification fetch", "network"]
+    "tags": [
+      "обновить уведомления",
+      "повторная загрузка",
+      "refresh notifications",
+      "retry",
+      "loading error",
+      "notification fetch",
+      "network"
+    ]
   },
   {
     "chunk_id": "notifications_empty_state",
     "title": "Пока нет уведомлений",
     "text": "Если уведомлений нет, приложение показывает пустое состояние. Это ожидаемо, когда у аккаунта нет недавних уведомлений. Можно вернуться позже и обновить список.",
-    "tags": ["нет уведомлений", "пустое состояние", "no notifications", "empty state", "notification list", "inbox empty", "notifications"]
+    "tags": [
+      "нет уведомлений",
+      "пустое состояние",
+      "no notifications",
+      "empty state",
+      "notification list",
+      "inbox empty",
+      "notifications"
+    ]
   },
   {
     "chunk_id": "notifications_push_permission_basics",
     "title": "Разрешение на push-уведомления",
     "text": "Инициализация push-сервиса запрашивает системное разрешение на уведомления и настраивает обработку уведомлений в активном режиме и локальных уведомлений. Если разрешение отклонено, видимость push ограничивается настройками ОС. Включите уведомления в настройках устройства и перезапустите приложение.",
-    "tags": ["push уведомления", "разрешение уведомлений", "push notifications", "permission", "allow notifications", "device settings", "fcm"]
+    "tags": [
+      "push уведомления",
+      "разрешение уведомлений",
+      "push notifications",
+      "permission",
+      "allow notifications",
+      "device settings",
+      "fcm"
+    ]
   },
   {
     "chunk_id": "notifications_push_android_gms_edge_case",
     "title": "Push на устройствах без сервисов Google",
     "text": "Получение FCM-токена может не сработать на устройствах/эмуляторах без поддержки Google Play Services. В таком случае push-уведомления могут работать некорректно. Для надежной работы FCM используйте устройство с корректными сервисами Google.",
-    "tags": ["gms отсутствует", "проблема fcm", "fcm", "google play services", "service not available", "android push", "notifications not received"]
+    "tags": [
+      "gms отсутствует",
+      "проблема fcm",
+      "fcm",
+      "google play services",
+      "service not available",
+      "android push",
+      "notifications not received"
+    ]
   },
   {
     "chunk_id": "deeplink_open_request_details",
     "title": "Как в приложении открываются ссылки на заявку",
     "text": "Ссылки на заявки поддерживают web и app-scheme форматы, например `/request/{category}/{requestId}`. Приложение разбирает категорию и ID заявки, затем открывает нужный экран деталей. Если заявка не найдена, показывается запасной экран ошибки.",
-    "tags": ["deeplink заявки", "открыть заявку", "deep link", "request link", "open request", "waste_location", "speed_cleanup"]
+    "tags": [
+      "deeplink заявки",
+      "открыть заявку",
+      "deep link",
+      "request link",
+      "open request",
+      "waste_location",
+      "speed_cleanup"
+    ]
   },
   {
     "chunk_id": "deeplink_open_news_details",
     "title": "Как в приложении открываются ссылки на новости",
     "text": "Ссылки на новости поддерживают путь `/news/{newsId}` в web и app-scheme форматах. Приложение разбирает newsId и переходит на экран новости. Если формат ссылки неверный, перехода не будет.",
-    "tags": ["deeplink новостей", "открыть новость", "news deep link", "open news", "newsId", "deeplink", "routing"]
+    "tags": [
+      "deeplink новостей",
+      "открыть новость",
+      "news deep link",
+      "open news",
+      "newsId",
+      "deeplink",
+      "routing"
+    ]
   },
   {
     "chunk_id": "deeplink_cold_start_pending_behavior",
     "title": "Поведение ссылки при холодном старте",
     "text": "При холодном старте приложение может сначала поставить ссылку в очередь и применить ее после готовности домашнего маршрута. Это предотвращает перезапись перехода экраном заставки. Если кажется, что переход задержался, дождитесь инициализации главного экрана.",
-    "tags": ["cold start", "очередь deeplink", "cold start deep link", "queued deep link", "splash", "home route", "navigation"]
+    "tags": [
+      "cold start",
+      "очередь deeplink",
+      "cold start deep link",
+      "queued deep link",
+      "splash",
+      "home route",
+      "navigation"
+    ]
   },
   {
     "chunk_id": "deeplink_duplicate_ignored_short_window",
     "title": "Дубликаты ссылок временно игнорируются",
     "text": "Если одинаковая ссылка приходит несколько раз за короткий интервал, приложение игнорирует дубликаты, чтобы избежать повторной навигации. Это ожидаемое поведение защиты от дублей. Нажмите по валидной ссылке один раз и подождите переход.",
-    "tags": ["дубликат deeplink", "двойное открытие", "duplicate deeplink", "opens twice", "navigation duplicate", "anti duplicate", "deep link"]
+    "tags": [
+      "дубликат deeplink",
+      "двойное открытие",
+      "duplicate deeplink",
+      "opens twice",
+      "navigation duplicate",
+      "anti duplicate",
+      "deep link"
+    ]
   },
   {
     "chunk_id": "deeplink_invalid_format_behavior",
     "title": "Поведение при неверном формате ссылки",
     "text": "Если формат ссылки не соответствует поддерживаемым шаблонам request/news, приложение не перейдет к целевому контенту. Неверный формат логируется внутри и игнорируется навигацией. Используйте корректную структуру ссылки и попробуйте снова.",
-    "tags": ["неверный deeplink", "ссылка не открывается", "invalid deep link", "link not opening", "wrong format", "deeplink parse", "routing"]
+    "tags": [
+      "неверный deeplink",
+      "ссылка не открывается",
+      "invalid deep link",
+      "link not opening",
+      "wrong format",
+      "deeplink parse",
+      "routing"
+    ]
   },
   {
     "chunk_id": "deeplink_open_chat_route",
     "title": "Открытие чата по ссылке маршрута",
     "text": "Маршрут чата поддерживает путь `/chat/{chatId}` при наличии валидного chatId. Если chatId отсутствует, маршрут не сможет корректно открыть диалог. Используйте ссылки с реальным ID чата из контекста приложения.",
-    "tags": ["ссылка на чат", "chat route", "chat deep link", "chat route", "chatId", "open chat", "navigation"]
+    "tags": [
+      "ссылка на чат",
+      "chat route",
+      "chat deep link",
+      "chat route",
+      "chatId",
+      "open chat",
+      "navigation"
+    ]
   },
   {
     "chunk_id": "profile_edit_basic_fields",
     "title": "Как редактировать профиль",
     "text": "Поток редактирования профиля поддерживает обновление имени, фамилии, страны, города, раздела about и социальных ссылок. Сохраните изменения на экране редактирования профиля, чтобы обновить данные аккаунта. Обновленный профиль затем используется в пользовательских экранах.",
-    "tags": ["редактировать профиль", "данные профиля", "edit profile", "name", "city", "about", "social links"]
+    "tags": [
+      "редактировать профиль",
+      "данные профиля",
+      "edit profile",
+      "name",
+      "city",
+      "about",
+      "social links"
+    ]
   },
   {
     "chunk_id": "profile_update_photo_behavior",
     "title": "Обновление фото профиля",
     "text": "В потоке редактирования профиля есть обновление изображения профиля как часть обновления пользовательских данных. Если обновление фото не удалось, приложение может показать ошибки обработки/сохранения. Повторите выбор или загрузку фото и снова сохраните.",
-    "tags": ["фото профиля", "аватар", "profile photo", "avatar", "photo processing error", "edit profile", "save error"]
+    "tags": [
+      "фото профиля",
+      "аватар",
+      "profile photo",
+      "avatar",
+      "photo processing error",
+      "edit profile",
+      "save error"
+    ]
   },
   {
     "chunk_id": "profile_open_public_user_profile",
     "title": "Открытие публичного профиля пользователя",
     "text": "Приложение поддерживает маршрут профиля пользователя с параметром user ID для открытия публичной страницы. Если user ID отсутствует в маршруте, показывается запасной экран ошибки. По возможности открывайте профиль по валидным ссылкам внутри приложения.",
-    "tags": ["публичный профиль", "user id", "user profile", "public profile", "userId", "profile route", "navigation"]
+    "tags": [
+      "публичный профиль",
+      "user id",
+      "user profile",
+      "public profile",
+      "userId",
+      "profile route",
+      "navigation"
+    ]
   },
   {
     "chunk_id": "profile_language_change_behavior",
     "title": "Смена языка в профиле",
     "text": "Настройки языка доступны в профиле, и локализация приложения поддерживает несколько языков. Смена языка обновляет текстовые ресурсы на экранах. Если нужно сразу обновить видимые строки, переоткройте нужный экран.",
-    "tags": ["смена языка", "локализация", "language", "localization", "profile settings", "translate", "app language"]
+    "tags": [
+      "смена языка",
+      "локализация",
+      "language",
+      "localization",
+      "profile settings",
+      "translate",
+      "app language"
+    ]
   },
   {
     "chunk_id": "support_generic_retry_after_temporary_failure",
     "title": "Что делать при временной ошибке действия",
     "text": "При временной ошибке отправки или загрузки сначала повторите действие на этом же экране через кнопки «Повторить» или «Обновить». Затем переоткройте поток с исходного экрана (детали заявки, список чатов, список уведомлений). Если проблема остается, зафиксируйте точный текст ошибки и контекст для поддержки.",
-    "tags": ["временная ошибка", "повторить попытку", "something failed", "retry", "refresh", "temporary error", "troubleshooting"]
+    "tags": [
+      "временная ошибка",
+      "повторить попытку",
+      "something failed",
+      "retry",
+      "refresh",
+      "temporary error",
+      "troubleshooting"
+    ]
   },
   {
     "chunk_id": "support_request_not_visible_checklist",
     "title": "Почему моя заявка не видна",
     "text": "Заявка может казаться пропавшей, если она архивирована или отфильтрована из активных списков. Также она может быть в статусе, который не показывается текущим фильтром. Если есть прямая ссылка на детали, откройте ее и проверьте статус там.",
-    "tags": ["заявка не видна", "пропала заявка", "request not visible", "missing request", "archived", "filters", "status"]
+    "tags": [
+      "заявка не видна",
+      "пропала заявка",
+      "request not visible",
+      "missing request",
+      "archived",
+      "filters",
+      "status"
+    ]
   },
   {
     "chunk_id": "support_why_cannot_mark_completed",
     "title": "Почему не получается отметить заявку как завершенную",
     "text": "Завершение может не сработать, если не хватает обязательных полей-доказательств, контекст request ID некорректен или не выполнены ограничения по локации. Проверьте требование фото после и ограничения по расстоянию/времени для вашего типа заявки. Затем повторите завершение из деталей заявки.",
-    "tags": ["не удается завершить", "блок завершения", "cannot mark completed", "completion blocked", "after photo", "distance check", "request id"]
+    "tags": [
+      "не удается завершить",
+      "блок завершения",
+      "cannot mark completed",
+      "completion blocked",
+      "after photo",
+      "distance check",
+      "request id"
+    ]
   },
   {
     "chunk_id": "support_why_notifications_not_received",
     "title": "Почему не приходят уведомления",
     "text": "Проверьте разрешение ОС на уведомления для приложения и поддержку push на устройстве. Встроенная страница уведомлений может показывать записи, даже если push-доставка была пропущена. Нажмите refresh на странице уведомлений и проверьте, появляются ли новые элементы.",
-    "tags": ["не приходят уведомления", "push не работает", "notifications not received", "push not working", "permission", "fcm", "notification list"]
+    "tags": [
+      "не приходят уведомления",
+      "push не работает",
+      "notifications not received",
+      "push not working",
+      "permission",
+      "fcm",
+      "notification list"
+    ]
   },
   {
     "chunk_id": "support_open_app_from_deeplink",
     "title": "Как открыть приложение по ссылке",
     "text": "Используйте валидную ссылку Joy Pick для заявки или новости. При некоторых холодных стартах приложение сначала откроет заставку или главный экран, а затем выполнит переход по ссылке. Если ничего не открывается, проверьте структуру ссылки и значения category/request ID.",
-    "tags": ["открыть из ссылки", "deep link", "open app from link", "deeplink", "request link", "news link", "navigation"]
+    "tags": [
+      "открыть из ссылки",
+      "deep link",
+      "open app from link",
+      "deeplink",
+      "request link",
+      "news link",
+      "navigation"
+    ]
   },
   {
     "chunk_id": "support_chat_read_status_explained",
     "title": "Как работает статус прочтения в чате",
     "text": "Открытие чата помечает его прочитанным и очищает счетчик непрочитанных для этого чата в списке. Для ваших отправленных сообщений галочки в UI зависят от метаданных read-by из backend. Время обновления может отличаться из-за real-time синхронизации и состояния сети.",
-    "tags": ["прочтение в чате", "галочки", "chat read status", "unread", "mark read", "double check", "read receipts"]
+    "tags": [
+      "прочтение в чате",
+      "галочки",
+      "chat read status",
+      "unread",
+      "mark read",
+      "double check",
+      "read receipts"
+    ]
   },
   {
     "chunk_id": "auth_need_sign_in_before_actions",
     "title": "Перед защищенными действиями нужен вход",
     "text": "Некоторые действия требуют активной авторизованной сессии. Если auth-токен отсутствует или сессия завершилась, приложение попросит войти заново. Выполните вход и повторите действие.",
-    "tags": ["нужен вход", "требуется авторизация", "need sign in", "not authorized", "login required", "auth", "session expired"]
+    "tags": [
+      "нужен вход",
+      "требуется авторизация",
+      "need sign in",
+      "not authorized",
+      "login required",
+      "auth",
+      "session expired"
+    ]
   },
   {
     "chunk_id": "auth_email_not_found_case",
     "title": "Email не найден при входе",
     "text": "Если email при входе не распознан, приложение может показать ошибку email not found. Проверьте введенный адрес и попробуйте снова. Если аккаунт новый, сначала пройдите регистрацию.",
-    "tags": ["email не найден", "ошибка входа", "email not found", "login failed", "wrong email", "auth", "sign in"]
+    "tags": [
+      "email не найден",
+      "ошибка входа",
+      "email not found",
+      "login failed",
+      "wrong email",
+      "auth",
+      "sign in"
+    ]
   },
   {
     "chunk_id": "auth_password_reset_entry",
     "title": "Точка входа в восстановление пароля",
     "text": "Поток сброса пароля доступен из маршрутов авторизации. Если пользователь не может войти с текущим паролем, откройте экран reset password из auth-потока и выполните шаги сброса. После сброса войдите с новым паролем.",
-    "tags": ["забыл пароль", "забыли пароль", "восстановить доступ", "сброс пароля", "forgot password", "reset password", "cannot login", "auth", "recover account"]
+    "tags": [
+      "забыл пароль",
+      "забыли пароль",
+      "восстановить доступ",
+      "сброс пароля",
+      "forgot password",
+      "reset password",
+      "cannot login",
+      "auth",
+      "recover account"
+    ]
   },
   {
     "chunk_id": "location_permission_denied_recovery",
     "title": "Что делать после отклонения доступа к локации",
     "text": "Если доступ к локации был отклонен, действия с зависимостью от локации останутся ограничены. Повторно запросите разрешение из нужного потока или выдайте доступ через настройки приложения/устройства. Затем заново откройте действие, которое ранее не сработало.",
-    "tags": ["доступ к локации отклонен", "восстановить доступ", "permission denied", "location denied", "enable location permission", "gps", "retry"]
+    "tags": [
+      "доступ к локации отклонен",
+      "восстановить доступ",
+      "permission denied",
+      "location denied",
+      "enable location permission",
+      "gps",
+      "retry"
+    ]
   },
   {
     "chunk_id": "location_cached_or_default_coordinates_note",
     "title": "Почему карта может показывать кэшированную или дефолтную локацию",
     "text": "Сервис локации может использовать кэшированные координаты и fallback, когда реальная локация еще недоступна. В таких случаях позиция на карте может сразу не совпадать с текущей. Включите геолокацию и подождите свежего обновления.",
-    "tags": ["неверная локация", "кэш локации", "wrong location", "cached location", "default location", "map location", "gps"]
+    "tags": [
+      "неверная локация",
+      "кэш локации",
+      "wrong location",
+      "cached location",
+      "default location",
+      "map location",
+      "gps"
+    ]
   },
   {
     "chunk_id": "request_join_failed_retry_guidance",
     "title": "Не удалось присоединиться: что проверить",
     "text": "Если действие Join не сработало, сначала повторите попытку на этой же странице деталей заявки. Затем убедитесь, что доступ к локации и сервис геолокации включены, так как действия исполнителя зависят от проверок локации. Если проблема остается, переоткройте детали заявки и попробуйте снова.",
-    "tags": ["join не работает", "повторить join", "join failed", "cannot join request", "retry join", "location dependency", "executor"]
+    "tags": [
+      "join не работает",
+      "повторить join",
+      "join failed",
+      "cannot join request",
+      "retry join",
+      "location dependency",
+      "executor"
+    ]
   },
   {
     "chunk_id": "request_unjoin_failed_retry_guidance",
     "title": "Не удалось отменить участие: что делать",
     "text": "Если действие Unjoin не сработало, оставьте текущую заявку открытой и повторите попытку один раз. Если снова не получилось, переоткройте детали заявки из списка/карты и попробуйте снова. Это помогает синхронизировать текущее состояние участия перед вызовом действия.",
-    "tags": ["unjoin не работает", "ошибка отмены участия", "unjoin failed", "cancel participation failed", "leave request", "retry", "request details"]
+    "tags": [
+      "unjoin не работает",
+      "ошибка отмены участия",
+      "unjoin failed",
+      "cancel participation failed",
+      "leave request",
+      "retry",
+      "request details"
+    ]
   },
   {
     "chunk_id": "request_continue_work_action_meaning",
     "title": "Что означает «Продолжить работу»",
     "text": "Continue Work появляется, когда ваша задача уже началась и все еще активна. Это возвращает вас в активный поток выполнения, а не запускает его заново. Используйте кнопку, чтобы продолжить незавершенную работу.",
-    "tags": ["continue work", "продолжить задачу", "continue work", "resume task", "in progress", "request action", "executor"]
+    "tags": [
+      "continue work",
+      "продолжить задачу",
+      "continue work",
+      "resume task",
+      "in progress",
+      "request action",
+      "executor"
+    ]
   },
   {
     "chunk_id": "request_cancel_work_action_meaning",
     "title": "Что делает «Отменить работу»",
     "text": "Cancel Work останавливает ваше активное состояние выполнения по этой задаче. Приложение запрашивает подтверждение, потому что прогресс может быть потерян. Используйте только если действительно хотите остановить текущее выполнение.",
-    "tags": ["cancel work", "остановить задачу", "cancel work", "stop task", "progress lost", "request action", "confirmation"]
+    "tags": [
+      "cancel work",
+      "остановить задачу",
+      "cancel work",
+      "stop task",
+      "progress lost",
+      "request action",
+      "confirmation"
+    ]
   },
   {
     "chunk_id": "request_group_chat_not_found_case",
     "title": "Групповой чат по заявке не найден",
     "text": "Если приложение не может определить групповой чат заявки, оно может показать сообщение group-chat-not-found. Переоткройте детали заявки и повторите действие чата. Если чат все еще недоступен, для этого контекста групповой чат мог не быть создан.",
-    "tags": ["group chat не найден", "чат заявки", "group chat not found", "request group chat", "chat from request", "cannot open chat", "error"]
+    "tags": [
+      "group chat не найден",
+      "чат заявки",
+      "group chat not found",
+      "request group chat",
+      "chat from request",
+      "cannot open chat",
+      "error"
+    ]
   },
   {
     "chunk_id": "request_rejection_reason_requirement",
     "title": "При проверке участника обязательна причина отклонения",
     "text": "В потоке отклонения на модерации участника поле причины отклонения обязательно. Если причина пустая, действие reject не пройдет корректно. Введите текст причины и отправьте отклонение снова.",
-    "tags": ["причина отклонения", "обязательное поле reject", "rejection reason", "participant review", "reject work", "moderation", "required field"]
+    "tags": [
+      "причина отклонения",
+      "обязательное поле reject",
+      "rejection reason",
+      "participant review",
+      "reject work",
+      "moderation",
+      "required field"
+    ]
   },
   {
     "chunk_id": "request_work_completed_moderation_message",
     "title": "Работа завершена и отправлена на модерацию",
     "text": "После успешной отправки завершения в соответствующих потоках приложение может показать, что работа отправлена на модерацию. Это значит, результат отправлен и сейчас ожидает проверки. Финальное обновление статуса появится после решения модерации.",
-    "tags": ["отправлено на модерацию", "работа завершена", "submitted for moderation", "work completed", "pending review", "status", "completion"]
+    "tags": [
+      "отправлено на модерацию",
+      "работа завершена",
+      "submitted for moderation",
+      "work completed",
+      "pending review",
+      "status",
+      "completion"
+    ]
   },
   {
     "chunk_id": "request_work_completed_waiting_creator_approval",
     "title": "Работа завершена, ожидается подтверждение автора",
     "text": "В некоторых потоках завершения показывается ожидание подтверждения автора вместо мгновенного финала. В этом состоянии участнику нужно дождаться решения автора. Позже проверьте статус заявки: approved или rejected.",
-    "tags": ["ожидание подтверждения автора", "completion submitted", "waiting creator approval", "completion submitted", "request status", "approved rejected", "moderation"]
+    "tags": [
+      "ожидание подтверждения автора",
+      "completion submitted",
+      "waiting creator approval",
+      "completion submitted",
+      "request status",
+      "approved rejected",
+      "moderation"
+    ]
   },
   {
     "chunk_id": "request_extend_for_one_day_action",
     "title": "Продлить заявку на один день",
     "text": "В деталях заявки, где поддерживается, есть действие продления на один день. Если продление прошло успешно, приложение покажет подтверждение. Используйте, когда нужно дополнительное время на выполнение.",
-    "tags": ["продлить заявку", "дополнительный день", "extend request", "extend 1 day", "request deadline", "request details", "action"]
+    "tags": [
+      "продлить заявку",
+      "дополнительный день",
+      "extend request",
+      "extend 1 day",
+      "request deadline",
+      "request details",
+      "action"
+    ]
   },
   {
     "chunk_id": "request_close_and_submit_for_review",
     "title": "Закрыть заявку и отправить на проверку",
     "text": "Действие закрытия со стороны автора может перевести заявку в этап отправки на review. Приложение подтверждает это сообщением в стиле submitted-for-review. После этого финальный результат проверки обновит статус позже.",
-    "tags": ["закрыть заявку", "отправить на review", "close request", "submit for review", "creator action", "moderation", "status"]
+    "tags": [
+      "закрыть заявку",
+      "отправить на review",
+      "close request",
+      "submit for review",
+      "creator action",
+      "moderation",
+      "status"
+    ]
   },
   {
     "chunk_id": "donation_user_cancelled_payment_case",
     "title": "Пользователь отменил оплату доната",
     "text": "Если платежный лист закрыт или отменен пользователем, приложение считает донат отмененным и показывает соответствующее сообщение. В этой попытке успешный донат не фиксируется. Запустите донат снова, когда будете готовы.",
-    "tags": ["донат отменен", "отмена платежа", "payment canceled", "donation canceled", "stripe sheet closed", "no payment", "retry donation"]
+    "tags": [
+      "донат отменен",
+      "отмена платежа",
+      "payment canceled",
+      "donation canceled",
+      "stripe sheet closed",
+      "no payment",
+      "retry donation"
+    ]
   },
   {
     "chunk_id": "payout_confirm_payout_flow",
     "title": "Подтверждение выплаты",
     "text": "Поток instant payout требует подтверждения после выбора доступного метода выплаты и суммы. Нажмите confirm payout, чтобы отправить запрос на выплату. Во время выполнения backend-действия может отображаться состояние processing.",
-    "tags": ["подтвердить выплату", "выплата processing", "confirm payout", "instant payout", "withdraw confirm", "processing", "payout flow"]
+    "tags": [
+      "подтвердить выплату",
+      "выплата processing",
+      "confirm payout",
+      "instant payout",
+      "withdraw confirm",
+      "processing",
+      "payout flow"
+    ]
   },
   {
     "chunk_id": "payout_history_empty_case",
     "title": "Пока нет истории выплат",
     "text": "Если записей выплат нет, вкладка History показывает пустое состояние. Это ожидаемо для аккаунтов без завершенных выплат. Проверьте снова после первой успешной выплаты.",
-    "tags": ["история выплат пуста", "нет выплат", "no payout history", "history empty", "payouts", "withdraw history", "payments"]
+    "tags": [
+      "история выплат пуста",
+      "нет выплат",
+      "no payout history",
+      "history empty",
+      "payouts",
+      "withdraw history",
+      "payments"
+    ]
   },
   {
     "chunk_id": "chat_list_empty_state",
     "title": "Пока нет чатов",
     "text": "Список чатов может показывать пустое состояние, если у пользователя нет активных диалогов. Начните участие или откройте поддерживаемые чаты поддержки/заявки, чтобы создать чаты. Обновите список чатов после новой активности.",
-    "tags": ["нет чатов", "пустой список чатов", "no chats", "chat list empty", "messages", "conversation list", "chat"]
+    "tags": [
+      "нет чатов",
+      "пустой список чатов",
+      "no chats",
+      "chat list empty",
+      "messages",
+      "conversation list",
+      "chat"
+    ]
   },
   {
     "chunk_id": "chat_send_in_progress_state",
     "title": "Сообщение отправляется",
     "text": "Когда сообщение отправляется, UI чата показывает прогресс отправки на контроле send. Дождитесь завершения отправки, прежде чем часто нажимать повторно. Это помогает избежать случайных дубликатов.",
-    "tags": ["отправка сообщения", "прогресс send", "sending message", "chat loading", "send progress", "message pending", "chat ui"]
+    "tags": [
+      "отправка сообщения",
+      "прогресс send",
+      "sending message",
+      "chat loading",
+      "send progress",
+      "message pending",
+      "chat ui"
+    ]
   },
   {
     "chunk_id": "chat_title_resolution_by_request_context",
     "title": "Почему заголовок чата меняется по контексту",
     "text": "В заголовке чата может показываться название заявки, если чат привязан к request ID. Для support/private/group контекстов без данных заявки заголовок переключается на типовые названия чата. Это ожидаемое поведение заголовка.",
-    "tags": ["заголовок чата", "контекст заявки", "chat title", "request name in chat", "support chat", "private chat", "group chat"]
+    "tags": [
+      "заголовок чата",
+      "контекст заявки",
+      "chat title",
+      "request name in chat",
+      "support chat",
+      "private chat",
+      "group chat"
+    ]
   },
   {
     "chunk_id": "notifications_mark_as_read_on_open_details",
     "title": "Уведомление помечается прочитанным при открытии деталей",
     "text": "Когда вы открываете модальное окно деталей уведомления, приложение автоматически помечает это уведомление как прочитанное. Дополнительная кнопка для прочтения одного элемента в этом потоке не нужна. Вернитесь в список, чтобы увидеть обновленный стиль карточки.",
-    "tags": ["прочтение уведомления", "авто read", "notification read", "open details", "mark as read", "notification modal", "read status"]
+    "tags": [
+      "прочтение уведомления",
+      "авто read",
+      "notification read",
+      "open details",
+      "mark as read",
+      "notification modal",
+      "read status"
+    ]
   },
   {
     "chunk_id": "notifications_unread_indicator_dot",
     "title": "Индикатор непрочитанного на карточке уведомления",
     "text": "Непрочитанные уведомления оформляются иначе и имеют визуальный индикатор непрочитанного. После прочтения стиль карточки возвращается к обычному. Это помогает быстро отличать непрочитанные элементы от прочитанных.",
-    "tags": ["индикатор непрочитанного", "точка уведомления", "unread indicator", "notification dot", "read unread", "notification card", "ui"]
+    "tags": [
+      "индикатор непрочитанного",
+      "точка уведомления",
+      "unread indicator",
+      "notification dot",
+      "read unread",
+      "notification card",
+      "ui"
+    ]
   },
   {
     "chunk_id": "notifications_error_state_with_retry_button",
     "title": "Ошибка загрузки уведомлений с кнопкой «Повторить»",
     "text": "Если загрузка уведомлений не удалась и список пуст, приложение показывает состояние ошибки с кнопкой «Повторить». Нажмите ее, чтобы запросить уведомления снова. Если данные загрузились, но могли устареть, используйте «Обновить» позже.",
-    "tags": ["ошибка уведомлений", "кнопка retry", "notification error", "retry button", "cannot load notifications", "network", "reload"]
+    "tags": [
+      "ошибка уведомлений",
+      "кнопка retry",
+      "notification error",
+      "retry button",
+      "cannot load notifications",
+      "network",
+      "reload"
+    ]
   },
   {
     "chunk_id": "deeplink_supported_request_category_paths",
     "title": "Поддерживаемые пути категорий в ссылках на заявки",
     "text": "Ссылки на заявки поддерживают category paths: `waste_location`, `speed_cleanup` и `event`. Если путь категории другой, парсер отклонит ссылку и переход не выполнится. В общих ссылках используйте только поддерживаемые категории.",
-    "tags": ["категории deeplink", "формат ссылки заявки", "deeplink category", "waste_location", "speed_cleanup", "event", "request link format"]
+    "tags": [
+      "категории deeplink",
+      "формат ссылки заявки",
+      "deeplink category",
+      "waste_location",
+      "speed_cleanup",
+      "event",
+      "request link format"
+    ]
   },
   {
     "chunk_id": "deeplink_request_not_found_fallback",
     "title": "Запасной экран, если заявка по ссылке не найдена",
     "text": "Когда request ID из ссылки не удается загрузить, приложение показывает запасной экран «заявка не найдена». Это может происходить для неверных, удаленных или недоступных request ID. Проверьте ID ссылки и откройте актуальную ссылку на заявку.",
-    "tags": ["заявка не найдена по ссылке", "fallback экран", "request not found", "deep link error", "invalid request id", "cannot open request", "fallback"]
+    "tags": [
+      "заявка не найдена по ссылке",
+      "fallback экран",
+      "request not found",
+      "deep link error",
+      "invalid request id",
+      "cannot open request",
+      "fallback"
+    ]
   },
   {
     "chunk_id": "deeplink_user_profile_route_requirement",
     "title": "Для маршрута профиля нужен ID пользователя",
     "text": "Маршрут профиля пользователя ожидает параметр `userId`. Если `userId` отсутствует, приложение показывает fallback-ошибку вместо данных профиля. Открывайте профиль по валидным пользовательским ссылкам внутри приложения.",
-    "tags": ["user id обязателен", "профиль по ссылке", "user profile link", "userId required", "route error", "profile navigation", "fallback"]
+    "tags": [
+      "user id обязателен",
+      "профиль по ссылке",
+      "user profile link",
+      "userId required",
+      "route error",
+      "profile navigation",
+      "fallback"
+    ]
   },
   {
     "chunk_id": "profile_payout_data_refresh_on_profile_tab",
     "title": "Вкладка профиля обновляет выплаты и данные пользователя",
     "text": "Когда вкладка профиля открывается из главной навигации, приложение в фоне обновляет данные пользователя и выплат. Это помогает держать баланс и историю актуальными. Если данные выглядят устаревшими, переоткройте вкладку профиля один раз.",
-    "tags": ["обновление профиля", "обновление выплат", "profile refresh", "payout refresh", "balance update", "profile tab", "data sync"]
+    "tags": [
+      "обновление профиля",
+      "обновление выплат",
+      "profile refresh",
+      "payout refresh",
+      "balance update",
+      "profile tab",
+      "data sync"
+    ]
   },
   {
     "chunk_id": "news_unread_pulse_dot_behavior",
     "title": "Как работает пульсирующая точка непрочитанных новостей",
     "text": "В главной навигации на вкладке News может показываться пульс-точка, когда есть непросмотренные news ID по сравнению с локально сохраненными seen IDs. Открытие вкладки News помечает текущий список как просмотренный и убирает точку. Это локальная индикация непрочитанных новостей.",
-    "tags": ["точка новостей", "непрочитанные новости", "news unread", "pulse dot", "news tab", "mark news seen", "indicator"]
+    "tags": [
+      "точка новостей",
+      "непрочитанные новости",
+      "news unread",
+      "pulse dot",
+      "news tab",
+      "mark news seen",
+      "indicator"
+    ]
   },
   {
     "chunk_id": "news_empty_state",
     "title": "Состояние: пока нет новостей",
     "text": "Если доступных новостей нет, экран News показывает пустое состояние. Это ожидаемо, когда в ленте нет записей для текущей локали/времени. Обновите позже, чтобы проверить новые элементы.",
-    "tags": ["нет новостей", "пустая лента", "no news", "news empty", "news feed", "empty state", "refresh"]
+    "tags": [
+      "нет новостей",
+      "пустая лента",
+      "no news",
+      "news empty",
+      "news feed",
+      "empty state",
+      "refresh"
+    ]
   },
   {
     "chunk_id": "news_detail_donation_actions",
     "title": "Действия доната из деталей новости",
     "text": "Текст новости поддерживает действия, связанные с донатом: поддержать уборку или задонатить **участникам/исполнителям** по ссылке из статьи. Эти действия ведут в потоки доната, связанные с логикой заявки и платежей. Если донат не проходит, используйте разделы troubleshooting по донатам.",
-    "tags": ["донат из новости", "поддержать уборку", "news donation", "support cleanup", "donate to volunteer", "news detail", "payment"]
+    "tags": [
+      "донат из новости",
+      "поддержать уборку",
+      "news donation",
+      "support cleanup",
+      "donate to volunteer",
+      "news detail",
+      "payment"
+    ]
   },
   {
     "chunk_id": "map_search_and_filter_basics",
     "title": "Базовый поиск и фильтры на карте",
     "text": "Карта/список поддерживает поиск по заголовку, городу, типу мусора или по имени пользователя (в т.ч. чтобы найти заявки конкретного автора). Региональные фильтры: All, America, Europe и Nearby. Если совпадений нет, приложение покажет подсказку о заявках и предложит изменить запрос или фильтры.",
-    "tags": ["поиск на карте", "фильтры заявок", "map search", "request filters", "nearby", "america", "europe", "по имени создателя", "по адресу", "найти заявку", "creator name", "address search"]
+    "tags": [
+      "поиск на карте",
+      "фильтры заявок",
+      "map search",
+      "request filters",
+      "nearby",
+      "america",
+      "europe",
+      "по имени создателя",
+      "по адресу",
+      "найти заявку",
+      "creator name",
+      "address search"
+    ]
   },
   {
     "chunk_id": "map_my_requests_legend_meaning",
     "title": "Легенда карты: мои заявки, участия, донаты",
     "text": "В карте/списке есть группы легенды: My Requests, My Joins и My Donations. Они помогают быстро понять контекст владения и участия. Если ожидаемого элемента нет, проверьте текущий фильтр.",
-    "tags": ["легенда карты", "мои заявки", "map legend", "my requests", "my joins", "my donations", "filter context"]
+    "tags": [
+      "легенда карты",
+      "мои заявки",
+      "map legend",
+      "my requests",
+      "my joins",
+      "my donations",
+      "filter context"
+    ]
   },
   {
     "chunk_id": "map_loading_and_failed_to_load_states",
     "title": "Состояния загрузки и ошибки загрузки на карте",
     "text": "Список заявок может показывать состояние загрузки во время получения заявок/событий. Если загрузка не удалась, приложение показывает ошибку failed-to-load. Повторите через refresh и проверьте стабильность сети.",
-    "tags": ["загрузка карты", "ошибка загрузки", "map loading", "failed to load", "requests list error", "retry", "network"]
+    "tags": [
+      "загрузка карты",
+      "ошибка загрузки",
+      "map loading",
+      "failed to load",
+      "requests list error",
+      "retry",
+      "network"
+    ]
   },
   {
     "chunk_id": "map_no_user_activity_state",
     "title": "Состояние карты: нет активности пользователя",
     "text": "Когда пользователь не создавал заявки, не присоединялся и не донатил, карта/список может показывать отдельное сообщение об отсутствии активности. Это ожидаемо для новых или неактивных аккаунтов. Создайте/присоединитесь/задонатьте, чтобы заполнить персональные разделы.",
-    "tags": ["нет активности", "пустые мои разделы", "no activity", "my requests empty", "my joins empty", "my donations empty", "map state"]
+    "tags": [
+      "нет активности",
+      "пустые мои разделы",
+      "no activity",
+      "my requests empty",
+      "my joins empty",
+      "my donations empty",
+      "map state"
+    ]
   },
   {
     "chunk_id": "support_stuck_after_splash_location_case",
     "title": "Если пользователь сообщает, что приложение зависло после заставки",
     "text": "Частая причина - выключенная геолокация во время проверок на старте. Текущее поведение приложения избегает долгого ожидания координат при выключенной локации и показывает предупреждение с переходом в настройки. Попросите пользователя включить геолокацию и повторить целевое действие.",
-    "tags": ["зависает после splash", "долгая загрузка", "stuck on splash", "long loading", "location off", "startup issue", "troubleshooting"]
+    "tags": [
+      "зависает после splash",
+      "долгая загрузка",
+      "stuck on splash",
+      "long loading",
+      "location off",
+      "startup issue",
+      "troubleshooting"
+    ]
   },
   {
     "chunk_id": "support_collect_minimum_debug_context",
     "title": "Минимальный контекст перед эскалацией",
     "text": "При повторяющихся ошибках соберите: точный экран, точное нажатое действие, полный текст ошибки и включены ли разрешения локации/уведомлений. Также уточните, была ли повторная попытка после переоткрытия экрана. Этот контекст напрямую сопоставляется с существующими troubleshooting-потоками приложения.",
-    "tags": ["чеклист поддержки", "контекст для эскалации", "support checklist", "debug context", "error text", "repro steps", "escalation"]
+    "tags": [
+      "чеклист поддержки",
+      "контекст для эскалации",
+      "support checklist",
+      "debug context",
+      "error text",
+      "repro steps",
+      "escalation"
+    ]
   },
   {
     "chunk_id": "requests_what_types_and_how_to_browse",
     "title": "Какие заявки бывают и где их смотреть",
     "text": "Если пользователь спрашивает «какие заявки есть», «какие типы заявок», «что за заявки на карте» или похожее — это вопрос о каталоге и видах заявок, а не о создании новой. Сразу ответьте без уточняющего вопроса «какой тип создаём»: в Joy Pick три типа заявок — (1) Waste Location / уборка мусора: отметить загрязнённое место; (2) Speed Cleanup / быстрая уборка: своя уборка с фото до и после; (3) Event / событие: запланированная уборка или мероприятие с временем и участниками. Живые заявки других людей отображаются на главной карте и в списках; их можно листать, искать и фильтровать. Отдельно: если пользователь явно хочет создать новую заявку и не назвал тип — тогда один короткий вопрос про тип уместен.",
-    "tags": ["какие заявки", "какие заявки есть", "какие типы заявок", "что за заявки", "виды заявок", "список заявок", "запросы какие есть", "карта заявок", "what requests", "request types", "browse requests", "existing requests"]
+    "tags": [
+      "какие заявки",
+      "какие заявки есть",
+      "какие типы заявок",
+      "что за заявки",
+      "виды заявок",
+      "список заявок",
+      "запросы какие есть",
+      "карта заявок",
+      "what requests",
+      "request types",
+      "browse requests",
+      "existing requests"
+    ]
   },
   {
     "chunk_id": "intent_alias_how_to_create_request",
     "title": "Алиас намерения: только «как создать» новую заявку",
     "text": "Это правило только для явного намерения создать новую заявку (например: как создать заявку, хочу добавить заявку, новая заявка), когда тип не назван. Тогда задайте короткий вопрос: уборка мусора (waste), быстрая уборка (speed) или событие (event); после ответа дайте шаги только для выбранного типа. Не применяйте этот сценарий к вопросам «какие заявки есть», «какие типы заявок», «что на карте» — для них сразу перечислите три типа и где смотреть карту/список (см. отдельный чанк про каталог).",
-    "tags": ["как создать заявку", "alias намерения", "уточнить тип заявки", "clarify request type", "how to create", "create request", "make request", "new request", "create cleanup", "create event"]
+    "tags": [
+      "как создать заявку",
+      "alias намерения",
+      "уточнить тип заявки",
+      "clarify request type",
+      "how to create",
+      "create request",
+      "make request",
+      "new request",
+      "create cleanup",
+      "create event"
+    ]
   },
   {
     "chunk_id": "intent_alias_why_request_pending",
     "title": "Алиас намерения: почему заявка в pending",
     "text": "Если пользователь спрашивает, почему заявка pending, объясните: pending значит ожидание проверки/модерации и это еще не финальный результат. Нужно дождаться смены статуса на approved или rejected. Это ожидаемое поведение этапа модерации.",
-    "tags": ["почему pending", "ожидание модерации", "why pending", "request pending", "still pending", "waiting moderation", "waiting review", "status pending"]
+    "tags": [
+      "почему pending",
+      "ожидание модерации",
+      "why pending",
+      "request pending",
+      "still pending",
+      "waiting moderation",
+      "waiting review",
+      "status pending"
+    ]
   },
   {
     "chunk_id": "intent_alias_how_to_mark_completed",
     "title": "Алиас намерения: как отметить завершение",
     "text": "Если пользователь спрашивает, как отметить задачу завершенной, направьте его в поток completion заявки и проверьте наличие обязательных доказательств. Отсутствие фото после, неверный контекст или ограничения по расстоянию могут блокировать завершение. Повторите из деталей заявки после устранения блокеров.",
-    "tags": ["как завершить заявку", "completion alias", "mark completed", "complete request", "finish task", "submit completion", "cannot complete", "how to complete"]
+    "tags": [
+      "как завершить заявку",
+      "completion alias",
+      "mark completed",
+      "complete request",
+      "finish task",
+      "submit completion",
+      "cannot complete",
+      "how to complete"
+    ]
   },
   {
     "chunk_id": "intent_alias_deeplink_not_opening",
     "title": "Алиас намерения: ссылка не открывается",
     "text": "Если пользователь пишет, что ссылка не открывается, сначала проверьте формат ссылки и обязательные ID. Приложение поддерживает шаблоны request/news и при cold start может отложить переход до готовности home. Неверный формат или отсутствующие ID приводят к отсутствию навигации.",
-    "tags": ["deeplink не открывается", "проверка ссылки", "link not opening", "deeplink not working", "open from link", "link opens home only", "invalid deeplink"]
+    "tags": [
+      "deeplink не открывается",
+      "проверка ссылки",
+      "link not opening",
+      "deeplink not working",
+      "open from link",
+      "link opens home only",
+      "invalid deeplink"
+    ]
   },
   {
     "chunk_id": "intent_alias_notifications_not_working",
     "title": "Алиас намерения: уведомления не работают",
     "text": "Если пользователь сообщает, что уведомления не работают, сначала проверьте разрешение устройства и поддержку push. Затем откройте страницу уведомлений в приложении и выполните refresh, чтобы понять, есть ли записи. Отсутствие push может сочетаться с наличием in-app уведомлений.",
-    "tags": ["уведомления не работают", "проблема push", "notifications not working", "no push", "no notifications", "push issue", "notification problem", "fcm issue"]
+    "tags": [
+      "уведомления не работают",
+      "проблема push",
+      "notifications not working",
+      "no push",
+      "no notifications",
+      "push issue",
+      "notification problem",
+      "fcm issue"
+    ]
   },
   {
     "chunk_id": "intent_alias_chat_read_receipts",
     "title": "Алиас намерения: read receipts в чате",
     "text": "Если пользователь спрашивает про seen/read в чате, объясните: открытие чата помечает непрочитанное как прочитанное, а галочки на своих сообщениях зависят от данных read-by. На точное время обновления влияет real-time синхронизация. При необходимости переоткройте чат для принудительного обновления состояния.",
-    "tags": ["прочтение в чате alias", "галочки seen", "chat seen", "message seen", "read receipt", "double tick", "chat unread", "chat read status"]
+    "tags": [
+      "прочтение в чате alias",
+      "галочки seen",
+      "chat seen",
+      "message seen",
+      "read receipt",
+      "double tick",
+      "chat unread",
+      "chat read status"
+    ]
   },
   {
     "chunk_id": "intent_alias_cannot_join_request",
     "title": "Алиас намерения: не удается присоединиться к заявке",
     "text": "Если пользователь не может присоединиться, проверьте, включены ли разрешение на локацию и сервис геолокации, потому что действия исполнителя зависят от проверок местоположения. После включения нужных настроек повторите действие из деталей заявки. Если событие еще не началось, также могут действовать ограничения join/perform.",
-    "tags": ["не удается join", "блок join", "cannot join", "join button not working", "join failed", "cant join", "executor blocked", "location required"]
+    "tags": [
+      "не удается join",
+      "блок join",
+      "cannot join",
+      "join button not working",
+      "join failed",
+      "cant join",
+      "executor blocked",
+      "location required"
+    ]
   },
   {
     "chunk_id": "intent_alias_payment_failed",
     "title": "Алиас намерения: ошибка оплаты",
     "text": "Если пользователь сообщает об ошибке оплаты, сопоставьте это с потоком donation/Stripe и повторите попытку из деталей заявки или доната из новости. Проверьте минимальную сумму доната и факт ручной отмены платежа. Если проблема связана с конфигурацией аккаунта, используйте guidance по payout/Stripe setup.",
-    "tags": ["ошибка оплаты alias", "stripe ошибка", "payment failed", "stripe failed", "donation failed", "checkout error", "payment canceled", "cannot donate"]
+    "tags": [
+      "ошибка оплаты alias",
+      "stripe ошибка",
+      "payment failed",
+      "stripe failed",
+      "donation failed",
+      "checkout error",
+      "payment canceled",
+      "cannot donate"
+    ]
   },
   {
     "chunk_id": "intent_alias_payout_not_available",
     "title": "Алиас намерения: выплата недоступна",
     "text": "Если пользователь спрашивает, почему выплата недоступна, проверьте доступный баланс, минимум для instant payout и настройку метода выплаты. Состояния no funds и no payout methods - ожидаемые блокировки, которые показывает приложение. После исправления настройки или ожидания баланса повторите действие выплаты.",
-    "tags": ["выплата недоступна", "не вывести средства", "payout unavailable", "cannot withdraw", "withdraw not working", "no funds payout", "no payout method", "instant payout"]
+    "tags": [
+      "выплата недоступна",
+      "не вывести средства",
+      "payout unavailable",
+      "cannot withdraw",
+      "withdraw not working",
+      "no funds payout",
+      "no payout method",
+      "instant payout"
+    ]
   },
   {
     "chunk_id": "intent_alias_profile_update_failed",
     "title": "Алиас намерения: не удается обновить профиль",
     "text": "Если изменения профиля не сохраняются, повторите попытку на экране редактирования и проверьте каждое измененное поле и результат загрузки изображения. Ошибки обработки/сохранения фото могут блокировать завершение обновления. Переоткройте профиль и повторите сохранение после исправления проблемных полей.",
-    "tags": ["профиль не сохраняется", "ошибка обновления профиля", "profile not saving", "edit profile failed", "cannot update profile", "avatar upload failed", "save profile error"]
+    "tags": [
+      "профиль не сохраняется",
+      "ошибка обновления профиля",
+      "profile not saving",
+      "edit profile failed",
+      "cannot update profile",
+      "avatar upload failed",
+      "save profile error"
+    ]
   },
   {
     "chunk_id": "intent_alias_request_not_visible_short_query",
     "title": "Алиас короткого запроса: заявка не видна",
     "text": "Для коротких сообщений пользователя вроде request missing/not shown сначала проверьте причины: архив, фильтр, статус. Заявка может быть валидной, но скрытой в контексте активного списка. Используйте прямой путь в детали или измените фильтры.",
-    "tags": ["короткий запрос заявка не видна", "скрытая заявка", "request missing", "not shown", "where is my request", "request disappeared", "hidden request", "archived request"]
+    "tags": [
+      "короткий запрос заявка не видна",
+      "скрытая заявка",
+      "request missing",
+      "not shown",
+      "where is my request",
+      "request disappeared",
+      "hidden request",
+      "archived request"
+    ]
   },
   {
     "chunk_id": "intent_alias_stuck_loading_app",
     "title": "Алиас намерения: приложение долго грузится",
     "text": "Если пользователь сообщает о долгой загрузке вокруг splash/startup, сначала проверьте состояние сервиса геолокации как наиболее вероятную причину. Приложение теперь избегает долгого ожидания координат при выключенной локации и показывает предупреждение с переходом в настройки. Попросите пользователя включить локацию и повторить нужный поток.",
-    "tags": ["приложение зависло загрузка", "splash долго", "app stuck loading", "stuck splash", "long startup", "loading forever", "splash freeze", "location startup"]
+    "tags": [
+      "приложение зависло загрузка",
+      "splash долго",
+      "app stuck loading",
+      "stuck splash",
+      "long startup",
+      "loading forever",
+      "splash freeze",
+      "location startup"
+    ]
   },
   {
     "chunk_id": "intent_alias_chat_not_opening",
     "title": "Алиас намерения: чат не открывается",
     "text": "Если чат не открывается, проверьте, что в маршруте чата есть валидный chatId и связанный чат заявки существует. Отсутствующий или неверный контекст чата приводит к запасным ошибкам вроде «chat not found». Переоткройте чат из списка чатов в приложении или из действия чата в деталях заявки.",
-    "tags": ["чат не открывается", "проверка chatid", "chat not opening", "cannot open chat", "chat id invalid", "chat not found", "private chat not found", "group chat not found"]
+    "tags": [
+      "чат не открывается",
+      "проверка chatid",
+      "chat not opening",
+      "cannot open chat",
+      "chat id invalid",
+      "chat not found",
+      "private chat not found",
+      "group chat not found"
+    ]
   },
   {
     "chunk_id": "intent_alias_news_unread_dot",
     "title": "Алиас намерения: точка непрочитанных новостей",
     "text": "Если пользователь спрашивает про красную/пульсирующую точку на вкладке новостей, объясните: она показывает непросмотренные новости относительно локально сохраненных seen IDs. Открытие вкладки News помечает текущий список как просмотренный и убирает точку. Это ожидаемое локальное поведение индикатора непрочитанных новостей.",
-    "tags": ["точка непрочитанных новостей", "индикатор news", "news dot", "red dot news", "pulse news icon", "unread news", "news indicator", "news tab mark seen"]
+    "tags": [
+      "точка непрочитанных новостей",
+      "индикатор news",
+      "news dot",
+      "red dot news",
+      "pulse news icon",
+      "unread news",
+      "news indicator",
+      "news tab mark seen"
+    ]
   },
   {
     "chunk_id": "intent_alias_map_no_results",
     "title": "Алиас намерения: на карте нет результатов",
     "text": "Если пользователь не видит заявки на карте или в списке, сначала предложите изменить текст поиска и фильтры. Региональные и nearby-фильтры могут скрывать валидные элементы. Состояния загрузки и ошибки загрузки нужно обрабатывать через «Обновить» и «Повторить».",
-    "tags": ["на карте нет результатов", "пустая карта", "no requests on map", "map empty", "no results", "filter too strict", "nearby empty", "search no matches"]
+    "tags": [
+      "на карте нет результатов",
+      "пустая карта",
+      "no requests on map",
+      "map empty",
+      "no results",
+      "filter too strict",
+      "nearby empty",
+      "search no matches"
+    ]
   },
   {
     "chunk_id": "product_onboarding_map_three_types",
     "title": "Первый запуск: язык, аккаунт, карта, три типа эко-заявок",
     "text": "Если аккаунта ещё нет — **сначала регистрация** (email/Google/Apple) и **вход**. Stripe для приёма донатов **не обязателен на старте**; подключают в профиле, когда нужны выплаты. Дальше по задаче: **создать свою заявку** (кнопка «+» на вкладке карты) **или участвовать** в чужих (карта/список, детали заявки). После установки выбирается язык. Главный экран — четыре вкладки внизу: (1) карта и список заявок, (2) станции переработки и партнёры, (3) **новости** — отдельная вкладка, (4) профиль. На вкладке карты по центру внизу кнопка «+» открывает меню создания заявки. Слева внизу отдельная кнопка с иконкой «психология» — чат Support AI (не путать с живой поддержкой в профиле). Три типа заявки в меню «+»: Waste Location (точка загрязнения), Speed Cleanup (быстрая уборка, фото до/после), Event (событие по времени с участниками). Чтобы **кто-то другой** приехал убрать мусор — создайте заявку типа **Waste Location (уборка мусора)**.",
-    "tags": ["первый запуск", "онбординг", "карта", "плюс", "три типа", "waste location", "speed cleanup", "event", "как устроено приложение", "создать заявку", "вкладки", "главный экран", "support ai"]
+    "tags": [
+      "первый запуск",
+      "онбординг",
+      "карта",
+      "плюс",
+      "три типа",
+      "waste location",
+      "speed cleanup",
+      "event",
+      "как устроено приложение",
+      "создать заявку",
+      "вкладки",
+      "главный экран",
+      "support ai"
+    ]
   },
   {
     "chunk_id": "product_waste_location_mark_donation_haul_only",
     "title": "Waste Location: точка, донат, опция только вывоз",
     "text": "Waste Location — отметка загрязнённой территории: фото, описание, можно приложить донат. Донаты получают **исполнители**, которые откликнулись, убрали территорию и приложили фото-подтверждение. Другие пользователи могут донатить, чтобы привлечь внимание; платные заявки выделены. Есть отдельная опция, что нужен только вывоз мусора.",
-    "tags": ["waste location", "уборка мусора", "донат", "фото", "вывоз мусора", "загрязнение", "карта", "метка"]
+    "tags": [
+      "waste location",
+      "уборка мусора",
+      "донат",
+      "фото",
+      "вывоз мусора",
+      "загрязнение",
+      "карта",
+      "метка"
+    ]
   },
   {
     "chunk_id": "donations_who_receives_waste_vs_speed_event",
     "title": "Кому идут донаты: уборка мусора vs быстрая уборка vs субботник",
-    "text": "Заявка «Уборка мусора» (Waste Location): автор только отмечает загрязнённую точку на карте — по умолчанию он не является исполнителем уборки по этой заявке. Донаты после проверки и модерации получают **исполнители**, которые присоединились, реально убрали и сдали работу; деньги не «положены» автору только за факт создания точки, если он сам не выполнял уборку как исполнитель. Быстрая уборка (Speed Cleanup): создатель и исполнитель — один человек, донаты могут идти ему после подтверждения по правилам приложения. Событие / субботник (Event): организатор участвует в событии; донаты распределяются между **участниками** по правилам заявки (см. чанки про доли и холд). Не говорите автору Waste Location, что он автоматически получит донаты как за свою выполненную уборку, если он только создал заявку и не был исполнителем. **Не называйте роли словом «волонтёр»** — в приложении используют **исполнитель** и **участник**.",
-    "tags": ["создатель заявки", "уборка мусора", "донаты кому", "waste location", "не автор", "быстрая уборка", "субботник", "event", "получить деньги создатель", "создал заявку деньги"]
+    "text": "Заявка «Уборка мусора» (Waste Location): автор только отмечает загрязнённую точку на карте — по умолчанию он не является исполнителем уборки по этой заявке. Донаты после проверки и модерации получает **исполнитель**, который присоединился, реально убрал и сдал работу; деньги не «положены» автору только за факт создания точки, если он сам не выполнял уборку как исполнитель. Быстрая уборка (Speed Cleanup): создатель и исполнитель — один человек, донаты могут идти ему после подтверждения по правилам приложения. Событие / субботник (Event): организатор участвует в событии; донаты распределяются между **участниками** по правилам заявки (см. чанки про доли и холд). Для вопросов «какую сумму получу / сколько получу денег» отвечайте формулой без расплывчатости: пользователь получает всю донатную сумму, которая положена ему по типу заявки (для Event — его долю), **за вычетом комиссий платформы и компании**. Не говорите «зависит от случаев», если вопрос про базовый принцип расчёта. Не говорите автору Waste Location, что он автоматически получит донаты как за свою выполненную уборку, если он только создал заявку и не был исполнителем. **Не называйте роли словом «волонтёр»** — в приложении используют **исполнитель** и **участник**.",
+    "tags": [
+      "создатель заявки",
+      "уборка мусора",
+      "донаты кому",
+      "waste location",
+      "не автор",
+      "быстрая уборка",
+      "субботник",
+      "event",
+      "получить деньги создатель",
+      "создал заявку деньги"
+    ]
   },
   {
     "chunk_id": "product_speed_cleanup_before_after_coins_hours",
     "title": "Speed Cleanup: фото до/после, коины, письмо о часах",
     "text": "Speed Cleanup: отмечаете место на карте, фото «до», уборка, затем фото «после». Результат виден на карте и в ленте добрых дел; можно получить донат напрямую. Начисляются JoyCoins даже без доната; коины обмениваются у партнёров (список расширяется). Учитывается время уборок; можно распечатать письмо о волонтёрских часах на официальном бланке.",
-    "tags": ["speed cleanup", "быстрая уборка", "фото до после", "joycoins", "койны", "волонтёрские часы", "письмо", "новости", "партнёры"]
+    "tags": [
+      "speed cleanup",
+      "быстрая уборка",
+      "фото до после",
+      "joycoins",
+      "койны",
+      "волонтёрские часы",
+      "письмо",
+      "новости",
+      "партнёры"
+    ]
   },
   {
     "chunk_id": "product_event_group_chat_share",
     "title": "Event: расписание, чат, донаты, ссылка и пошаговый флоу в приложении",
     "text": "Event — плановое событие (субботник и т.п.): место, время start, описание, участники и донаты; есть групповой чат и шаринг ссылки. Порядок в приложении для участника после начала времени события: открыть ту же заявку → внизу «Выполнить задачу» / сдача работы → экран с фото после, геолокацией завершения и комментарием (черновик сохраняется локально) → отправка; статус участника становится «ожидает создателя». Создатель в списке участников нажимает Review и одобряет или отклоняет сдачу. Когда всех обработал — «Закрыть заявку» (оранжевая кнопка внизу у создателя) → экран завершения события с фото «после» → заявка уходит на модерацию (pending). До наступления start_date кнопки сдачи работы нет; незарегистрированному пользователю внизу «Донат» и «Присоединиться».",
-    "tags": ["event", "событие", "субботник", "субботнике", "отчитываться", "фотоотчёт", "фотоотчет", "ожидает создателя", "заявка event", "чат", "донаты", "участники", "поделиться", "ссылка", "посадка деревьев", "закрыть заявку", "review", "выполнить задачу", "флоу", "пошагово"]
+    "tags": [
+      "event",
+      "событие",
+      "субботник",
+      "субботнике",
+      "отчитываться",
+      "фотоотчёт",
+      "фотоотчет",
+      "ожидает создателя",
+      "заявка event",
+      "чат",
+      "донаты",
+      "участники",
+      "поделиться",
+      "ссылка",
+      "посадка деревьев",
+      "закрыть заявку",
+      "review",
+      "выполнить задачу",
+      "флоу",
+      "пошагово"
+    ]
   },
   {
     "chunk_id": "qa_event_money_after_approval_donations_stripe",
     "title": "Субботник/Event: получу ли деньги участнику",
     "text": "Если речь о заявке типа Event (в т.ч. «субботник») и вы участник: деньги с донатов на эту заявку могут дойти до вас только при цепочке из приложения: вы реально участвовали, отправили сдачу работы (фото/гео по правилам), **создатель одобрил** вашу сдачу (Review), затем заявка прошла **модерацию Joy Pick**, на заявке были **донаты**, и у вас **подключён Stripe Connect** в профиле для выплат. Для Event с несколькими участниками донаты между участниками с подключённым Stripe делятся **поровну** (см. отдельный чанк про деление). Если донатов не было, они в холде/вернулись донатеру по правилам невыполненной заявки, или вашу сдачу отклонили — сценарий другой. **Не подменяйте этот ответ правилом «24 часа после join» для Waste Location** — это другой тип заявки.",
-    "tags": ["деньги", "получу", "получит", "заработаю", "заработок", "выплата", "event", "субботник", "субботнике", "донаты", "stripe", "участник", "одобрение создателя", "модерация", "доля", "поровну", "сдача работы", "will i get paid"]
+    "tags": [
+      "деньги",
+      "получу",
+      "получит",
+      "заработаю",
+      "заработок",
+      "выплата",
+      "event",
+      "субботник",
+      "субботнике",
+      "донаты",
+      "stripe",
+      "участник",
+      "одобрение создателя",
+      "модерация",
+      "доля",
+      "поровну",
+      "сдача работы",
+      "will i get paid"
+    ]
   },
   {
     "chunk_id": "qa_event_nobody_joined_creator_can_still_finish",
     "title": "Event: никто не пришёл — создатель может выполнить уборку один",
     "text": "Для заявки типа Event (в т.ч. субботник) **отсутствие других участников само по себе не означает «заявка не выполнена» и не повод автоматически описывать возврат донатов донатёрам**. Создатель (организатор) события в приложении тоже участник: он может **сам пройти поток выполнения** («Выполнить задачу», сдача с фото/гео по правилам, «Закрыть заявку», модерация) — даже если никто больше не присоединился или не пришёл на место. Возврат с холда по чанку про неисполненную заявку — про случай, когда заявка **реально не завершена по правилам приложения**, а не про «просто не набралось людей». Не подменяйте эти сценарии.",
-    "tags": ["никто не пришёл", "никто не придет", "никто не придёт", "нет участников", "не пришли", "один", "сам", "создатель", "организатор", "event", "субботник", "событие", "донат", "холд", "расхолд", "выполнить один", "no one came"]
+    "tags": [
+      "никто не пришёл",
+      "никто не придет",
+      "никто не придёт",
+      "нет участников",
+      "не пришли",
+      "один",
+      "сам",
+      "создатель",
+      "организатор",
+      "event",
+      "субботник",
+      "событие",
+      "донат",
+      "холд",
+      "расхолд",
+      "выполнить один",
+      "no one came"
+    ]
   },
   {
     "chunk_id": "features_stripe_link_profile_route_notify_10mi",
     "title": "Stripe в профиле и маршрут (без путаницы с «новыми заявками»)",
     "text": "Stripe для приёма донатов подключают в **профиле**, когда пользователю нужны выплаты — это **не** обязательный первый шаг после регистрации. Можно строить маршрут до точек с заявками. **Отдельной рассылки уведомлений «появилась новая заявка» нет** — новые заявки смотрят на **карте и в списке**, обновив выдачу (см. чанк про кнопку обновления и сортировку). Не путайте это с **вкладкой Новости** — это другой раздел приложения.",
-    "tags": ["stripe", "профиль", "подключение", "маршрут", "навигация", "уведомления", "10 миль", "радиус", "рядом"]
+    "tags": [
+      "stripe",
+      "профиль",
+      "подключение",
+      "маршрут",
+      "навигация",
+      "уведомления",
+      "10 миль",
+      "радиус",
+      "рядом"
+    ]
   },
   {
     "chunk_id": "features_geo_photos_required_completion",
     "title": "Геолокация и фото: зависит от экрана (создание vs сдача)",
     "text": "Уборка проверяется по геолокации и фото по правилам конкретного флоу. **Нельзя** давать одну общую формулировку «везде только камера / везде можно галерею»: в одних шагах (например, при **создании** заявки или отдельных экранах) допускается выбор **из галереи**, в других — требуется съёмка **в потоке приложения** при **сдаче/закрытии** работы. Ориентируйтесь на экран: создание vs завершение. Не отвечайте пользователю взаимоисключающими фразами про галерею в одном сообщении и «только камера» в другом без уточнения шага.",
-    "tags": ["геолокация", "gps", "фото", "завершить", "верификация", "присутствие", "камера", "контроль"]
+    "tags": [
+      "геолокация",
+      "gps",
+      "фото",
+      "завершить",
+      "верификация",
+      "присутствие",
+      "камера",
+      "контроль"
+    ]
   },
   {
     "chunk_id": "features_share_search_social_links_profile",
     "title": "Шаринг заявок, поиск, соцсети в профиле",
     "text": "Заявки событий и другие можно отправлять в мессенджеры и соцсети встроенной кнопкой. Поиск заявок по адресу и по пользователю — удобно, если субботники организуют блогеры или известные люди. В ЛК можно указывать ссылки на соцсети; активность пользователя может быть видна другим в зависимости от настроек.",
-    "tags": ["поделиться", "мессенджеры", "соцсети", "поиск", "адрес", "пользователь", "профиль", "блогер"]
+    "tags": [
+      "поделиться",
+      "мессенджеры",
+      "соцсети",
+      "поиск",
+      "адрес",
+      "пользователь",
+      "профиль",
+      "блогер"
+    ]
   },
   {
     "chunk_id": "features_profile_stats_hours_qr_coins_partners",
     "title": "Профиль: заявки, донаты, часы, печать, QR коинов",
     "text": "В личном кабинете (вкладка «Профиль»): карточка **выплат**, **монет JoyCoins**, блок **волонтёрских часов** (минуты учёта). На карточке часов есть **иконка принтера** — выпуск PDF/справки об участии в уборке для предъявления; кнопка списка — история записей. На карточке монет — история завершённых заявок и **обмен через QR** у партнёра (если монеты есть). Коины не смешивать с денежными донатами.",
-    "tags": ["профиль", "волонтёрские часы", "печать", "qr", "joycoins", "койны", "партнёры", "скидка", "донаты"]
+    "tags": [
+      "профиль",
+      "волонтёрские часы",
+      "печать",
+      "qr",
+      "joycoins",
+      "койны",
+      "партнёры",
+      "скидка",
+      "донаты"
+    ]
   },
   {
     "chunk_id": "value_why_joypick_motivation_faq",
     "title": "Почему возвращаются: мотивация и ценность JoyPick",
     "text": "JoyPick сочетает несколько слоёв мотивации: сообщество (видят действия друг друга, чат, групповые уборки), соцпризнание (делиться результатами), JoyCoins и донаты (в т.ч. донаты на карте у грязных точек — проблема и награда видны вместе), отметка загрязнений, учёт волонтёрских часов, позитивные новости. Цель — превратить разовую добрую акцию в устойчивую привычку.",
-    "tags": ["мотивация", "зачем joypick", "сообщество", "койны", "донаты карта", "часы", "новости", "возврат в приложение"]
+    "tags": [
+      "мотивация",
+      "зачем joypick",
+      "сообщество",
+      "койны",
+      "донаты карта",
+      "часы",
+      "новости",
+      "возврат в приложение"
+    ]
   },
   {
     "chunk_id": "faq_cleanup_verification_geo_photos_moderator",
     "title": "Как устроена верификация уборки: дистанция, фото, модератор",
     "text": "Исполнитель приходит на отмеченное место и запускает задачу в приложении. Проверяется геолокация: если далеко от точки (порядка десятков метров, ориентир ~50 м), приложение предупреждает и не даёт начать. После уборки подтверждение строится на фото/гео по **флоу этого типа заявки** (см. отдельный чанк про галерею vs камеру на разных шагах). Затем модератор проверяет отправку; после подтверждения захолдированные донаты распределяются получателям через Stripe (Joy Pick не копит эти суммы на своём счёте — холд и затем прямое распределение).",
-    "tags": ["верификация", "модератор", "50 метров", "геолокация", "фото", "завершение", "холд доната", "одобрение"]
+    "tags": [
+      "верификация",
+      "модератор",
+      "50 метров",
+      "геолокация",
+      "фото",
+      "завершение",
+      "холд доната",
+      "одобрение"
+    ]
   },
   {
     "chunk_id": "faq_moderation_manual_dataset_future_automation",
     "title": "Модерация: сначала вручную, датасет, затем автоматизация",
     "text": "Сейчас модерация ручная — доверенные люди и при необходимости команда. Подтверждённые уборки формируют датасет для будущих автоматических проверок. В перспективе возможна модерация сообществом: активным волонтёрам могут выдавать права; в админке уже может быть поддержка ролей для избранных пользователей.",
-    "tags": ["модерация", "ручная проверка", "очередь", "нейросеть", "датасет", "сообщество модератор", "роли", "автоматизация"]
+    "tags": [
+      "модерация",
+      "ручная проверка",
+      "очередь",
+      "нейросеть",
+      "датасет",
+      "сообщество модератор",
+      "роли",
+      "автоматизация"
+    ]
   },
   {
     "chunk_id": "faq_report_polluted_spot_without_volunteer",
     "title": "Отметить загрязнение без статуса волонтёра",
     "text": "Не нужно быть «проверенным волонтёром», чтобы отметить загрязнение. После установки приложения можно сразу поставить точку, прикрепить фото и описать проблему — это базовый сценарий, который оживляет карту даже в спокойных регионах.",
-    "tags": ["отметить мусор", "новый пользователь", "точка", "не волонтёр", "первый день", "загрязнение"]
+    "tags": [
+      "отметить мусор",
+      "новый пользователь",
+      "точка",
+      "не волонтёр",
+      "первый день",
+      "загрязнение"
+    ]
   },
   {
     "chunk_id": "rewards_volunteer_earn_donations_payouts",
     "title": "Донаты и выплаты: исполнитель, участник, без слова «волонтёр»",
     "text": "Сначала важен **тип заявки** — см. чанк «кому донаты: уборка мусора vs быстрая vs субботник». **Роли в приложении: исполнитель и участник** — **не** используйте в ответах слово «волонтёр» как роль. Если пользователь **уже написал, что выполнил чужую заявку**, **не** уточняйте «а вы точно не просто зритель» — отвечайте по **срокам и Stripe** (см. чанк «модерация и 7 дней») и **выводу в профиле**. Для Waste: донаты идут **исполнителю**, который убрал и прошёл модерацию, а не «автору только за точку». Для Event: цепочка **сдача — при необходимости Review у создателя — модерация — донаты — Stripe** (доли — отдельный чанк). **Выплаты** — через **подключение Stripe** и **раздел выплат в профиле**; **донаты** после **одобрения модератором** и этапа **~7 дней** (см. чанк про модерацию). JoyCoins и учёт **часов** (в т.ч. печать письма) — отдельно от денег.",
-    "tags": ["заработать", "заработок", "деньги", "денег", "доход", "получить деньги", "как заработать", "заработать деньги", "донаты", "донат", "выплата", "stripe", "исполнитель", "участник", "уборка", "мусор", "оплата", "выполнил заявку", "когда деньги", "профиль выплаты"]
+    "tags": [
+      "заработать",
+      "заработок",
+      "деньги",
+      "денег",
+      "доход",
+      "получить деньги",
+      "как заработать",
+      "заработать деньги",
+      "донаты",
+      "донат",
+      "выплата",
+      "stripe",
+      "исполнитель",
+      "участник",
+      "уборка",
+      "мусор",
+      "оплата",
+      "выполнил заявку",
+      "когда деньги",
+      "профиль выплаты"
+    ]
   },
   {
     "chunk_id": "rewards_what_you_get_for_cleanups",
     "title": "Что можно получить за уборки",
     "text": "За подтверждённые уборки возможны разные вещи по отдельности: **денежные донаты** от пользователей (после модерации — баланс и вывод через Stripe), **JoyCoins** (обмен у партнёров — см. отдельный чанк), **учёт волонтёрских часов** для личной статистики и опциональная **PDF-справка по иконке принтера** в профиле для предъявления третьим лицам — это **не** донаты и **не** выплаты. В заявках типа Event участники могут получать долю донатов по правилам заявки.",
-    "tags": ["что получить", "за уборки", "что дают", "награда", "выгода", "joycoins", "койны", "часы", "волонтёрские часы", "донаты", "получить"]
+    "tags": [
+      "что получить",
+      "за уборки",
+      "что дают",
+      "награда",
+      "выгода",
+      "joycoins",
+      "койны",
+      "часы",
+      "волонтёрские часы",
+      "донаты",
+      "получить"
+    ]
   },
   {
     "chunk_id": "rewards_volunteer_hours_typo_alias",
     "title": "Волонтёрские часы и письмо (опечатка «чамы»)",
     "text": "Приложение учитывает время подтверждённых уборок как волонтёрские часы — для **вашего учёта**. В профиле по **иконке принтера** можно получить **PDF-справку** для предъявления (школа, работодатель и т.д.); это **не** про донаты. Если написано «волонтёрские чамы» — имеются в виду часы.",
-    "tags": ["волонтёрские часы", "часы", "чамы", "как заработать часы", "письмо", "учёт", "печать"]
+    "tags": [
+      "волонтёрские часы",
+      "часы",
+      "чамы",
+      "как заработать часы",
+      "письмо",
+      "учёт",
+      "печать"
+    ]
   },
   {
     "chunk_id": "payments_donation_hold_release_to_donor",
     "title": "Донаты в холде: если заявка не выполнена — деньги донатера",
     "text": "Платежи по донатам при оплате находятся в холде (заморозке). Если заявка с такими донатами не выполняется по правилам приложения, холд снимается (расхолдивается): средства возвращаются на счёт того, кто платил — донатера. Не утверждайте, что деньги «остаются на платформе Joy Pick» или «не возвращаются автоматически» вместо этого сценария и не заменяйте ответ общей «политикой платформы». Joy Pick не аккумулирует у себя деньги пользователей и не держит их как «кассу» платформы: средства в холде у платёжного контура (Stripe), а после одобрения соответствующего сценария захолдированные суммы донатеров распределяются напрямую получателям через Stripe, без промежуточного накопления на счёте Joy Pick. Для Event «никто не пришёл из волонтёров» не равно автоматически «заявка не выполнена»: создатель может завершить работу в приложении — см. отдельный чанк «никто не пришёл — создатель может выполнить».",
-    "tags": ["холд", "расхолд", "возврат донатеру", "никто не выполнил", "не выполнена заявка", "платная заявка", "донатная заявка", "куда деньги", "остались деньги", "refund donor", "hold release", "unfulfilled"]
+    "tags": [
+      "холд",
+      "расхолд",
+      "возврат донатеру",
+      "никто не выполнил",
+      "не выполнена заявка",
+      "платная заявка",
+      "донатная заявка",
+      "куда деньги",
+      "остались деньги",
+      "refund donor",
+      "hold release",
+      "unfulfilled"
+    ]
   },
   {
     "chunk_id": "request_donation_paid_map_list_badges",
     "title": "Донатная заявка (= платная), значок на карте и сумма в списке",
-    "text": "В приложении заявка с собранными деньгами называется донатная; по смыслу это то же, что «платная» заявка. Так бывает, если донат указали уже при создании, либо заявка стала донатной/платной сразу после того, как первый донат сделали позже. На карте такая заявка помечается значком доллара. В списке заявок показывается сумма всех донатов по этой заявке. Дополнительные пояснения смотрите в разделе Help в приложении.",
-    "tags": ["донатная заявка", "платная заявка", "значок доллара", "сумма донатов", "список заявок", "карта", "видно что платная", "paid request", "donation badge"]
+    "text": "В приложении заявка с деньгами называется донатная (платная). Её можно сделать платной при создании или позже первым донатом. Важно: для создания платёжного доната/донатной заявки у создателя должен быть подключён Stripe Connect. После выполнения и модерации донаты выплачиваются получателю работы (исполнителю/участнику по типу заявки), и у этого получателя тоже должен быть подключён Stripe. На карте такая заявка помечается значком доллара, в списке видна сумма донатов.",
+    "tags": [
+      "донатная заявка",
+      "платная заявка",
+      "значок доллара",
+      "сумма донатов",
+      "список заявок",
+      "карта",
+      "видно что платная",
+      "paid request",
+      "donation badge"
+    ]
   },
   {
     "chunk_id": "request_share_deeplink_install_flow",
     "title": "Поделиться заявкой: диплинк, приложение или магазины",
     "text": "Чтобы «сообщить» о заявке другим в смысле передать ссылку, используйте поделиться из деталей заявки. Ссылка работает как диплинк: если Joy Pick установлен, открывается эта заявка; если приложения нет — предлагается скачать его и дать переход в магазины приложений (stores). Это не то же самое, что «создать новую заявку».",
-    "tags": ["поделиться заявкой", "ссылка на заявку", "диплинк", "deeplink", "сообщить о заявке", "пригласить", "магазин приложений", "как получить ссылку", "share request"]
+    "tags": [
+      "поделиться заявкой",
+      "ссылка на заявку",
+      "диплинк",
+      "deeplink",
+      "сообщить о заявке",
+      "пригласить",
+      "магазин приложений",
+      "как получить ссылку",
+      "share request"
+    ]
   },
   {
     "chunk_id": "stripe_connect_in_profile_in_app",
     "title": "Как подключить Stripe — только поток из приложения",
     "text": "Вопрос «как подключить Stripe в профиле» относится к экрану профиля и разделу выплат/платежей: там запускается онбординг Stripe Connect внутри приложения (как показывает UI). Не отвечайте отказом вроде «не могу помочь создать аккаунт в Stripe» — пользователь не просит обойти приложение, а настроить выплаты через Joy Pick.",
-    "tags": ["stripe в профиле", "подключить stripe", "stripe connect", "выплаты", "онбординг", "как подключить", "не могу stripe"]
+    "tags": [
+      "stripe в профиле",
+      "подключить stripe",
+      "stripe connect",
+      "выплаты",
+      "онбординг",
+      "как подключить",
+      "не могу stripe"
+    ]
   },
   {
     "chunk_id": "payments_balance_stripe_not_joypick_bank",
     "title": "Баланс и «в каком банке»",
     "text": "Денежный баланс для выплат в приложении связан с подключённым Stripe Connect: вывод идёт на карту/счёт, которые пользователь задаёт в процессе Stripe, а не в «банке Joy Pick» как у классического банковского вклада. Точные реквизиты отображаются в Stripe/в профиле после подключения.",
-    "tags": ["баланс", "в каком банке", "куда деньги", "stripe", "выплата", "счёт", "банк"]
+    "tags": [
+      "баланс",
+      "в каком банке",
+      "куда деньги",
+      "stripe",
+      "выплата",
+      "счёт",
+      "банк"
+    ]
   },
   {
     "chunk_id": "donations_multiple_participants_who_receives",
     "title": "Несколько участников Event — деление доната",
     "text": "Для событий (Event) сумма донатов между участниками делится поровну: вся собранная сумма делится на количество участников, у которых подключён Stripe (Stripe Connect). Участники без подключённого Stripe в это деление не входят. Если спрашивают про «что если никто не выполнил заявку», не подменяйте этим ответом сценарий расхолда донатеру — см. отдельный чанк про неисполненную заявку. Не выдумывайте другие проценты: для участников Event — именно равные доли между участниками со Stripe.",
-    "tags": ["несколько волонтёров", "кто получит деньги", "разделение доната", "участники", "event", "stripe", "поровну", "equal split", "who gets money", "multiple volunteers"]
+    "tags": [
+      "несколько волонтёров",
+      "кто получит деньги",
+      "разделение доната",
+      "участники",
+      "event",
+      "stripe",
+      "поровну",
+      "equal split",
+      "who gets money",
+      "multiple volunteers"
+    ]
   },
   {
     "chunk_id": "help_map_border_colors_and_gray_circle",
     "title": "Help: цвета рамок заявок на карте и серый круг",
     "text": "В приложении раздел Help (Руководство по интерфейсу) описывает обозначения на карте. Рамка карточки: зелёная — заявки, которые вы создали; оранжевая — заявки, в которых вы участвуете; жёлтая — заявки, в которые вы задонатили; фиолетовая — одобренные субботник/событие или уборка для одного в первые 7 дней после создания, донаты по ним ещё принимаются; чёрная — остальные заявки. Серый круг вокруг иконки на карте — заявка просрочена, одобрена или завершена. Зелёный значок доллара под иконкой — заявка с донатами.",
-    "tags": ["help", "хелп", "справка", "рамка", "цвет рамки", "зелёная", "оранжевая", "жёлтая", "фиолетовая", "чёрная", "серый круг", "карта", "доллар", "что значит цвет", "border color", "map legend"]
+    "tags": [
+      "help",
+      "хелп",
+      "справка",
+      "рамка",
+      "цвет рамки",
+      "зелёная",
+      "оранжевая",
+      "жёлтая",
+      "фиолетовая",
+      "чёрная",
+      "серый круг",
+      "карта",
+      "доллар",
+      "что значит цвет",
+      "border color",
+      "map legend"
+    ]
   },
   {
     "chunk_id": "help_donation_chips_orange_vs_yellow",
     "title": "Help: оранжевый и жёлтый чип суммы донатов",
     "text": "По тексту Help: оранжевый чип суммы донатов показывает собранную сумму на вашей заявке; после завершения работы и одобрения модератором деньги переводятся на ваш подключённый Stripe (за вычетом комиссий). Жёлтый чип показывает сумму донатов от сообщества и создателя заявки; после одобрения средства идут исполнителю (за вычетом комиссий). Для точного вида карточек направляйте пользователя в Help.",
-    "tags": ["оранжевый донат", "жёлтый донат", "чип", "сумма донатов", "комиссия", "stripe", "исполнитель", "создатель", "help", "donation chip"]
+    "tags": [
+      "оранжевый донат",
+      "жёлтый донат",
+      "чип",
+      "сумма донатов",
+      "комиссия",
+      "stripe",
+      "исполнитель",
+      "создатель",
+      "help",
+      "donation chip"
+    ]
   },
   {
     "chunk_id": "help_home_top_bar_wallet_profile_icons",
     "title": "Help: карта, чат, обновление, новости и блоки профиля",
     "text": "На первом табе (карта/список заявок) сверху справа — **чат со списком переписок** и бейдж непрочитанных, рядом **обновление** выдачи; иконки **выплат** на шапке этого же таба тоже ведут на экран выплат. Вкладка **«Новости»** — **третья** слева в нижнем меню; точка на иконке — непросмотренные статьи до первого открытия. Карточка **выплат** и детальный экран выплат доступны и с **профиля** (четвёртый таб). В блоке монет в профиле: завершённые заявки, QR у партнёра. Не путать **левый нижний FAB Support AI** с **«Поддержка»** в меню профиля (там чат с оператором через обычный чат).",
-    "tags": ["чат", "обновить", "новости", "кошелёк", "баланс", "выплаты", "профиль", "joycoins", "qr", "help", "главный экран", "top bar", "wallet", "карта", "вкладки", "support ai"]
+    "tags": [
+      "чат",
+      "обновить",
+      "новости",
+      "кошелёк",
+      "баланс",
+      "выплаты",
+      "профиль",
+      "joycoins",
+      "qr",
+      "help",
+      "главный экран",
+      "top bar",
+      "wallet",
+      "карта",
+      "вкладки",
+      "support ai"
+    ]
   },
   {
     "chunk_id": "help_incomplete_request_banner",
     "title": "Help: баннер незавершённой заявки на главной",
     "text": "Если на главной показывается баннер о незавершённой уборке (уборка мусора, уборка для одного или субботник), пользователь может перейти к завершению или скрыть напоминание. При отмене незавершённая заявка убирается с устройства, но позже её можно завершить с экрана деталей заявки — как указано в тексте баннера в приложении.",
-    "tags": ["незавершённая заявка", "баннер", "главная", "завершить", "отмена", "incomplete", "banner", "help"]
+    "tags": [
+      "незавершённая заявка",
+      "баннер",
+      "главная",
+      "завершить",
+      "отмена",
+      "incomplete",
+      "banner",
+      "help"
+    ]
   },
   {
     "chunk_id": "help_event_tree_and_trash_pickup_icons",
     "title": "Help: иконка дерева и грузовика на карточке",
     "text": "В разделе Help (Руководство по интерфейсу): индикатор «Посадка дерева» показывается, если в субботнике (событии) запланирована посадка дерева — на карточке иконка дерева в белом круге. Индикатор «Только вывоз» означает, что нужен только вывоз мусора без уборки — иконка грузовика в белом круге. Это дополнительные метки к заявке, их можно смотреть прямо в Help в приложении.",
-    "tags": ["посадка дерева", "дерево", "вывоз мусора", "только вывоз", "грузовик", "иконка", "субботник", "event", "help", "plant tree", "trash pickup"]
+    "tags": [
+      "посадка дерева",
+      "дерево",
+      "вывоз мусора",
+      "только вывоз",
+      "грузовик",
+      "иконка",
+      "субботник",
+      "event",
+      "help",
+      "plant tree",
+      "trash pickup"
+    ]
   },
   {
     "chunk_id": "intent_what_is_app_for_beginners",
     "title": "Зачем приложение Joy Pick и что в нём делать",
     "text": "Joy Pick — приложение для экологических инициатив: на карте видны заявки и события. Можно создать заявку типа Waste Location (отметить загрязнение), Speed Cleanup (быстрая уборка с фото до/после) или Event (запланированная уборка или мероприятие). Есть донаты, JoyCoins, волонтёрские часы, чаты по заявкам, профиль с выплатами через Stripe. Смысл — помогать убирать мусор и мотивировать волонтёров.",
-    "tags": ["зачем приложение", "для чего приложение", "что делать в приложении", "что такое joy pick", "как пользоваться", "с чего начать", "приложение для чего", "онбординг", "новичок"]
+    "tags": [
+      "зачем приложение",
+      "для чего приложение",
+      "что делать в приложении",
+      "что такое joy pick",
+      "как пользоваться",
+      "с чего начать",
+      "приложение для чего",
+      "онбординг",
+      "новичок"
+    ]
   },
   {
     "chunk_id": "app_flow_splash_navigation_branches",
     "title": "Запуск приложения: куда ведёт после заставки",
     "text": "После splash: если сохранён токен продавца партнёра — открывается отдельный поток продавца без нижних вкладок волонтёра. Если нет JWT волонтёра — экран входа. Если пользователь вошёл — главный экран (unified home). Если приложение открыли по диплинку, навигация по ссылке может выполниться сразу; если диплинк не сработал, через короткую задержку открывается главный экран. Геолокация запрашивается на старте; при выключенной службе локации долгое зависание на заставке не должно повторяться — показывается предупреждение.",
-    "tags": ["splash", "запуск", "стартует", "после заставки", "логин", "продавец", "deeplink", "главный экран", "зависло"]
+    "tags": [
+      "splash",
+      "запуск",
+      "стартует",
+      "после заставки",
+      "логин",
+      "продавец",
+      "deeplink",
+      "главный экран",
+      "зависло"
+    ]
   },
   {
     "chunk_id": "app_flow_support_ai_vs_operator_chat",
     "title": "Два разных «поддержки»: AI и оператор",
     "text": "Синий плавающий значок слева внизу на главном экране открывает Support AI (RAG-чат по документации приложения) — маршрут support-chat. Пункт «Поддержка» в меню профиля открывает обычный чат с оператором поддержки (создаётся или находится чат, затем экран переписки). Не называйте их одним словом «поддержка» без уточнения: у пользователя разные ожидания и разные экраны.",
-    "tags": ["поддержка", "support ai", "оператор", "чат поддержки", "психология", "fab", "профиль", "разница", "куда написать"]
+    "tags": [
+      "поддержка",
+      "support ai",
+      "оператор",
+      "чат поддержки",
+      "психология",
+      "fab",
+      "профиль",
+      "разница",
+      "куда написать"
+    ]
   },
   {
     "chunk_id": "app_flow_waste_details_bottom_actions",
     "title": "Waste Location: нижние кнопки на экране заявки",
     "text": "У создателя заявки внизу только «Донат». У остальных: «Донат» и «Присоединиться», пока не вступили; после присоединения — «Выполнить задачу» (открывает сдачу работы с фото и гео) и «Выйти» из роли исполнителя, либо пара «Продолжить работу» / «Отменить работу», если есть сохранённый черновик сдачи. Если заявка архивирована, завершена или отклонена — нижняя панель действий скрыта (кроме отображения причины отклонения). Создатель может продлить срок заявки в статусе new, если доступна кнопка продления.",
-    "tags": ["waste", "уборка мусора", "донат", "join", "выполнить задачу", "unjoin", "нижняя панель", "исполнитель", "создатель", "продлить"]
+    "tags": [
+      "waste",
+      "уборка мусора",
+      "донат",
+      "join",
+      "выполнить задачу",
+      "unjoin",
+      "нижняя панель",
+      "исполнитель",
+      "создатель",
+      "продлить"
+    ]
   },
   {
     "chunk_id": "app_flow_speed_cleanup_start_timer_moderation",
     "title": "Speed Cleanup: Start, таймер и модерация",
     "text": "На деталях Speed в статусе new у создателя, у назначенного исполнителя (takenBy) или у пользователя, которому разрешён старт, показывается одна зелёная кнопка «Start». Без включённой геолокации старт блокируется с предупреждением. После Start статус inProgress, открывается экран таймера с фото и сдачей работы; по завершении заявка уходит в **pending** — **ожидание решения модератора**, это ещё не «закрыта навсегда». Остальным пользователям на деталях остаётся «Донат» (минимум 1 USD в UI доната). Сроки донатов и выплат после одобрения — см. чанк «модерация всех заявок и 7 дней по донатам».",
-    "tags": ["speed cleanup", "быстрая уборка", "start", "таймер", "модерация", "pending", "геолокация", "донат", "сколько ждать", "закрытие заявки"]
+    "tags": [
+      "speed cleanup",
+      "быстрая уборка",
+      "start",
+      "таймер",
+      "модерация",
+      "pending",
+      "геолокация",
+      "донат",
+      "сколько ждать",
+      "закрытие заявки"
+    ]
   },
   {
     "chunk_id": "qa_moderation_7day_stripe_all_requests",
     "title": "Модерация всех заявок и срок по донатам (7 дней, Stripe)",
     "text": "**Семь календарных дней** для донатов и последующих выплат на сервере считаются от **первой сдачи работы пользователем** (закрытие цикла со стороны пользователя / отправка на модерацию — на бэкенде это закрепляется как **donation_window_started_at**), **а не** от даты **одобрения модератором**. В эти **7 дней** заявка по задумке должна **оставаться доступной для донатов**. **После истечения** этого окна на сервере: если заявка **одобрена** модератором — выполняется **распределение донатов** участникам с **Stripe** и дальнейшие шаги выплат (вывод через **профиль**); если **одобрения нет** — заявка уходит в **архив** по правилам крона (в т.ч. возвраты донатёрам там, где это предусмотрено). Модерация нужна для проверки результата, но **не сдвигает начало** семидневного окна — начало у **сдачи пользователем**. **Не** говорите, что деньги приходят «сразу после фото» без учёта окна и модерации. Роли в UI: **исполнитель** и **участник**, не «волонтёр».",
-    "tags": ["модерация", "админ", "администратор", "pending", "approved", "закрытие заявки", "сколько ждать", "быстрая уборка", "speed cleanup", "быстрая заявка", "донат", "7 дней", "семь дней", "stripe", "выплата", "участники", "ожидание", "профиль выплаты", "исполнитель"]
+    "tags": [
+      "модерация",
+      "админ",
+      "администратор",
+      "pending",
+      "approved",
+      "закрытие заявки",
+      "сколько ждать",
+      "быстрая уборка",
+      "speed cleanup",
+      "быстрая заявка",
+      "донат",
+      "7 дней",
+      "семь дней",
+      "stripe",
+      "выплата",
+      "участники",
+      "ожидание",
+      "профиль выплаты",
+      "исполнитель"
+    ]
   },
   {
     "chunk_id": "support_terminology_executor_participant_not_volunteer",
     "title": "Терминология: исполнитель и участник, не «волонтёр»",
     "text": "В Joy Pick в пользовательских ответах **не называйте людей «волонтёрами»** как отдельную роль — в продукте используют **исполнитель** (в т.ч. Waste Location: присоединившийся и убравший) и **участник** (Event). Письмо/учёт «волонтёрских часов» — это **название документа**, не повод вводить роль «волонтёр» в сценарии денег. Если пользователь написал **«я выполнил заявку»**, **не** спрашивайте «а вы точно были волонтёром» — отвечайте по **типу заявки, модерации, срокам и Stripe**.",
-    "tags": ["волонтёр", "volunteer", "исполнитель", "участник", "терминология", "роль", "выполнил заявку", "не уточнять"]
+    "tags": [
+      "волонтёр",
+      "volunteer",
+      "исполнитель",
+      "участник",
+      "терминология",
+      "роль",
+      "выполнил заявку",
+      "не уточнять"
+    ]
   },
   {
     "chunk_id": "product_photos_gallery_vs_in_app_depends_on_screen",
     "title": "Фото: галерея или только камера — зависит от шага (создание vs сдача)",
     "text": "**Нельзя** утверждать одновременно «всегда можно из галереи» и «никогда нельзя из галереи». На **разных экранах** по-разному: где-то допускается выбор **из галереи**, где-то для **подтверждения выполнения / закрытия** нужна съёмка в потоке приложения. Различайте **страницу создания заявки** и **поток сдачи/завершения работы**. При вопросе про галерею спросите или перечислите оба случая кратко — без противоречий в одной цепочке сообщений.",
-    "tags": ["галерея", "gallery", "фото", "камера", "создание заявки", "сдача работы", "закрытие", "подтверждение", "до и после", "live photo"]
+    "tags": [
+      "галерея",
+      "gallery",
+      "фото",
+      "камера",
+      "создание заявки",
+      "сдача работы",
+      "закрытие",
+      "подтверждение",
+      "до и после",
+      "live photo"
+    ]
   },
   {
     "chunk_id": "product_news_tab_and_requests_are_different",
     "title": "Вкладка Новости ≠ список заявок и ≠ push о новых заявках",
     "text": "В приложении есть **отдельная нижняя вкладка для новостей (News)** — это **не** замена карте/списку заявок и **не** «лента новых заявок». **Отдельной рассылки «уведомление о каждой новой заявке» нет**. Чтобы увидеть свежие заявки, пользуются **картой и списком заявок** и **кнопкой обновления** в списке — новые подтягиваются вверх при появлении. **Не** пишите, что «новостной ленты нет» — она есть как **раздел новостей**, но это **другой контент**, не лог новых заявок.",
-    "tags": ["новости", "новостная лента", "news tab", "news feed", "ненавижу когда бот врет", "уведомления о новых заявках", "как узнать новые заявки", "обновить список"]
+    "tags": [
+      "новости",
+      "новостная лента",
+      "news tab",
+      "news feed",
+      "ненавижу когда бот врет",
+      "уведомления о новых заявках",
+      "как узнать новые заявки",
+      "обновить список"
+    ]
   },
   {
     "chunk_id": "list_requests_filters_sorting_groups_refresh_button",
     "title": "Список заявок: фильтр, сортировка по группам, кнопка обновления",
     "text": "Из выдачи **не показывают** `archived` и `rejected`. Для **`completed`** в клиенте задаётся окно видимости (ориентир **около 7 дней** с момента завершения/`updated_at`, чтобы успеть **задонатить**); точный порог — в приложении. Дальше оставшиеся заявки сортируются. **Если пользователь не залогинен** (`currentUserId` пустой): один порядок `_sortByDateWithOverdueLast` для всего набора. **Если пользователь известен**, заявки делят на **5 групп по приоритету** (каждая заявка только в одной группе): (1) **мои созданные** `createdBy == currentUserId`; (2) **где участвую** — join по waste/speed или участник события (`isJoinedBy` / `isParticipant`); (3) **где задонатил** (`isDonor` / `isContributor`); (4) **рядом**: `distance > 0` и `≤ 10 000` м; (5) **остальные**. Группы идут **строго 1→5**. Внутри группы: элементы с `isOverdue == true` уходят **в конец группы**, иначе порядок по **`created_at` по убыванию** (новее выше). **Обновление списка** — кнопка refresh; новые заявки при появлении оказываются **выше** за счёт сортировки.",
-    "tags": ["сортировка", "список заявок", "обновить", "refresh", "новые заявки сверху", "фильтр", "archived", "rejected", "completed", "рядом", "мои заявки", "донатил", "участвую"]
+    "tags": [
+      "сортировка",
+      "список заявок",
+      "обновить",
+      "refresh",
+      "новые заявки сверху",
+      "фильтр",
+      "archived",
+      "rejected",
+      "completed",
+      "рядом",
+      "мои заявки",
+      "донатил",
+      "участвую"
+    ]
   },
   {
     "chunk_id": "map_list_completed_requests_7_days_profile_my_requests",
     "title": "Завершённые заявки на карте/в списке, архив и «Мои заявки» в профиле",
     "text": "**Не** утверждайте, что на карте и в списке только «активные»: после **закрытия пользователем** заявка в статусе **`completed`** ещё **около 7 дней** может быть в выдаче, чтобы можно было **задонатить** (детали окна — в клиенте). На **сервере** семидневное окно для донатов/выплат привязано к **первой сдаче пользователем** (`donation_window_started_at`), выплаты после окна — если заявка **одобрена**. Потом карточка уходит в **архив**. **Свои заявки** пользователь **всегда** смотрит в **профиле** → **«Мои заявки»**. **Как выглядят завершённые и другие состояния на карте** (серый круг у иконки, цвет рамки карточки, чипы донатов и т.д.) подробно разобраны в приложении в **Help / Руководство по интерфейсу** — направляйте пользователя туда за «как отличить завершённую на карте».",
-    "tags": ["выполненные заявки", "завершённые", "архив", "только активные", "где смотреть", "профиль", "мои заявки", "донат после завершения", "7 дней", "help", "хелп", "как выглядит завершённая", "серый круг", "рамка"]
+    "tags": [
+      "выполненные заявки",
+      "завершённые",
+      "архив",
+      "только активные",
+      "где смотреть",
+      "профиль",
+      "мои заявки",
+      "донат после завершения",
+      "7 дней",
+      "help",
+      "хелп",
+      "как выглядит завершённая",
+      "серый круг",
+      "рамка"
+    ]
   },
   {
     "chunk_id": "qa_when_money_cleaning_profile_your_payouts_joycoins",
     "title": "Когда деньги за уборку: 7 дней, «Ваши выплаты», JoyCoins",
-    "text": "На вопросы «когда получу деньги за уборку», «как скоро выплата» **обязательно** говорите про **семь календарных дней** окна после **сдачи работы пользователем** (время, пока идут донаты на сервере; отсчёт **не** от даты одобрения модератором как старт окна — см. общий чанк про модерацию и 7 дней). После проверки модератором Joy Pick деньги учитываются для выплат с учётом этого окна и Stripe, а не «сразу после фото». **Где смотреть баланс:** в **профиле** блок **«Ваши выплаты»** — там указано **сколько** доступно к выводу и **когда** сумма станет доступна. Отдельно за выполненные работы начисляются **JoyCoins** (коины); их можно использовать у **партнёров** в **специальных магазинах** (обмен/QR в блоке монет в профиле). **Не** сводите ответ только к «загрузите фото и одобрит создатель» — для Event есть Review создателя, для других типов цепочка другая; **7 дней**, **«Ваши выплаты»** и **коины** упоминайте в ответах про сроки денег.",
-    "tags": ["когда деньги", "сколько ждать", "выплата", "уборка", "деньги за уборку", "получу деньги", "stripe", "ваши выплаты", "профиль", "баланс", "доступно", "когда доступно", "joycoins", "койны", "партнёры", "магазины", "7 дней", "семь дней"]
+    "text": "На вопросы «когда получу деньги за уборку», «как скоро выплата», «почему выплата не пришла» **обязательно** давайте корректную цепочку по типу заявки. Для **Waste Location** и **Event**: **сдача результата исполнителем/участником -> подтверждение (одобрение) создателем -> модерация Joy Pick -> окно 7 календарных дней и выплата по Stripe-правилам**. Для **Speed Cleanup** (создатель и исполнитель в одном лице): **сдача результата -> модерация -> окно 7 дней и выплата по Stripe-правилам**. Нельзя формулировать, что после сдачи работа «сразу идёт только на модерацию» для Waste/Event — шаг подтверждения создателем обязателен. Для кейса «не пришла выплата» отвечайте коротким чеклистом блокеров: не сдан результат, нет подтверждения создателя (для Waste/Event), заявка ещё в pending/не прошла модерацию, не прошло 7 дней от первой сдачи, не подключён Stripe, нет доступной суммы во вкладке **Available** в блоке **«Ваши выплаты»**. **Где смотреть баланс:** в **профиле** блок **«Ваши выплаты»** — там указано **сколько** доступно к выводу и **когда** сумма станет доступна. Отдельно за выполненные работы начисляются **JoyCoins** (коины); их можно использовать у **партнёров** в **специальных магазинах** (обмен/QR в блоке монет в профиле). В ответах про сроки денег упоминайте **7 дней**, **«Ваши выплаты»** и **коины**.",
+    "tags": [
+      "когда деньги",
+      "сколько ждать",
+      "выплата",
+      "уборка",
+      "деньги за уборку",
+      "получу деньги",
+      "stripe",
+      "ваши выплаты",
+      "профиль",
+      "баланс",
+      "доступно",
+      "когда доступно",
+      "joycoins",
+      "койны",
+      "партнёры",
+      "магазины",
+      "7 дней",
+      "семь дней"
+    ]
   },
   {
     "chunk_id": "joycoins_purpose_partner_shops_only_not_donations",
     "title": "JoyCoins: только партнёрские магазины, не донаты и не «привилегии»",
     "text": "На вопросы **«зачем коины»**, **«что такое JoyCoins»**, **«куда тратить коины»**: JoyCoins начисляются за верифицированную активность и **используются только для обмена у партнёров Joy Pick в специальных магазинах** (скидки и покупки по правилам партнёра; в профиле — блок монет, история, QR у партнёра). **Нельзя** отвечать, что коины для «получения донатов» или «привилегий в приложении» в денежном смысле: **денежные донаты** — отдельная линия (баланс и вывод через **Stripe**, блок **«Ваши выплаты»**). JoyCoins **не** заменяют донаты и **не** описываются как способ получить деньги от донатёров. Если пользователь спрашивает **«что значит тратить коины на донаты»** или оспаривает такую формулировку — разъясните: это разные вещи; **донаты — деньги**, **коины — только обмен у партнёров в спецмагазинах**; не повторяйте предыдущий абзац дословно — ответьте по сути уточнения.",
-    "tags": ["joycoins", "койны", "коин монеты", "зачем коины", "куда тратить", "партнёры", "магазины", "спецмагазин", "не донаты", "не привилегии", "обмен", "qr", "что значит донаты"]
+    "tags": [
+      "joycoins",
+      "койны",
+      "коин монеты",
+      "зачем коины",
+      "куда тратить",
+      "партнёры",
+      "магазины",
+      "спецмагазин",
+      "не донаты",
+      "не привилегии",
+      "обмен",
+      "qr",
+      "что значит донаты"
+    ]
   },
   {
     "chunk_id": "qa_volunteer_hours_self_tracking_pdf_printer",
     "title": "Зачем волонтёрские часы: учёт для себя, PDF по принтеру — не донаты",
     "text": "На вопросы **«зачем отслеживать волонтёрские часы»**, **«для чего часы»**: время по подтверждённым уборкам ведётся для **вашего собственного учёта** (сколько вы участвовали). Это **не** механизм донатов и **не** «привилегии» в смысле выплат — донаты и Stripe отдельно. На **карточке волонтёрских часов в профиле** нажмите **иконку принтера** — PDF/справка об участии в **уборке мусора** для предъявления школе, работодателю и т.д. Не пишите, что часы нужны «чтобы получать донаты».",
-    "tags": ["волонтёрские часы", "волонтерские часы", "зачем часы", "для чего часы", "отслеживание часов", "учёт", "принтер", "pdf", "справка", "уборка мусора", "не донаты", "письмо о часах"]
+    "tags": [
+      "волонтёрские часы",
+      "волонтерские часы",
+      "зачем часы",
+      "для чего часы",
+      "отслеживание часов",
+      "учёт",
+      "принтер",
+      "pdf",
+      "справка",
+      "уборка мусора",
+      "не донаты",
+      "письмо о часах"
+    ]
   },
   {
     "chunk_id": "atlas_unified_home_four_tabs_and_fabs",
     "title": "Главная: четыре таба, карта заявок vs партнёры, FAB Support AI и «+»",
     "text": "После входа одна оболочка (`UnifiedHome` / `MainPageWidget`). **Нижние четыре таба слева направо:** (0) **карта и список заявок** с переключателем «Карта / Список» внутри; (1) **станции переработки и партнёры** — отдельный контент, не путать с заявками на первом табе; (2) **новости**; (3) **профиль**. **Слева внизу** FAB с иконкой «психология» — **Support AI**, маршрут `/support-chat`. **По центру внизу** кнопка «+» и меню типов заявок — **только на табе 0**; переходы на мастера `/speed-cleanup-creation`, `/waste-location-creation`, `/event-creation`. **UiGuide** (справка по интерфейсу карты) открывается с первого таба кнопкой помощи. При выключенной геолокации после задержки может показаться предупреждение.",
-    "tags": ["главный экран", "вкладки", "табы", "карта", "список", "новости", "профиль", "партнёры", "станции", "support ai", "плюс", "создать заявку", "unified home", "fab", "ui guide"]
+    "tags": [
+      "главный экран",
+      "вкладки",
+      "табы",
+      "карта",
+      "список",
+      "новости",
+      "профиль",
+      "партнёры",
+      "станции",
+      "support ai",
+      "плюс",
+      "создать заявку",
+      "unified home",
+      "fab",
+      "ui guide"
+    ]
   },
   {
     "chunk_id": "atlas_payouts_chats_map_header_and_profile",
     "title": "Выплаты и чаты: шапка карты/списка и профиль",
     "text": "**Экран выплат** доступен с **карточки выплат в профиле** и с **первого таба** (карта/список): в шапке есть переход к выплатам/кошельку. **Список чатов** `/chats` открывается **справа сверху** на первом табе — это переписки по заявкам, не Support AI. **Пункт «Поддержка»** в меню профиля подключает обычный **чат с оператором** (`ChatPage` после получения чата). **Support AI** — только отдельный FAB «психология» и маршрут `/support-chat`.",
-    "tags": ["выплаты", "payouts", "чаты", "список чатов", "кошелёк", "шапка", "карта", "профиль", "поддержка", "support ai", "оператор"]
+    "tags": [
+      "выплаты",
+      "payouts",
+      "чаты",
+      "список чатов",
+      "кошелёк",
+      "шапка",
+      "карта",
+      "профиль",
+      "поддержка",
+      "support ai",
+      "оператор"
+    ]
   },
   {
     "chunk_id": "atlas_request_details_route_and_flow_screens",
     "title": "Детали заявки: URL, три типа экранов, таймер и завершение",
     "text": "В GoRouter путь **`/request/:category/:requestId`**, но экран выбирается по **категории заявки из API**: `wasteLocation` → детали waste, `speedCleanup` → speed, `event` → event. Связанные экраны (**таймер** speed, **результат** уборки, **завершение** event/участника) часто открываются через **Navigator.push** (например `/speed-cleanup-timer`, `/cleanup-result`, `/event-completion`, `/participant-completion`), не всегда как отдельный корневой маршрут. **Публичный профиль пользователя:** `/user/:userId`.",
-    "tags": ["детали заявки", "request details", "waste", "speed", "event", "маршрут", "таймер", "завершение", "deeplink", "профиль пользователя"]
+    "tags": [
+      "детали заявки",
+      "request details",
+      "waste",
+      "speed",
+      "event",
+      "маршрут",
+      "таймер",
+      "завершение",
+      "deeplink",
+      "профиль пользователя"
+    ]
   },
   {
     "chunk_id": "atlas_auth_splash_login_registration",
     "title": "Сплэш, вход, регистрация и первичный профиль",
     "text": "**Сплэш** `/`: без JWT — экран **входа** `/login`; с JWT — **главная** `/unifiedHome`; при **deeplink** возможна отдельная навигация. Дальше: **регистрация** `/registration`, **верификация email** `/email-verification` (код из письма, query `email`), **сброс пароля** `/resetPassword`, **первичное заполнение профиля** `/userInfo`, промежуточный **`/enterPage`**, **успех регистрации** `/successReg`. Редактирование профиля: **`/editProfile`**.",
-    "tags": ["вход", "логин", "регистрация", "сплэш", "jwt", "email", "сброс пароля", "верификация", "профиль", "splash", "login", "password"]
+    "tags": [
+      "вход",
+      "логин",
+      "регистрация",
+      "сплэш",
+      "jwt",
+      "email",
+      "сброс пароля",
+      "верификация",
+      "профиль",
+      "splash",
+      "login",
+      "password"
+    ]
   },
   {
     "chunk_id": "atlas_partners_tab_stations_map_independent",
     "title": "Вкладка партнёров и станций (второй таб)",
     "text": "Второй нижний таб — **станции переработки и партнёры** (`StationPartnersPage`). Детали: **`/partner-details/:id`**, **`/station-details/:id`**. Данные и карта этого таба **независимы** от **карты заявок** на первом табе; не смешивайте в ответах «точку партнёра» с «точкой заявки на уборку» без контекста перехода из приложения.",
-    "tags": ["партнёры", "станции", "переработка", "второй таб", "partner", "station", "карта заявок", "отличие"]
+    "tags": [
+      "партнёры",
+      "станции",
+      "переработка",
+      "второй таб",
+      "partner",
+      "station",
+      "карта заявок",
+      "отличие"
+    ]
   },
   {
     "chunk_id": "app_flow_map_help_button_ui_guide",
     "title": "Справка по карте: кнопка с вопросом на карте",
     "text": "На вкладке карты на вертикальной панели справа есть кнопка с иконкой вопроса (помощь). Она открывает экран UiGuide / руководство по интерфейсу: типы заявок на карте, значок доллара, серый круг, цвета рамок карточек, чипы сумм, верхние кнопки и значки в профиле. Направляйте пользователя туда для «что означает цвет рамки» и похожих вопросов.",
-    "tags": ["help", "справка", "ui guide", "карта", "вопрос", "подсказка", "легенда", "иконки"]
+    "tags": [
+      "help",
+      "справка",
+      "ui guide",
+      "карта",
+      "вопрос",
+      "подсказка",
+      "легенда",
+      "иконки"
+    ]
   },
   {
     "chunk_id": "app_flow_master_doc_reference",
     "title": "Внутренний ориентир: карта флоу в репозитории приложения",
     "text": "Полное описание экранов, вкладок, матриц кнопок waste/speed/event, splash, профиля и двух видов поддержки зафиксировано в репозитории Flutter joy_pick в файле docs/joy_pick_app_master_flows.md (разделы F–N и далее). При противоречии старых формулировок с реальным приложением ориентируйтесь на этот документ и код lib/.",
-    "tags": ["документация", "флоу", "мастер", "joy_pick", "источник правды", "ui"]
+    "tags": [
+      "документация",
+      "флоу",
+      "мастер",
+      "joy_pick",
+      "источник правды",
+      "ui"
+    ]
+  },
+  {
+    "chunk_id": "company_joyvee_mission_and_what_company_does",
+    "title": "Чем занимается Joyvee, Inc. и как это связано с Joy Pick",
+    "text": "Joyvee, Inc. — компания, которая занимается защитой окружающей среды через вовлечение сообщества. Joy Pick — её продукт: приложение для уборок, заявок на карте, событий, донатов, JoyCoins и координации участников. Если пользователь спрашивает о компании, отвечайте кратко о миссии Joyvee и затем связывайте это с возможностями приложения Joy Pick.",
+    "tags": [
+      "компания",
+      "joyvee",
+      "о компании",
+      "миссия",
+      "чем занимаетесь",
+      "joy pick",
+      "about company"
+    ]
+  },
+  {
+    "chunk_id": "flow_types_waste_speed_event_roles_and_lifecycle",
+    "title": "Типы заявок: роли, флоу и выплаты (Waste / Speed / Event)",
+    "text": "Коротко по типам, чтобы не путать флоу. Waste Location: создатель публикует заявку и ждёт исполнителя; после Join слот исполнителя занят одним человеком. Если исполнитель не завершил работу в срок 24 часа от join_date, слот автоматически освобождается и заявка снова new; создатель также может снять исполнителя вручную. Когда исполнитель отправляет результат, заявка переходит в review/pending-поток (в отдельных сценариях может ждать подтверждения создателя), далее модерация. Выплаты по донатам идут исполнителю после правил проверки/модерации и при подключенном Stripe; создателю за сам факт создания выплаты не назначаются. Speed Cleanup: создатель и исполнитель — один пользователь; выполняет работу, отправляет результат, затем модерация; выплаты по донатам — этому же исполнителю при подключенном Stripe. Event (субботник): создатель одновременно участник события, назначает дату/время, другие участники присоединяются через Join; после начала участники отправляют свои результаты, создатель принимает/отклоняет их, затем закрывает событие и отправляет на модерацию. После апрува донаты распределяются между участниками с принятой работой по правилам заявки и при подключенном Stripe. Для всех типов: донаты доступны в рамках серверного donation-окна по правилам, после модерации/апрува выполняется распределение/выплаты.",
+    "tags": [
+      "типы заявок",
+      "waste speed event",
+      "роли создатель исполнитель участник",
+      "флоу заявок",
+      "выплаты и донаты",
+      "stripe",
+      "модерация",
+      "pending approved"
+    ]
   }
 ]

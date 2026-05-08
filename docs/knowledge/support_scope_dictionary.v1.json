@@ -3,7 +3,9 @@
   "updated_at": "2026-05-08",
   "source": [
     "d:\\Projects\\joy_pick\\joy_pick\\assets\\l10n\\ru.json",
-    "d:\\Projects\\joy_pick\\joy_pick\\assets\\l10n\\en.json"
+    "d:\\Projects\\joy_pick\\joy_pick\\assets\\l10n\\en.json",
+    "d:/Projects/joy_pick/joy_pick_landing/lib/main.dart",
+    "d:/Projects/joy_pick/joy_pick_landing/web/index.html"
   ],
   "strategy": "fail-open",
   "priority": [
@@ -1389,7 +1391,14 @@
       "что насчёт приложения",
       "что это за приложение",
       "как пользоваться",
-      "как работает"
+      "как работает",
+      "компания",
+      "о компании",
+      "чем занимаетесь",
+      "кто вы",
+      "joyvee",
+      "joyvee inc",
+      "joyvee, inc"
     ],
     "en": [
       "what about this app",
@@ -1397,7 +1406,14 @@
       "what about joypick app",
       "what is this app",
       "how to use",
-      "how it works"
+      "how it works",
+      "company",
+      "about company",
+      "what does your company do",
+      "who are you",
+      "joyvee",
+      "joyvee inc",
+      "joyvee, inc"
     ]
   },
   "off_topic_strong": {

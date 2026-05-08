@@ -414,6 +414,17 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    /заказать\s+уборк|оплатить\s+уборк|платн.{0,20}заявк|донатн.{0,20}заявк|создать\s+.*(платн|донатн).{0,20}заявк|can\s+i\s+pay\s+for\s+cleanup|paid\s+request|sponsor\s+cleanup|fund\s+cleanup/i.test(
+      scoutLower
+    ) &&
+    /waste|мусор|уборк|cleanup|request|заявк/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} создатель заказчик платная донатная заявка waste location можно создать и оплатить стимулировать исполнителя донаты получит исполнитель после проверки и модерации stripe`
+      : `${question} creator paid donation request waste location can create and fund cleanup to motivate executor donations go to executor after review moderation stripe`;
+  }
+
+  if (
     (/никто\s+не\s+прид|никто\s+не\s+приш|не\s+придут|нет\s+участник|no\s+one\s+comes|nobody\s+(came|shows|joins)/i.test(scoutLower)) &&
     (/субботник|суботник|subbotnik|\bevent\b|мероприят|ивент|событ/i.test(scoutLower))
   ) {
@@ -488,6 +499,30 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
     return isRu
       ? `${question} типы заявок существующие заявки карта список waste location speed cleanup event перечислить без уточнения создания`
       : `${question} request types browse map list waste location speed cleanup event existing requests`;
+  }
+
+  if (
+    /по\s+заявк|в\s+заявк|в\s+карточк|на\s+деталях|details\s+screen|request\s+details/i.test(t) &&
+    /что\s+можно\s+сделать|что\s+делать|какие\s+действия|what\s+can\s+i\s+do|available\s+actions/i.test(t)
+  ) {
+    if (/waste|мусор|уборк/i.test(t)) {
+      return isRu
+        ? `${question} действия в существующей waste заявке карточка детали app_flow_waste_details_bottom_actions join unjoin выполнить задачу продолжить отменить донат не создание`
+        : `${question} existing waste request details actions app_flow_waste_details_bottom_actions join unjoin perform task continue cancel donate not create`;
+    }
+    if (/speed|быстр/i.test(t)) {
+      return isRu
+        ? `${question} действия в существующей speed заявке карточка детали app_flow_speed_cleanup_start_timer_moderation start таймер сдача pending донат не создание`
+        : `${question} existing speed request details actions app_flow_speed_cleanup_start_timer_moderation start timer submit pending donate not create`;
+    }
+    if (/event|субботник|событ|ивент/i.test(t)) {
+      return isRu
+        ? `${question} действия в существующей event заявке карточка детали join unjoin выполнить задачу закрыть событие review участника не создание`
+        : `${question} existing event request details actions join unjoin perform task close request participant review not create`;
+    }
+    return isRu
+      ? `${question} действия в существующей заявке карточка детали доступные кнопки роли создатель исполнитель участник не создание`
+      : `${question} existing request details available actions by role creator executor participant not creation`;
   }
 
   if (
@@ -710,6 +745,12 @@ const PINNED_COMPLETED_VISIBILITY_CHUNK_ID = 'map_list_completed_requests_7_days
 const PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID = 'qa_when_money_cleaning_profile_your_payouts_joycoins';
 const PINNED_JOYCOINS_PURPOSE_CHUNK_ID = 'joycoins_purpose_partner_shops_only_not_donations';
 const PINNED_VOLUNTEER_HOURS_PURPOSE_CHUNK_ID = 'qa_volunteer_hours_self_tracking_pdf_printer';
+const PINNED_COMPANY_ABOUT_CHUNK_ID = 'company_joyvee_mission_and_what_company_does';
+const PINNED_TYPES_FLOW_CHUNK_ID = 'flow_types_waste_speed_event_roles_and_lifecycle';
+const PINNED_CREATOR_PAID_REQUEST_CHUNK_ID = 'request_donation_paid_map_list_badges';
+const PINNED_DONATIONS_RECEIVER_FORMULA_CHUNK_ID = 'donations_who_receives_waste_vs_speed_event';
+const PINNED_STRIPE_SETUP_REQUIREMENT_CHUNK_ID = 'stripe_executor_setup_requirement';
+const PINNED_PAYOUTS_TABS_CHUNK_ID = 'payout_page_available_and_history_tabs';
 const MAX_PINNED_KNOWLEDGE_CHUNKS = 8;
 
 function buildUserContextLinesForPinning(conversationContext) {
@@ -862,9 +903,82 @@ function shouldPinMoneyCleaningPayoutKnowledge(bundleLower) {
   return (moneyTiming && cleanupCtx) || payoutsHelp;
 }
 
+function shouldPinCompanyKnowledge(bundleLower) {
+  return /joyvee|компан|about\s+.*company|what\s+does\s+your\s+company\s+do|who\s+are\s+you|чем\s+занимаетесь|кто\s+вы/i.test(
+    bundleLower
+  );
+}
+
+function shouldPinTypesFlowKnowledge(bundleLower) {
+  return /по\s+типам|типы\s+заяв|не\s+путай|waste\s+location|speed\s+cleanup|субботник|event|roles?\s+and\s+lifecycle|difference\s+between\s+waste\s+speed\s+event/i.test(
+    bundleLower
+  );
+}
+
+function shouldPinCreatorPaidRequestKnowledge(bundleLower) {
+  return /заказать\s+уборк|оплатить\s+уборк|платн.{0,20}заявк|донатн.{0,20}заявк|создать\s+.*(платн|донатн).{0,20}заявк|can\s+i\s+pay\s+for\s+cleanup|paid\s+request|sponsor\s+cleanup|fund\s+cleanup/i.test(
+    bundleLower
+  );
+}
+
+function shouldPinDonationAmountFormulaKnowledge(bundleLower) {
+  const asksAmount =
+    /какую\s+сумм|какая\s+сумм|сколько\s+получ|сколько\s+денег|сумма\s+выплат|amount\s+will\s+i\s+get|how\s+much\s+will\s+i\s+get|payout\s+amount|how\s+much\s+money/i.test(
+      bundleLower
+    );
+  const donationPayoutContext =
+    /донат|donat|donation|выплат|payout|stripe|уборк|cleanup|заявк|request|исполн|participant|участник/i.test(
+      bundleLower
+    );
+  return asksAmount && donationPayoutContext;
+}
+
+function shouldPinPayoutBlockedKnowledge(bundleLower) {
+  const asksTimingOrMissing =
+    /когда.{0,40}(выплат|деньг)|почему.{0,40}(не\s+приш|нет\s+выплат|не\s+выплат)|где\s+выплат|waiting\s+for\s+payout|when.{0,30}payout|why.{0,30}(not\s+paid|no\s+payout)|payout\s+(missing|blocked)|no\s+funds|pending/i.test(
+      bundleLower
+    );
+  const payoutCtx = /выплат|донат|stripe|payout|donation|withdraw|available|history/i.test(bundleLower);
+  return asksTimingOrMissing && payoutCtx;
+}
+
+function shouldPinStageActionsKnowledge(bundleLower) {
+  const asksNextAction =
+    /что\s+дальше|что\s+теперь|какой\s+следующ|что\s+делать\s+дальше|next\s+step|what\s+next|what\s+should\s+i\s+do\s+next|what\s+to\s+do\s+now/i.test(
+      bundleLower
+    );
+  const hasStageSignals =
+    /присоединил|joined|выполняю|in\s+progress|сдал|submitted|жду\s+создател|waiting\s+creator|pending|жду\s+модерац|waiting\s+moderation|отправил.*модерац|submitted\s+for\s+moderation|одобрен|approved|отклонен|отклонили|rejected|24\s*час|auto.*released|завершил|completed/i.test(
+      bundleLower
+    );
+  return asksNextAction || hasStageSignals;
+}
+
 function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   const bundle = `${String(currentMessage || '')}\n${String(mergedRagText || '')}`.toLowerCase();
   const ids = [];
+  if (shouldPinCreatorPaidRequestKnowledge(bundle)) {
+    ids.push(PINNED_CREATOR_PAID_REQUEST_CHUNK_ID);
+  }
+  if (shouldPinDonationAmountFormulaKnowledge(bundle)) {
+    ids.push(PINNED_DONATIONS_RECEIVER_FORMULA_CHUNK_ID);
+  }
+  if (shouldPinPayoutBlockedKnowledge(bundle)) {
+    ids.push(PINNED_MODERATION_7DAY_CHUNK_ID);
+    ids.push(PINNED_MONEY_CLEANING_PAYOUT_QA_CHUNK_ID);
+    ids.push(PINNED_STRIPE_SETUP_REQUIREMENT_CHUNK_ID);
+    ids.push(PINNED_PAYOUTS_TABS_CHUNK_ID);
+  }
+  if (shouldPinStageActionsKnowledge(bundle)) {
+    ids.push(PINNED_TYPES_FLOW_CHUNK_ID);
+    ids.push(PINNED_EVENT_PARTICIPANT_CHUNK_ID);
+  }
+  if (shouldPinTypesFlowKnowledge(bundle)) {
+    ids.push(PINNED_TYPES_FLOW_CHUNK_ID);
+  }
+  if (shouldPinCompanyKnowledge(bundle)) {
+    ids.push(PINNED_COMPANY_ABOUT_CHUNK_ID);
+  }
   if (shouldPinJoyCoinsPurposeKnowledge(bundle)) {
     ids.push(PINNED_JOYCOINS_PURPOSE_CHUNK_ID);
   }
@@ -949,8 +1063,8 @@ function buildSystemInstruction(answerLanguage) {
       : 'Answer in English only.';
   const inAppScopeRule =
     answerLanguage === 'ru'
-      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Короткие формулировки вроде «что насчёт приложения?», «что насчёт вашего/этого app?», «what about this app?», «what about your app?», «what about JoyPick app?» тоже всегда про приложение. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению». Слова «субботник», «субботнике», subbotnik — в Joy Pick это тип заявки Event (экран заявки в приложении), а не общая «районная уборка»; не подменяй шаги приложения советами «организаторам во дворе», если в Knowledge есть флоу Event.'
-      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Short phrasings like "what about this app?", "what about your app?", and "what about JoyPick app?" are also always in-app. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
+      ? 'Считай вопрос про приложение, если спрашивают: зачем / для чего Joy Pick, что это за приложение, что делать в приложении, как пользоваться, с чего начать, какие есть функции, как создать заявку — это НЕ оффтоп. Короткие формулировки вроде «что насчёт приложения?», «что насчёт вашего/этого app?», «what about this app?», «what about your app?», «what about JoyPick app?» тоже всегда про приложение. Вопросы о компании Joyvee (например «чем занимается ваша компания?») тоже в рамках поддержки: кратко ответь о миссии компании и свяжи с приложением Joy Pick. Для таких вопросов НИКОГДА не отвечай фразой «вопрос не относится к приложению». Слова «субботник», «субботнике», subbotnik — в Joy Pick это тип заявки Event (экран заявки в приложении), а не общая «районная уборка»; не подменяй шаги приложения советами «организаторам во дворе», если в Knowledge есть флоу Event.'
+      : 'Treat as in-app if the user asks what Joy Pick is for, what the app does, what to do in the app, how to use it, how to get started, or what features exist — these are NEVER off-topic. Short phrasings like "what about this app?", "what about your app?", and "what about JoyPick app?" are also always in-app. Questions about Joyvee company (for example, "what does your company do?") are also in-scope: answer briefly about the company mission, then connect it to Joy Pick app capabilities. Never reply with «not related to the app» for those. Words like subbotnik / «субботник» mean an Event-type in-app request (request details UI), not generic neighborhood cleanup advice—follow Knowledge Event flow; do not answer as if the user asked only a real-world community organizer.';
   const offTopicRule =
     answerLanguage === 'ru'
       ? 'Явный оффтоп (погода, политика, кино, случайная болтовня, бытовой small talk, одно только приветствие без вопроса по Joy Pick — всё, что не про приложение): не начинай с «Привет» и не отвечай как на дружескую болтовню. Кратко и по делу: сообщение не относится к приложению Joy Pick; ты отвечаешь только на вопросы по приложению; предложи задать вопрос по Joy Pick. Эту формулировку не используй для вопросов про само приложение (см. правило выше про «что это за приложение», функции, заявки).'
@@ -980,16 +1094,31 @@ function buildSystemInstruction(answerLanguage) {
     'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',
     'If the user asks what requests exist, what request types exist, or how to see/browse requests on the map/list, answer immediately: list the three types and say they appear on the main map/list—do NOT use the create-flow clarification question.',
     'If user already answered the clarifying question with a short synonym (for example: subbotnik, event, cleanup event), do not repeat the same clarifying question again.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь спрашивает, как привлечь людей/участников на уборку или событие, сначала дай короткий пошаговый in-app флоу: создать Event (субботник), указать дату/время и описание, затем участники присоединяются через кнопку Join в карточке события. Советы про соцсети допускаются только как необязательное дополнение в конце одной короткой фразой.'
+      : 'If user asks how to attract people/participants to a cleanup or event, answer with a short in-app step flow first: create an Event, set date/time and description, then participants join via the Join button on the event card. Social media tips are optional and should appear only as one brief add-on sentence at the end.',
     'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
-    'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval (and equal split among Stripe-connected Event participants per Knowledge).',
+    'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval. For Event, payout logic follows the chain: participant submits result -> creator approves participant result -> moderation/approval -> split among eligible Stripe-connected participants per Knowledge.',
     answerLanguage === 'ru'
       ? 'Критично: для Waste Location автор точки не получает донаты «за одно создание», если сам не был исполнителем уборки. Донаты идут исполнителю, который убрал и прошёл проверку. Не называйте роль «волонтёр» — в продукте «исполнитель» и «участник». Speed: создатель = исполнитель своей уборки. Event: организатор участвует; доли по Knowledge.'
-      : 'Critical: for Waste Location the pin creator does not get donation payouts for creating the pin alone if they did not execute the cleanup. Donations go to the executor who cleaned and passed review. Do not call users «volunteers» as a role—use executor and participant. Speed Cleanup: creator is the performer. Event: organizer participates; splits per Knowledge.',
+      : 'Critical: for Waste Location the pin creator does not get donation payouts for creating the pin alone if they did not execute the cleanup. Donations go to the executor who cleaned and passed review. Do not call users «volunteers» as a role—use executor and participant. Speed Cleanup: creator is the performer. For payout timing/conditions, use chain by type: Waste/Event -> submit result -> creator acceptance -> moderation/approval -> payouts by Stripe rules; Speed -> submit own result -> moderation/approval -> payouts by Stripe rules.',
+    answerLanguage === 'ru'
+      ? 'Для вопросов про конкретную сумму («какую сумму получу», «сколько денег получу») не отвечай расплывчато «зависит от случаев/факторов». Базовая формула: исполнитель/участник получает всю донатную сумму, которая положена ему по типу заявки, за вычетом комиссий платформы и компании; для Event с несколькими участниками сумма сначала делится по правилам заявки (равные доли среди участников с подключённым Stripe), затем применяются комиссии.'
+      : 'For concrete amount questions ("how much will I get"), do not answer vaguely with "it depends". Base formula: executor/participant gets the donation amount assigned to them by request type minus platform/company commissions; for Event with multiple participants, split by request rules first (equal shares among Stripe-connected participants), then commissions apply.',
+    answerLanguage === 'ru'
+      ? 'Для вопросов «когда придёт выплата» и «почему не пришла выплата» отвечай чеклистом причин, а не общими фразами: (1) сдан ли результат; (2) есть ли подтверждение создателем для Waste/Event; (3) пройдена ли модерация; (4) прошло ли окно 7 дней от первой сдачи; (5) подключён ли Stripe; (6) есть ли сумма в Profile -> Ваши выплаты (Available).'
+      : 'For “when payout arrives” and “why payout did not arrive” questions, answer with a concrete checklist, not generic wording: (1) result submitted; (2) creator acceptance for Waste/Event; (3) moderation passed; (4) 7-day window from first submission elapsed; (5) Stripe connected; (6) amount visible in Profile -> Your payouts (Available).',
+    answerLanguage === 'ru'
+      ? 'Для вопросов по стадии («что дальше», «я уже присоединился/выполняю/сдал/жду») отвечай только следующим шагом текущей стадии и не предлагай шаги из прошлых стадий. Карта по стадиям: joined_not_started -> начать выполнение; in_progress -> сдать результат; submitted_waiting_creator -> ждать/получить подтверждение создателя (Waste/Event); submitted_waiting_moderation -> ждать модерацию; approved_waiting_payout_window -> ждать окно выплат и смотреть «Ваши выплаты»; rejected -> исправить и пересдать по доступным действиям; timeout_auto_released -> снова присоединиться к доступной заявке.'
+      : 'For stage questions ("what next", "I already joined/in progress/submitted/waiting"), answer only with the immediate next step for the current stage and do not suggest earlier-stage actions. Stage map: joined_not_started -> start work; in_progress -> submit result; submitted_waiting_creator -> wait for/get creator acceptance (Waste/Event); submitted_waiting_moderation -> wait for moderation; approved_waiting_payout_window -> wait payout window and check Your payouts; rejected -> fix and resubmit per available actions; timeout_auto_released -> re-join an available request.',
     answerLanguage === 'ru'
       ? 'Если спрашивают «присоединился к уборке мусора и забыл / не пришёл»: по Knowledge — автоматическое снятие исполнителя после дедлайна с join (на сервере 24 часа), заявка снова new и снова в выдаче; создатель может снять исполнителя вручную; отдельно есть долгий сценарий 7+1 суток от created_at для зависшего inProgress. Не утверждайте, что «участие ни на что не влияет». Не предлагайте донат как замену физической уборки.'
       : 'If the user joined a Waste Location then forgot or did not show: per Knowledge/backend automation the executor slot is released after the join-based deadline (24 hours from join_date), request returns to new and becomes available again; creator may clear the executor manually; a separate long-stall path warns around 7 days from created_at. Do not claim joining «does not affect» the request. Never suggest donating instead of physically doing the cleanup.',
     'When the user asks what map colors, donation chips, wallet/news buttons, or incomplete banners mean, use the Help/UI Guide chunks and suggest opening Help in the app for the illustrated reference.',
     'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
+    answerLanguage === 'ru'
+      ? 'Когда спрашивают «куда переводятся деньги со Stripe / на какие реквизиты», формулируйте точно: выплаты идут на подключенный в Stripe банковский счёт или карту для payouts (согласно настройкам Stripe). Избегайте расплывчатой формулировки «на счёт, подключённый через Stripe».'
+      : 'When asked where Stripe money is transferred, answer precisely: payouts go to the bank account or payout card connected in Stripe (per Stripe payout settings). Avoid vague wording like "to an account connected through Stripe."',
     answerLanguage === 'ru'
       ? 'На фоллоуапе отвечайте в первую очередь на НОВЫЙ вопрос; не копируйте целиком прошлый ответ. Если новый вопрос только про деньги/донаты/Stripe — не повторяйте абзац «никто не пришёл — выполните одни»; кратко по деньгам, условия — в одной-двух фразах.'
       : 'On follow-ups, answer the NEW question first; do not restate the full prior reply. If the new question is only about money/donations/Stripe, do not repeat the «nobody came—finish alone» paragraph; answer payments concisely (conditions in one or two short sentences).',
@@ -1000,6 +1129,30 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Для Event вопрос «никто не пришёл / не придут участники» не равен «заявка не выполнена — донаты всем вернутся»: создатель может выполнить работу в приложении сам; возврат с холда — про реально невыполненную заявку по правилам, не про низкую явку.'
       : 'For Event questions, «nobody came / no volunteers» is not the same as «unfulfilled—donors get refunded»: the creator can still complete the in-app work alone; donor hold release applies to truly unfulfilled requests per rules, not low attendance.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь спрашивает «как зарабатывать / как получать деньги в приложении», отвечай структурно по 3 типам: Waste Location (исполнитель: сдача результата -> подтверждение создателем -> модерация -> выплата при Stripe), Speed Cleanup (исполнитель/создатель в одном лице: сдача -> модерация -> выплата при Stripe), Event (участник: сдача результата -> подтверждение создателем -> модерация -> доля при Stripe). Не пропускай шаг подтверждения создателем для Waste/Event.'
+      : 'If the user asks how to earn/get money in the app, answer by all 3 request types: Waste Location (executor: submit result -> creator acceptance -> moderation -> payout with Stripe), Speed Cleanup (creator=performer: submit -> moderation -> payout with Stripe), Event (participant: submit result -> creator acceptance -> moderation -> share with Stripe). Do not omit creator acceptance for Waste/Event.',
+    answerLanguage === 'ru'
+      ? 'Если вопрос про различия типов заявок (Waste/Speed/Event), отвечай строго по типам и ролям (создатель/исполнитель/участник), не смешивай шаги между типами. Для Event не подставляй правило Waste «24 часа join», а для Waste не подставляй event-цепочку с групповым закрытием.'
+      : 'If asked about differences between request types (Waste/Speed/Event), answer strictly by type and role (creator/executor/participant), and do not mix steps across types. Do not inject Waste 24h join timeout into Event answers, and do not inject Event group-close chain into Waste answers.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь спрашивает про УЖЕ существующую заявку («по заявке…», «в заявке…», «что можно сделать в этой заявке»), отвечай по действиям на экране деталей этой заявки (доступные кнопки и роли) и НЕ предлагай создание новой заявки, если пользователь явно не спрашивал «как создать».'
+      : 'If user asks about an ALREADY existing request ("in this request", "what can be done in this request"), answer with actions available on that request details screen (buttons and roles), and do NOT suggest creating a new request unless the user explicitly asked how to create one.',
+    answerLanguage === 'ru'
+      ? 'Используй подсказку роли пользователя из промпта (исполнитель / создатель / донатер / интересующийся): сначала отвечай с позиции этой роли. Если роль исполнитель, не начинай ответ с действий создателя, если пользователь этого не спрашивал.'
+      : 'Use the user role hint from the prompt (executor / creator / donor / general user): answer from that role first. If role is executor, do not lead with creator actions unless explicitly asked.',
+    answerLanguage === 'ru'
+      ? 'Используй также подсказку стадии из промпта (не взялся / присоединился но не начал / выполняет / сдал и ждёт / одобрено / отклонено и т.д.). Не предлагай действия из предыдущей стадии: если стадия «выполняет», не предлагай «присоединиться»; если стадия «сдал», не предлагай «выполнить задачу заново», если пользователь это явно не просил.'
+      : 'Use the stage hint from the prompt as well (not joined / joined not started / in progress / submitted waiting / approved / rejected, etc.). Do not suggest actions from earlier stages: if stage is in_progress, do not suggest joining; if stage is submitted, do not suggest taking/starting again unless explicitly asked.',
+    answerLanguage === 'ru'
+      ? 'Если роль в подсказке — «исполнитель_в_процессе», считай, что пользователь уже взял задачу: не предлагай «стать исполнителем», «присоединиться» или «взять заявку». Отвечай следующими шагами этой стадии: завершение, сдача результата, подтверждение создателем (для Waste/Event), модерация, условия выплат.'
+      : 'If role hint is executor_in_progress, user already took the task: do not suggest becoming executor, joining, or taking the request. Answer with next-stage steps only: completion submission, moderation, payout conditions.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь спрашивает «можно ли заказать уборку и заплатить / сделать платную(донатную) заявку», трактуй это как роль создателя: ответ «да, можно создать донатную/платную заявку (обычно Waste/Event)». Затем кратко: донаты выплачиваются исполнителю/участникам по правилам после проверки/модерации и при Stripe. Не уводи ответ в сценарий «как исполнителю получить выплату».'
+      : 'If the user asks whether they can order cleanup and pay (create a paid/donation request), treat it as creator intent: answer yes, they can create a paid/donation request (typically Waste/Event). Then briefly note donations are paid to executor/participants per review/moderation and Stripe rules. Do not pivot into performer payout instructions.',
+    answerLanguage === 'ru'
+      ? 'Уточнение про Stripe в платной/донатной заявке: чтобы создать платёжный донат/донатную заявку, у создателя должен быть подключён Stripe. Выплата донатов после проверки/модерации идёт получателю работы (исполнителю Waste/Speed или участнику Event), и у этого получателя тоже должен быть подключён Stripe. Не путай Stripe создателя (для создания/оплаты) и Stripe получателя (для вывода выплат).'
+      : 'Stripe rule for paid/donation requests: creator needs connected Stripe to create/pay a donation request. After review/moderation, payouts go to the work recipient (Waste/Speed executor or Event participant), and that recipient also needs connected Stripe. Do not confuse creator Stripe (for creating/paying) with recipient Stripe (for receiving payouts).',
     'Do not invent screens, buttons, or app behavior.',
     answerLanguage === 'ru'
       ? 'В приложении есть нижняя вкладка News / «Новости» — не утверждайте, что «новостной ленты нет». Лента новостей — это не список заявок на уборку и не push о каждой новой заявке.'
@@ -1018,7 +1171,7 @@ function detectRequestTypeAlias(value, locale) {
     text = text.replace(/\bnot\s+an\s+event\b/gi, ' ');
     text = text.replace(/\bnot\s+a\s+event\b/gi, ' ');
   }
-  const ruEvent = ['субботник', 'событие', 'ивент', 'мероприятие'];
+  const ruEvent = ['субботник', 'событие', 'ивент', 'мероприятие', 'event'];
   const ruWaste = ['уборка мусора', 'мусор', 'waste', 'waste location'];
   const ruSpeed = ['быстрая уборка', 'speed cleanup', 'speed', 'быстрая'];
   const enEvent = ['event', 'cleanup event', 'subbotnik'];
@@ -1070,7 +1223,470 @@ function buildConversationContextBlock(conversationContext, answerLanguage) {
   return turns ? `Conversation context:\n${turns}` : '';
 }
 
-function buildUserPrompt(question, chunks, conversationContext, answerLanguage) {
+function inferSupportRoleHint(question, conversationContext, answerLanguage) {
+  const q = normalizeText(question).toLowerCase();
+  const ctx = Array.isArray(conversationContext)
+    ? conversationContext
+        .slice(-4)
+        .map((x) => normalizeText(x.user_message || '').toLowerCase())
+        .join('\n')
+    : '';
+  const bundle = `${ctx}\n${q}`;
+  const isRu = answerLanguage === 'ru';
+
+  const has = (re) => re.test(bundle);
+  const requestTypeAlias = detectRequestTypeAlias(bundle, answerLanguage === 'ru' ? 'ru' : 'en');
+
+  const performer = isRu
+    ? has(/я\s+присоединил|я\s+убрал|я\s+выполнил|как\s+исполнител|мне\s+как\s+исполнител|что\s+мне\s+делать\s+в\s+заявк|выполнить\s+задач|отправить\s+результат|закрыть\s+свою\s+част|perform\s+task|executor|i\s+joined|i\s+completed|submit\s+result/i)
+    : has(/as\s+an?\s+executor|as\s+a\s+performer|i\s+joined|i\s+completed|perform\s+task|submit\s+result|what\s+can\s+i\s+do\s+in\s+this\s+request/i);
+
+  const performerInProgress = isRu
+    ? has(/я\s+выполняю|уже\s+выполняю|я\s+уже\s+исполнител|взял\s+работ|выполняю\s+ч(ь|е)й\s*то\s+заказ|в\s+процессе\s+уборк/i)
+    : has(/i\s+am\s+doing|i\s+am\s+already\s+an?\s+executor|already\s+performing|currently\s+doing\s+cleanup|i\s+took\s+the\s+task/i);
+
+  const creator = isRu
+    ? has(/я\s+создал|моя\s+заявк|я\s+создател|как\s+создател|мне\s+как\s+создател|заказчик|продлить\s+заявк|закрыть\s+заявк|заказать\s+уборк|оплатить\s+уборк|платн.{0,20}заявк|донатн.{0,20}заявк|creator|request\s+creator/i)
+    : has(/i\s+created\s+the\s+request|my\s+request|as\s+creator|as\s+request\s+creator|extend\s+request|close\s+request|pay\s+for\s+cleanup|paid\s+request|fund\s+cleanup|sponsor\s+cleanup/i);
+
+  const donor = isRu
+    ? has(/я\s+донатил|как\s+донатер|донатер|вернут\s+донат|refund|донат|пожертв/i)
+    : has(/i\s+donated|as\s+a\s+donor|donor|refund|donation|donate/i);
+
+  let role = isRu ? 'интересующийся пользователь' : 'general in-app user';
+  if (performerInProgress) role = isRu ? 'исполнитель' : 'executor';
+  else if (performer) role = isRu ? 'исполнитель' : 'executor';
+  else if (creator) role = isRu ? 'создатель заявки' : 'request creator';
+  else if (donor) role = isRu ? 'донатер' : 'donor';
+
+  // Нейтральные вопросы вида «по заявке ... что можно сделать» по умолчанию трактуем как запрос действий исполнителя,
+  // чтобы не навязывать шаги создателя, если роль не указана явно.
+  const genericExistingRequestActions = isRu
+    ? has(/по\s+заявк|в\s+заявк|в\s+карточк/i) &&
+      has(/что\s+можно\s+сделать|что\s+делать|какие\s+действия/i)
+    : has(/in\s+this\s+request|request\s+details/i) &&
+      has(/what\s+can\s+i\s+do|available\s+actions|what\s+to\s+do/i);
+  if (genericExistingRequestActions) {
+    role = isRu ? 'исполнитель' : 'executor';
+  }
+
+  let stage = isRu ? 'неопределено' : 'unknown';
+  if (has(/не\s+взял(ся|ась)|еще\s+не\s+взял|ещ[eё]\s+не\s+присоединил|not\s+joined|haven'?t\s+joined/i)) {
+    stage = isRu ? 'не_взялся' : 'not_joined';
+  } else if (
+    has(/присоединил(ся|ась)|joined|join\s+done|вступил/i) &&
+    has(/не\s+приступил|еще\s+не\s+начал|haven'?t\s+started|not\s+started|пока\s+не\s+начал/i)
+  ) {
+    stage = isRu ? 'присоединился_но_не_начал' : 'joined_not_started';
+  } else if (
+    performerInProgress ||
+    has(/выполняю|в\s+процессе|currently\s+doing|in\s+progress|делаю\s+уборк/i)
+  ) {
+    stage = isRu ? 'выполняет' : 'in_progress';
+  } else if (
+    has(/жду\s+подтвержд.*создател|жду\s+одобр.*создател|на\s+проверке\s+у\s+создател|review\s+by\s+creator|waiting\s+creator\s+approval/i)
+  ) {
+    stage = isRu ? 'сдал_ждет_создателя' : 'submitted_waiting_creator';
+  } else if (
+    has(/жду\s+модерац|на\s+проверк|pending|waiting\s+moderation|submitted\s+for\s+moderation|отправил.*на\s+модерац/i)
+  ) {
+    stage = isRu ? 'сдал_ждет_модерацию' : 'submitted_waiting_moderation';
+  } else if (has(/одобрен|approved|7\s*дн|seven\s*days|когда\s+выплат/i)) {
+    stage = isRu ? 'одобрено_ждет_выплату' : 'approved_waiting_payout_window';
+  } else if (has(/отклонен|отклонили|rejected/i)) {
+    stage = isRu ? 'отклонено' : 'rejected';
+  } else if (has(/24\s*час|auto.*released|сняли\s+исполнител|истек\s+срок/i)) {
+    stage = isRu ? 'просрочка_слот_освобожден' : 'timeout_auto_released';
+  } else if (has(/завершил|completed|done/i)) {
+    stage = isRu ? 'завершено' : 'completed';
+  }
+
+  const typeLabel =
+    requestTypeAlias === 'event'
+      ? (isRu ? 'event' : 'event')
+      : requestTypeAlias === 'waste_cleanup'
+        ? (isRu ? 'waste_location' : 'waste_location')
+        : requestTypeAlias === 'speed_cleanup'
+          ? (isRu ? 'speed_cleanup' : 'speed_cleanup')
+          : (isRu ? 'неопределен' : 'unknown');
+
+  return isRu
+    ? `role=${role}; stage=${stage}; request_type=${typeLabel}`
+    : `role=${role}; stage=${stage}; request_type=${typeLabel}`;
+}
+
+function parseRoleHintMeta(roleHint) {
+  const text = String(roleHint || '');
+  const roleMatch = text.match(/role=([^;]+)/i);
+  const stageMatch = text.match(/stage=([^;]+)/i);
+  const typeMatch = text.match(/request_type=([^;]+)/i);
+  return {
+    role: roleMatch ? String(roleMatch[1] || '').trim() : '',
+    stage: stageMatch ? String(stageMatch[1] || '').trim() : '',
+    requestType: typeMatch ? String(typeMatch[1] || '').trim() : ''
+  };
+}
+
+function isStageNextStepQuestion(question, answerLanguage) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const stageLex =
+    /присоединил|выполняю|в\s+процессе|сдал|жду\s+подтверж|жду\s+модерац|pending|отправил.*модерац|submitted\s+for\s+moderation|одобрен|отклонен|отклонили|завершил|joined|in\s+progress|submitted|waiting\s+creator|waiting\s+moderation|approved|rejected|completed/i.test(
+      q
+    );
+  const nextLex =
+    /что\s+дальше|что\s+теперь|что\s+делать\s+дальше|какой\s+следующ|next\s+step|what\s+next|what\s+should\s+i\s+do\s+next|what\s+to\s+do\s+now/i.test(
+      q
+    );
+  return stageLex && (nextLex || answerLanguage === 'ru');
+}
+
+function buildStageNextStepAnswer(roleHint, answerLanguage) {
+  const isRu = answerLanguage === 'ru';
+  const { stage, requestType } = parseRoleHintMeta(roleHint);
+  if (!stage || stage === 'неопределено' || stage === 'unknown') return null;
+
+  if (isRu) {
+    if (stage === 'присоединился_но_не_начал') {
+      return 'Следующий шаг: начните выполнение задачи в карточке заявки (кнопка запуска/выполнения) и затем сдайте результат.';
+    }
+    if (stage === 'выполняет') {
+      return 'Следующий шаг: завершите работу и отправьте результат в приложении (фото/гео по правилам заявки).';
+    }
+    if (stage === 'сдал_ждет_создателя') {
+      return 'Следующий шаг: дождитесь подтверждения создателя заявки. После одобрения результат уйдет на модерацию.';
+    }
+    if (stage === 'сдал_ждет_модерацию') {
+      return 'Следующий шаг: дождитесь решения модерации. До решения новых действий по этой сдаче обычно не требуется.';
+    }
+    if (stage === 'одобрено_ждет_выплату') {
+      return 'Следующий шаг: дождитесь окна выплат и проверяйте сумму в профиле в разделе «Ваши выплаты» (Available).';
+    }
+    if (stage === 'отклонено') {
+      return 'Следующий шаг: откройте причину отклонения, исправьте результат и пересдайте по доступным действиям в заявке.';
+    }
+    if (stage === 'просрочка_слот_освобожден') {
+      return 'Следующий шаг: присоединитесь заново к доступной заявке и начните выполнение без задержки.';
+    }
+    if (stage === 'не_взялся') {
+      return requestType === 'event'
+        ? 'Следующий шаг: присоединитесь к событию (Join), а после начала события выполните задачу и сдайте результат.'
+        : 'Следующий шаг: присоединитесь к заявке как исполнитель и начните выполнение.';
+    }
+    return null;
+  }
+
+  if (stage === 'joined_not_started') {
+    return 'Next step: start the task from request details and then submit your result.';
+  }
+  if (stage === 'in_progress') {
+    return 'Next step: finish the work and submit your result in the app (photos/geo per request rules).';
+  }
+  if (stage === 'submitted_waiting_creator') {
+    return 'Next step: wait for creator acceptance. After acceptance, your submission goes to moderation.';
+  }
+  if (stage === 'submitted_waiting_moderation') {
+    return 'Next step: wait for moderation decision. Usually no extra action is required at this stage.';
+  }
+  if (stage === 'approved_waiting_payout_window') {
+    return 'Next step: wait for the payout window and check Profile -> Your payouts (Available).';
+  }
+  if (stage === 'rejected') {
+    return 'Next step: open rejection reason, fix your submission, and resubmit via available request actions.';
+  }
+  if (stage === 'timeout_auto_released') {
+    return 'Next step: re-join an available request and start work promptly.';
+  }
+  if (stage === 'not_joined') {
+    return requestType === 'event'
+      ? 'Next step: join the event first, then after start time perform the task and submit result.'
+      : 'Next step: join the request as executor and start the work.';
+  }
+  return null;
+}
+
+function isExistingRequestActionsQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const existingCtx =
+    /в\s+этой\s+заявк|в\s+заявк|по.{0,20}заявк|карточк[ае]\s+заявк|already\s+created\s+request|existing\s+request|in\s+this\s+request|request\s+details/i.test(
+      q
+    );
+  const actionsAsk =
+    /что\s+можно\s+сделать|какие\s+действия|что\s+доступно|какие\s+кнопки|what\s+can\s+i\s+do|available\s+actions|which\s+buttons|what\s+actions/i.test(
+      q
+    );
+  return existingCtx && actionsAsk;
+}
+
+function buildExistingRequestActionsAnswer(roleHint, answerLanguage) {
+  const isRu = answerLanguage === 'ru';
+  const { role, requestType } = parseRoleHintMeta(roleHint);
+
+  if (isRu) {
+    if (requestType === 'waste_location') {
+      return role === 'создатель заявки'
+        ? 'Для уже существующей Waste Location заявки в карточке доступны действия управления текущей заявкой (например, контроль исполнителя/статуса и донаты). Новую заявку создавать не нужно.'
+        : 'Для уже существующей Waste Location заявки в карточке обычно доступны действия исполнителя: присоединиться/отменить участие, выполнить задачу и сдать результат, а также донат. Это про текущую заявку, не про создание новой.';
+    }
+    if (requestType === 'speed_cleanup') {
+      return 'Для уже существующей Speed Cleanup заявки действия идут в текущей карточке: Start, выполнение по таймеру, сдача результата и ожидание модерации, плюс донат для остальных ролей. Новую заявку создавать не нужно.';
+    }
+    if (requestType === 'event') {
+      return role === 'создатель заявки'
+        ? 'Для уже существующего Event в карточке создателя доступны действия по текущему событию: Review участников, закрытие события и перевод в модерацию. Это действия в текущей заявке, не создание новой.'
+        : 'Для уже существующего Event в карточке доступны действия участника: Join/Unjoin, выполнить задачу, сдать результат, затем ожидать Review создателя и модерацию. Это про текущую заявку, не про создание новой.';
+    }
+    return 'Для уже существующей заявки действия выполняются в карточке этой заявки (доступные кнопки зависят от типа и роли). Если уточните тип (Waste Location / Speed Cleanup / Event), дам точный список действий по текущей заявке без шага создания.';
+  }
+
+  if (requestType === 'waste_location') {
+    return role === 'request creator'
+      ? 'For an existing Waste Location request, use current request management actions in details (executor/status control and donations). No need to create a new request.'
+      : 'For an existing Waste Location request, details usually include executor actions: join/unjoin, perform task and submit result, plus donate. This is for the current request, not creating a new one.';
+  }
+  if (requestType === 'speed_cleanup') {
+    return 'For an existing Speed Cleanup request, use current details actions: Start, timer-based execution, submit result, then wait for moderation (plus donate for other roles). No need to create a new request.';
+  }
+  if (requestType === 'event') {
+    return role === 'request creator'
+      ? 'For an existing Event, creator actions in details include participant Review, closing the event, and sending to moderation. This is for the current request, not new creation.'
+      : 'For an existing Event, participant actions in details include Join/Unjoin, perform task, submit result, then wait for creator Review and moderation. This is for the current request, not new creation.';
+  }
+  return 'For an existing request, actions are done in that request details screen (buttons depend on type and role). If you specify type (Waste Location / Speed Cleanup / Event), I will give exact actions for the current request without creation flow.';
+}
+
+function isConcreteAmountQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /какую\s+сумм|какая\s+сумм|сколько\s+получ|сколько\s+денег|конкретн.{0,10}сумм|how\s+much|amount\s+will\s+i\s+get|payout\s+amount/i.test(
+    q
+  );
+}
+
+function isForeignRequestQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /чуж(ой|ую|ая|ие)|чь(е|ё)й\s*то|someone\s+else'?s|other\s+person'?s/i.test(q);
+}
+
+function buildDeterministicAmountAnswer(question, roleHint, answerLanguage) {
+  const isRu = answerLanguage === 'ru';
+  const { role, requestType } = parseRoleHintMeta(roleHint);
+  const foreign = isForeignRequestQuestion(question);
+
+  if (isRu) {
+    if (role === 'донатер') {
+      return 'Если вы донатер, вы не получаете выплату по заявке. Выплату получает исполнитель (или участник Event) за вычетом комиссий платформы и компании.';
+    }
+    if (foreign) {
+      if (requestType === 'event') {
+        return 'По чужой Event-заявке вы получаете свою долю донатов (доля делится между участниками, которые выполнили и сдали работу по правилам), за вычетом комиссий платформы и компании.';
+      }
+      if (requestType === 'waste_location') {
+        return 'По чужой Waste Location-заявке исполнитель получает всю донатную сумму по этой заявке за вычетом комиссий платформы и компании.';
+      }
+      return 'По чужой заявке возможны только Waste Location или Event: для Waste исполнитель получает всю донатную сумму за вычетом комиссий платформы и компании; для Event участник получает свою долю донатов за вычетом комиссий платформы и компании.';
+    }
+    if (requestType === 'speed_cleanup') {
+      return 'Для Speed Cleanup (своя заявка) вы получаете всю донатную сумму по заявке за вычетом комиссий платформы и компании.';
+    }
+    if (requestType === 'event') {
+      return 'Для Event вы получаете свою долю донатов за вычетом комиссий платформы и компании.';
+    }
+    return 'Вы получаете всю сумму донатов, положенную вам по типу заявки, за вычетом комиссий платформы и компании. Для Event это доля участника.';
+  }
+
+  if (role === 'donor') {
+    return 'As a donor, you do not receive payout from a request. Payout goes to executor (or Event participant), minus platform/company commissions.';
+  }
+  if (foreign) {
+    if (requestType === 'event') {
+      return 'For someone else’s Event request, you get your participant donation share (split among participants who completed/submitted per rules), minus platform/company commissions.';
+    }
+    if (requestType === 'waste_location') {
+      return 'For someone else’s Waste Location request, executor gets the full donation amount for that request, minus platform/company commissions.';
+    }
+    return 'For someone else’s request, applicable types are Waste Location or Event: Waste executor gets full donations minus commissions; Event participant gets their donation share minus commissions.';
+  }
+  if (requestType === 'speed_cleanup') {
+    return 'For Speed Cleanup (own request), you get the full donation amount for the request, minus platform/company commissions.';
+  }
+  if (requestType === 'event') {
+    return 'For Event, you get your participant donation share, minus platform/company commissions.';
+  }
+  return 'You receive the donation amount assigned to your role by request type, minus platform/company commissions. For Event, this is participant share.';
+}
+
+function isWasteSingleExecutorQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const asksMany =
+    /нескольк|много\s+желающ|кто\s+получит|кто\s+из\s+них|несколько\s+исполнител|several|multiple|many\s+people|who\s+gets\s+the\s+money/i.test(
+      q
+    );
+  const wasteCtx = /уборк[а-яё]*\s+мусор[а-яё]*|waste\s+location|waste\s+cleanup|trash\s+cleanup|garbage/i.test(q);
+  return asksMany && wasteCtx;
+}
+
+function buildWasteSingleExecutorAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'Для заявки Waste Location исполнитель может быть только один.';
+  }
+  return 'For Waste Location, only one executor can be assigned. If several people want to do the request, only one person can perform it.';
+}
+
+function isConcurrentExecutionQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const concurrentLex =
+    /одновременн|несколько\s+исполнител|несколько\s+человек|сразу\s+несколько|вместе\s+выполня|simultaneous|at\s+the\s+same\s+time|multiple\s+executors|several\s+people/i.test(
+      q
+    );
+  const asksPossibility = /возможн|можно|can\s+it|is\s+it\s+possible/i.test(q);
+  return concurrentLex && asksPossibility;
+}
+
+function buildConcurrentExecutionAnswer(roleHint, answerLanguage) {
+  const { requestType } = parseRoleHintMeta(roleHint);
+  if (answerLanguage === 'ru') {
+    if (requestType === 'event') {
+      return 'Да, одновременно это возможно только для заявок типа Event (субботник): там участвуют несколько участников.';
+    }
+    if (requestType === 'waste_location' || requestType === 'speed_cleanup') {
+      return 'Нет. Одновременное выполнение не предусмотрено для этого типа заявки.';
+    }
+    return 'Если тип заявки «Уборка мусора» (Waste Location) — в работу может взять только один исполнитель. Если тип заявки «Событие» (Event/субботник) — присоединиться могут несколько участников.';
+  }
+  if (requestType === 'event') {
+    return 'Yes, simultaneous execution is possible only for Event requests, where multiple participants can join.';
+  }
+  if (requestType === 'waste_location' || requestType === 'speed_cleanup') {
+    return 'No. Simultaneous execution is not supported for this request type.';
+  }
+  return 'Simultaneous execution is possible only for Event requests. Waste Location and Speed Cleanup have a single executor flow.';
+}
+
+function isReservationFirstComeQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const reserveLex =
+    /заброниров|бронир|кто\s+первый|первым\s+увидел|first\s+come|first\s+seen|reserve|book\s+request/i.test(
+      q
+    );
+  const requestLex = /заявк|request|уборк|cleanup|event|событ/i.test(q);
+  return reserveLex && requestLex;
+}
+
+function buildReservationTypeSplitAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'Если тип заявки «Уборка мусора» (Waste Location) — в работу может взять только один исполнитель. Если тип заявки «Событие» (Event/субботник) — присоединиться могут несколько участников.';
+  }
+  return 'If request type is Waste Location, only one executor can take it. If request type is Event, multiple participants can join.';
+}
+
+function isExtendOrRescheduleQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /продл|перенест|extend|reschedul|postpone|move\s+start/i.test(q) && /заявк|request|event|событ|уборк/i.test(q);
+}
+
+function buildExtendOrRescheduleAnswer(roleHint, answerLanguage) {
+  const { requestType } = parseRoleHintMeta(roleHint);
+  if (answerLanguage === 'ru') {
+    if (requestType === 'waste_location') {
+      return 'Для «Уборка мусора» (Waste Location) заявку можно продлить, если в течение 7 дней к ней никто не присоединился.';
+    }
+    if (requestType === 'event') {
+      return 'Для «Событие» (Event/субботник) можно перенести начало заявки на более поздний срок.';
+    }
+    return 'Если тип «Уборка мусора» (Waste Location) — заявку можно продлить, если в течение 7 дней никто не присоединился. Если тип «Событие» (Event/субботник) — можно перенести начало заявки на более поздний срок.';
+  }
+  if (requestType === 'waste_location') {
+    return 'For Waste Location, request can be extended if nobody joined within 7 days.';
+  }
+  if (requestType === 'event') {
+    return 'For Event, you can move the request start time to a later moment.';
+  }
+  return 'If request type is Waste Location, extension is possible when nobody joined within 7 days. If request type is Event, start time can be moved later.';
+}
+
+function isCommissionQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /комисс|процент|fee|commission|stripe\s+fee|application\s+fee/i.test(q);
+}
+
+function buildCommissionAnswer(question, answerLanguage) {
+  const q = normalizeText(question).toLowerCase();
+  const asksStripe = /stripe|страйп|стрип/i.test(q);
+  const asksApp = /приложени|platform|платформ/i.test(q);
+  if (answerLanguage === 'ru') {
+    if (asksStripe && !asksApp) {
+      return 'Комиссия Stripe: 2.9% + $0.30 за донатную операцию.';
+    }
+    if (asksApp && !asksStripe) {
+      return 'Комиссия приложения: 7% от суммы донатов.';
+    }
+    return 'Комиссии в приложении считаются так: 7% комиссия приложения + комиссия Stripe 2.9% + $0.30 за донатную операцию.';
+  }
+  if (asksStripe && !asksApp) {
+    return 'Stripe fee is 2.9% + $0.30 per donation operation.';
+  }
+  if (asksApp && !asksStripe) {
+    return 'App/platform fee is 7% of donation amount.';
+  }
+  return 'Commissions are calculated as: 7% app/platform fee + Stripe fee 2.9% + $0.30 per donation operation.';
+}
+
+function isMonetizationQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const monetizationLex =
+    /на\s+ч[её]м\s+зарабат|как\s+зарабатыв|как\s+приложени.*зарабат|monetiz|how\s+does\s+.*earn|how\s+does\s+.*make\s+money/i.test(
+      q
+    );
+  const appCtx = /приложени|joy\s*pick|app/i.test(q);
+  const donationLex = /донат|donation|stripe|выплат|payment|payout/i.test(q);
+  return monetizationLex && (appCtx || donationLex);
+}
+
+function isAllDonationsTakenQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /все\s+донат.*забира|забирает\s+приложени.*донат|you\s+take\s+all\s+donations|app\s+takes\s+all\s+donations/i.test(
+    q
+  );
+}
+
+function buildMonetizationAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'Приложение зарабатывает на комиссии платформы при передаче донатов исполнителю через Stripe. Комиссия удерживается только с донатов, которые реально выплачены.';
+  }
+  return 'The app earns via platform commission when donations are transferred to the performer through Stripe. Commission is charged only on donations that are actually paid out.';
+}
+
+function buildAllDonationsTakenAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'Нет. Приложение не забирает донаты целиком. Донаты идут исполнителю, а платформа удерживает только свою комиссию при передаче выплаты через Stripe.';
+  }
+  return 'No. The app does not take all donations. Donations go to the performer, and the platform keeps only its commission during payout transfer through Stripe.';
+}
+
+function isNewsSectionQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /что\s+такое\s+раздел\s+новост|что\s+за\s+новост|news\s+section|what\s+is\s+news\s+tab/i.test(q);
+}
+
+function buildNewsSectionAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'Раздел «Новости» — это отдельная вкладка с новостным контентом приложения: обновления, важные сообщения и поздравления о завершённых заявках. Это не список заявок на уборку.';
+  }
+  return 'The News section is a separate tab with app news content: updates, important messages, and congratulations about completed requests. It is not the cleanup request list.';
+}
+
+function buildUserPrompt(question, chunks, conversationContext, answerLanguage, roleHint) {
   const blocks = chunks.map((chunk, index) => {
     const id = chunk.chunk_id || `chunk_${index + 1}`;
     const title = normalizeText(chunk.title || `Knowledge ${index + 1}`);
@@ -1081,6 +1697,7 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage) 
 
   const parts = [
     `User question: ${normalizeText(question)}`,
+    roleHint ? `Detected user role context: ${roleHint}` : '',
     contextBlock,
     'Knowledge snippets:',
     blocks.join('\n\n---\n\n')
@@ -1096,7 +1713,7 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage) 
   return body;
 }
 
-async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversationContext }) {
+async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversationContext, roleHint }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -1115,7 +1732,7 @@ async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversa
       contents: [
         {
           role: 'user',
-          parts: [{ text: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage) }]
+          parts: [{ text: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }]
         }
       ],
       generationConfig: {
@@ -1170,7 +1787,7 @@ async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversa
   }
 }
 
-async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conversationContext }) {
+async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conversationContext, roleHint }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured');
@@ -1186,7 +1803,7 @@ async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conv
       model,
       messages: [
         { role: 'system', content: buildSystemInstruction(answerLanguage) },
-        { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage) }
+        { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }
       ],
       temperature: DEFAULT_TEMPERATURE,
       max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
@@ -1348,6 +1965,99 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     message
   );
   const modelLanguage = answerLocale === 'ru' ? 'ru' : 'en';
+  const roleHint = inferSupportRoleHint(questionForModel, conversationContext, modelLanguage);
+  const roleHintCurrentOnly = inferSupportRoleHint(questionForModel, [], modelLanguage);
+  const parsedCurrentOnly = parseRoleHintMeta(roleHintCurrentOnly);
+  const stageHintForDeterministic =
+    parsedCurrentOnly.stage && parsedCurrentOnly.stage !== 'неопределено' && parsedCurrentOnly.stage !== 'unknown'
+      ? roleHintCurrentOnly
+      : roleHint;
+  const roleHintForDeterministic = roleHintCurrentOnly || roleHint;
+  const deterministicNewsSectionAnswer = isNewsSectionQuestion(questionForModel)
+    ? buildNewsSectionAnswer(modelLanguage)
+    : null;
+  const deterministicMonetizationAnswer = isMonetizationQuestion(questionForModel)
+    ? buildMonetizationAnswer(modelLanguage)
+    : null;
+  const deterministicAllDonationsTakenAnswer = isAllDonationsTakenQuestion(questionForModel)
+    ? buildAllDonationsTakenAnswer(modelLanguage)
+    : null;
+  const deterministicCommissionAnswer = isCommissionQuestion(questionForModel)
+    ? buildCommissionAnswer(questionForModel, modelLanguage)
+    : null;
+  const deterministicExtendAnswer = isExtendOrRescheduleQuestion(questionForModel)
+    ? buildExtendOrRescheduleAnswer(roleHintForDeterministic, modelLanguage)
+    : null;
+  const deterministicReservationAnswer = isReservationFirstComeQuestion(questionForModel)
+    ? buildReservationTypeSplitAnswer(modelLanguage)
+    : null;
+  const deterministicConcurrentExecutionAnswer = isConcurrentExecutionQuestion(questionForModel)
+    ? buildConcurrentExecutionAnswer(roleHintForDeterministic, modelLanguage)
+    : null;
+  const deterministicWasteSingleExecutorAnswer = isWasteSingleExecutorQuestion(questionForModel)
+    ? buildWasteSingleExecutorAnswer(modelLanguage)
+    : null;
+  const deterministicAmountAnswer =
+    isConcreteAmountQuestion(questionForModel) &&
+    !/когда\s+выплат|when\s+.*payout|почему\s+не\s+пришла\s+выплат|why\s+.*payout/i.test(
+      normalizeText(questionForModel).toLowerCase()
+    )
+      ? buildDeterministicAmountAnswer(questionForModel, roleHintForDeterministic, modelLanguage)
+      : null;
+  const deterministicStageAnswer =
+    isStageNextStepQuestion(questionForModel, modelLanguage) &&
+    !/сколько|какую\s+сумм|how\s+much|amount|когда\s+выплат|when\s+.*payout|почему\s+не\s+пришла\s+выплат|why\s+.*payout/i.test(
+      normalizeText(questionForModel).toLowerCase()
+    )
+      ? buildStageNextStepAnswer(stageHintForDeterministic, modelLanguage)
+      : null;
+  const deterministicExistingRequestActionsAnswer =
+    isExistingRequestActionsQuestion(questionForModel) &&
+    !/как\s+создать|create\s+(a\s+)?new\s+request/i.test(normalizeText(questionForModel).toLowerCase())
+      ? buildExistingRequestActionsAnswer(roleHintForDeterministic, modelLanguage)
+      : null;
+  const deterministicAnswer =
+    deterministicNewsSectionAnswer ||
+    deterministicMonetizationAnswer ||
+    deterministicAllDonationsTakenAnswer ||
+    deterministicCommissionAnswer ||
+    deterministicExtendAnswer ||
+    deterministicReservationAnswer ||
+    deterministicConcurrentExecutionAnswer ||
+    deterministicWasteSingleExecutorAnswer ||
+    deterministicAmountAnswer ||
+    deterministicExistingRequestActionsAnswer ||
+    deterministicStageAnswer;
+  if (deterministicAnswer) {
+    return {
+      answer: deterministicAnswer,
+      answer_en: modelLanguage === 'en' ? deterministicAnswer : null,
+      locale: modelLanguage,
+      model: deterministicNewsSectionAnswer
+        ? 'deterministic_news_section_router'
+        : deterministicMonetizationAnswer
+          ? 'deterministic_monetization_router'
+          : deterministicAllDonationsTakenAnswer
+          ? 'deterministic_donations_taken_router'
+          : deterministicCommissionAnswer
+            ? 'deterministic_commission_router'
+            : deterministicExtendAnswer
+          ? 'deterministic_extend_reschedule_router'
+          : deterministicReservationAnswer
+          ? 'deterministic_reservation_split_router'
+          : deterministicConcurrentExecutionAnswer
+          ? 'deterministic_concurrent_execution_router'
+          : deterministicWasteSingleExecutorAnswer
+          ? 'deterministic_waste_single_executor_router'
+          : deterministicAmountAnswer
+          ? 'deterministic_amount_router'
+          : deterministicExistingRequestActionsAnswer
+            ? 'deterministic_existing_request_router'
+            : 'deterministic_stage_router',
+      translation_fallback: false,
+      sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
+    };
+  }
   let aiResult = null;
   let lastAiError = null;
   const primaryProvider = isOpenRouterFirstEnabled() ? 'openrouter' : 'gemini';
@@ -1356,7 +2066,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     userQuestion: questionForModel,
     chunks,
     answerLanguage: modelLanguage,
-    conversationContext
+    conversationContext,
+    roleHint
   };
 
   try {
