@@ -890,13 +890,29 @@
   {
     "chunk_id": "profile_language_change_behavior",
     "title": "Language change in profile flow",
-    "text": "Language settings are available in profile and app localization supports multiple locales. Changing language updates text resources used across screens. Reopen target screen if you need to refresh visible strings immediately.",
+    "text": "Language is changed from Profile → Language (bottom sheet with the full list). The choice is stored locally; UI strings update across screens. Reopen a screen if you need strings to refresh immediately. For the complete locale code list see app_supported_languages_list.",
     "tags": [
       "language",
       "localization",
       "profile settings",
       "translate",
       "app language"
+    ]
+  },
+  {
+    "chunk_id": "app_supported_languages_list",
+    "title": "Joy Pick: supported interface languages (full list)",
+    "text": "The app ships **10** interface languages (same as the in-app locale list): **en** English, **ru** Russian, **es** Spanish, **ar** Arabic, **zh** Chinese, **hi** Hindi, **fr** French, **pt** Portuguese, **he** Hebrew, **de** German. In the language picker, each row is labeled in that language (language_* strings in app resources). Path: Profile tab → Language.",
+    "tags": [
+      "how many languages",
+      "which languages",
+      "list of languages",
+      "supported languages",
+      "app languages",
+      "locales",
+      "en ru es ar zh hi fr pt he de",
+      "joy pick languages",
+      "app_supported_languages_list"
     ]
   },
   {
@@ -1388,7 +1404,7 @@
   {
     "chunk_id": "profile_menu_item_language",
     "title": "Profile: Language",
-    "text": "Opens language picker sheet. Selected locale is stored locally (SharedPreferences); UI strings refresh. May differ from backend profile language field timing.",
+    "text": "Opens language picker sheet listing every supported locale (codes and names — see app_supported_languages_list). Selected locale is stored locally (SharedPreferences); UI strings refresh. May differ from backend profile language field timing.",
     "tags": [
       "change language profile",
       "locale app",

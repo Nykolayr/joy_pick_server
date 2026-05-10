@@ -618,6 +618,16 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    /сколько\s+язык|какие\s+язык|перечисл.{0,30}язык|список\s+язык|полн.{0,8}список.{0,12}язык|поддерживаем.{0,20}язык|поддерж.{0,24}приложен.{0,16}язык|интерфейс.{0,20}язык|локал.{0,16}(приложен|joy)|все\s+язык|язык.{0,20}joy\s*pick|how\s+many\s+languages?|which\s+languages?|what\s+languages?|list\s+of\s+languages?|supported\s+languages?|language\s+support|available\s+languages?|how\s+many\s+locales?/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} app_supported_languages_list десять языков en ru es ar zh hi fr pt he de`
+      : `${question} app_supported_languages_list ten languages en ru es ar zh hi fr pt he de`;
+  }
+
+  if (
     /(?:мой\s+аккаунт|my\s+account).*(?:профил|меню|profile)|(?:пункт|меню|пункте).{0,16}(?:мой\s+аккаунт|my\s+account)/i.test(
       scoutLower
     )
@@ -633,8 +643,8 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
     )
   ) {
     return isRu
-      ? `${question} profile_menu_item_language смена языка`
-      : `${question} profile_menu_item_language language picker`;
+      ? `${question} profile_menu_item_language app_supported_languages_list смена языка`
+      : `${question} profile_menu_item_language app_supported_languages_list language picker`;
   }
 
   if (
@@ -721,8 +731,8 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
     )
   ) {
     return isRu
-      ? `${question} профиль вкладка выплаты монеты волонтёрские часы мои заявки язык уведомления поддержка оператор stripe редактирование выход удалить поделиться ещё profile_menu_items_index product_profile_screen_full_features_list`
-      : `${question} profile tab payouts coins volunteer hours my requests language notifications human support stripe edit logout delete share more profile_menu_items_index product_profile_screen_full_features_list`;
+      ? `${question} профиль вкладка выплаты монеты волонтёрские часы мои заявки язык уведомления поддержка оператор stripe редактирование выход удалить поделиться ещё profile_menu_items_index app_supported_languages_list product_profile_screen_full_features_list`
+      : `${question} profile tab payouts coins volunteer hours my requests language notifications human support stripe edit logout delete share more profile_menu_items_index app_supported_languages_list product_profile_screen_full_features_list`;
   }
 
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
