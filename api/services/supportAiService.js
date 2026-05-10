@@ -566,6 +566,16 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       : `${question} chat refresh news wallet top bar profile list qr payouts help_synonyms_top_bar_and_profile_icons`;
   }
 
+  if (
+    /раздел.{0,16}(хелп|справк|help)|оглавлен.*help|какие\s+разделы\s+(в\s+)?(справк|help|руководств)|sections\s+in\s+(the\s+)?(help|ui\s+guide)|ui\s+guide\s+(outline|sections)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} help_ui_guide_sections_outline значки типов заявок доллар серый круг рамки чипы расстояние посадка дерева только вывоз кнопки главный экран профиль`
+      : `${question} help_ui_guide_sections_outline request types dollar gray circle borders chips distance plant tree pickup top buttons profile`;
+  }
+
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
   if (
     /какие.{0,40}(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|что\s+за\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|виды\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|список\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)/iu.test(

@@ -2063,6 +2063,29 @@
     ]
   },
   {
+    "chunk_id": "help_ui_guide_sections_outline",
+    "title": "Help: section outline (same as in the app)",
+    "text": "Joy Pick UI Guide (Help) sections match the UiGuide screen: (1) Request type icons — three markers: Event, Waste Location, Speed Cleanup. (2) Dollar sign on map — green $ under the marker: donations enabled. (3) Gray circle on map — ring around the marker: overdue, approved, or completed. (4) Request border colors — green / orange / yellow / purple / black card outline (see Help captions). (5) Chips & indicators — section groups: donation amount chips (orange and yellow styles), distance to request, Plant Tree indicator, Trash pickup only indicator. (6) Distance — separate km chip on the card (under Chips & indicators). (7) Plant Tree — tree in white circle when the event includes planting. (8) Trash pickup only — truck in white circle; haul-away only, no cleanup work. (9) Top bar buttons on home — chat, refresh, news, wallet. (10) Profile block icons — list (coins/payouts), exchange QR JoyCoins at partner, pay out to payouts page. Open Help in-app for illustrations.",
+    "tags": [
+      "ui guide",
+      "help sections",
+      "help outline",
+      "request type icons",
+      "dollar on map",
+      "gray circle on map",
+      "border colors",
+      "chips and indicators",
+      "distance",
+      "plant tree",
+      "trash pickup only",
+      "top bar buttons",
+      "home screen buttons",
+      "profile block icons",
+      "help_title",
+      "interface guide"
+    ]
+  },
+  {
     "chunk_id": "help_synonyms_dollar_icon_on_map",
     "title": "Synonyms: green dollar under map marker (Help)",
     "text": "Users may say: dollar sign, bucks, money under the pin, $ under the icon, donation badge on map, paid marker. Per Help (UI Guide): the green dollar ($) under the request marker means the request accepts donations. It is not a separate create-menu request type—it marks donation-enabled requests on the map. Full legend: Help from the main tab (question icon). Synonyms for retrieval: donation map marker stripe paid request pin.",
