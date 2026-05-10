@@ -525,6 +525,17 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
   }
 
   if (
+    /зелён|зелен|green\s+border|green\s+card|зелёная\s+рамка|зеленый\s+бордер|зелёный\s+бордер/i.test(
+      scoutLower
+    ) &&
+    /рамк|бордер|border|обводк|контур|окантовк|вокруг\s+заявк/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} зелёная рамка созданные вами автор help_border_green help_green_border_is_creator_not_donation не путать с донатом зелёный доллар под иконкой отдельно`
+      : `${question} green border your created requests creator help_border_green help_green_border_is_creator_not_donation not donation by border green dollar under icon`;
+  }
+
+  if (
     /цвет\s+рамки|рамк.*зелён|рамк.*оранж|рамк.*жёлт|рамк.*фиолет|рамк.*черн|border\s+color|green\s+border|purple\s+border|orange\s+border/i.test(
       scoutLower
     ) &&
@@ -1210,6 +1221,9 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Значок дерева по Help — это индикатор «Посадка дерева» для события (Event / субботник) и опции при создании события; это не тип заявки «Уборка мусора» (Waste Location). Не утверждай, что дерево означает именно мусорную заявку.'
       : 'Per Help, the tree icon is the Plant Tree indicator for Events (including the toggle when creating an Event)—not the Waste Location request type. Do not claim the tree icon means trash-cleanup request type.',
+    answerLanguage === 'ru'
+      ? 'Зелёная рамка карточки заявки по Help означает «ваши заявки — созданные вами» (вы автор). Не говори, что зелёная рамка сама по себе означает «донатную» или «платную» заявку. Признак донатов на карте — зелёный знак доллара под иконкой маркера; жёлтая рамка — вы задонатили в эту заявку.'
+      : 'Per Help, a green card border means requests you created (you are the creator). Do not claim the green border alone means a donation/paid request. Donations on the map are shown by the green $ under the marker; yellow border means you donated to that request.',
     'For «connect Stripe in profile», explain the in-app profile/payouts flow from Knowledge; do not refuse as if the user asked for external-only Stripe signup.',
     answerLanguage === 'ru'
       ? 'Когда спрашивают «куда переводятся деньги со Stripe / на какие реквизиты», формулируйте точно: выплаты идут на подключенный в Stripe банковский счёт или карту для payouts (согласно настройкам Stripe). Избегайте расплывчатой формулировки «на счёт, подключённый через Stripe».'
