@@ -1081,6 +1081,10 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Волонтёрские часы: учёт времени для себя; PDF-справка по иконке принтера в профиле о участии в уборке мусора для предъявления третьим лицам. Не связывай учёт часов с донатами или «привилегиями» выплат.'
       : 'Volunteer hours are a personal time tally; the printer icon in Profile gives a PDF certificate of trash-cleanup participation for third parties. Never tie hours tracking to donations or payout privileges.';
+  const directQuestionFirstRule =
+    answerLanguage === 'ru'
+      ? 'Сначала отвечай на фактический смысл вопроса (общий контекст, бытовая или предметная тема, условия и т.п.). Развёрнутые пошаговые инструкции по приложению (экраны, кнопки, типы заявок, как создать или изменить заявку) давай только если пользователь явно или недвусмысленно спрашивает действие внутри Joy Pick: навигация, создание заявки, где найти функцию. Если вопрос сформулирован обще или про реальный мир без запроса сценария в приложении — не подменяй ответ длинным туториалом; при необходимости добавь краткую связку с приложением в конце (одно-два предложения), без пронумерованного чеклиста создания заявки и без выдуманного контекста («например под окном»), которого не было в вопросе.'
+      : 'Answer the user’s actual question first (general context, everyday or topical question, conditions, etc.). Give long step-by-step in-app instructions (screens, buttons, request types, how to create or edit a request) only when they clearly ask for something inside Joy Pick: navigation, creating a request, where to find a feature. For general or real-world questions that do not ask for an in-app walkthrough, do not replace the answer with a full tutorial; at most add a short app-related closing note (one or two sentences)—no numbered create-request checklist and no invented scenario details the user did not mention.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
@@ -1089,6 +1093,7 @@ function buildSystemInstruction(answerLanguage) {
     inAppNoKnowledgeRule,
     joyCoinsVsDonationsRule,
     volunteerHoursVsDonationsRule,
+    directQuestionFirstRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
     'Do not use Markdown (no **bold**, no *italics*, no backticks). Plain text only so chat UI shows no asterisks.',
     'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',
@@ -1679,11 +1684,55 @@ function isNewsSectionQuestion(question) {
   return /что\s+такое\s+раздел\s+новост|что\s+за\s+новост|news\s+section|what\s+is\s+news\s+tab/i.test(q);
 }
 
-function buildNewsSectionAnswer(answerLanguage) {
+/** Доп. блок про «поблагодарить» / донатный контекст — только если в вопросе явно про деньги/донаты/благодарность активистам. */
+function questionMentionsPaymentDonationOrActivistThanks(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const moneyOrDonation =
+    /донат|donation|оплат|платеж|платёж|платить|payment|\bpay\b|выплат|payout|деньг|money|stripe|комисс|commission|fee|чаев|tip|спонсор|sponsor/i.test(
+      q
+    );
+  const activistThanks =
+    /благодар.*активист|thank.*activist|thank\s+eco|eco\s+activist.*thank|поблагодар/i.test(q);
+  return moneyOrDonation || activistThanks;
+}
+
+function buildNewsSectionAnswer(question, answerLanguage) {
+  const extra = questionMentionsPaymentDonationOrActivistThanks(question);
   if (answerLanguage === 'ru') {
-    return 'Раздел «Новости» — это отдельная вкладка с новостным контентом приложения: обновления, важные сообщения и поздравления о завершённых заявках. Это не список заявок на уборку.';
+    const base =
+      'Раздел «Новости» — это отдельная вкладка с новостным контентом приложения: обновления, важные сообщения, поздравления о завершённых заявках и раздел Добрых Новостей с эко-активностями пользователей.';
+    const tail = extra
+      ? ' Там можно выбрать понравившиеся активности и поблагодарить эко-активистов.'
+      : '';
+    return `${base}${tail} Это не список заявок на уборку.`;
   }
-  return 'The News section is a separate tab with app news content: updates, important messages, and congratulations about completed requests. It is not the cleanup request list.';
+  const base =
+    'The News section is a separate tab with app news content: updates, important messages, congratulations about completed requests, and a Good News area with users’ eco activities.';
+  const tail = extra ? ' Users can pick activities they like and thank eco activists.' : '';
+  return `${base}${tail} It is not the cleanup request list.`;
+}
+
+function isCompletedCleanupsVisibilityQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return /где\s+можно\s+увидеть\s+выполненн|где\s+увидеть\s+выполненн|where\s+can\s+i\s+see\s+completed\s+cleanups|where\s+to\s+see\s+completed\s+requests/i.test(
+    q
+  );
+}
+
+function buildCompletedCleanupsVisibilityAnswer(question, answerLanguage) {
+  const extra = questionMentionsPaymentDonationOrActivistThanks(question);
+  if (answerLanguage === 'ru') {
+    const base =
+      'Выполненные уборки можно увидеть на карте и в списке заявок (завершённые заявки видны около 7 дней), а свои заявки — в профиле в разделе «Мои заявки». Также выполненные работы пользователей можно видеть в разделе Добрых Новостей, где публикуются эко-активности.';
+    const tail = extra ? ' Там можно выбрать понравившиеся и поблагодарить эко-активистов.' : '';
+    return `${base}${tail}`;
+  }
+  const base =
+    'Completed cleanups are visible on the map and in the request list (completed cards are shown for about 7 days), and your own requests are always in Profile -> My requests. You can also see users’ completed works in the Good News section with eco activities.';
+  const tail = extra ? ' There you can pick posts you like and thank eco activists.' : '';
+  return `${base}${tail}`;
 }
 
 function buildUserPrompt(question, chunks, conversationContext, answerLanguage, roleHint) {
@@ -1973,8 +2022,11 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       ? roleHintCurrentOnly
       : roleHint;
   const roleHintForDeterministic = roleHintCurrentOnly || roleHint;
+  const deterministicCompletedCleanupsAnswer = isCompletedCleanupsVisibilityQuestion(questionForModel)
+    ? buildCompletedCleanupsVisibilityAnswer(questionForModel, modelLanguage)
+    : null;
   const deterministicNewsSectionAnswer = isNewsSectionQuestion(questionForModel)
-    ? buildNewsSectionAnswer(modelLanguage)
+    ? buildNewsSectionAnswer(questionForModel, modelLanguage)
     : null;
   const deterministicMonetizationAnswer = isMonetizationQuestion(questionForModel)
     ? buildMonetizationAnswer(modelLanguage)
@@ -2017,6 +2069,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       ? buildExistingRequestActionsAnswer(roleHintForDeterministic, modelLanguage)
       : null;
   const deterministicAnswer =
+    deterministicCompletedCleanupsAnswer ||
     deterministicNewsSectionAnswer ||
     deterministicMonetizationAnswer ||
     deterministicAllDonationsTakenAnswer ||
@@ -2033,9 +2086,11 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       answer: deterministicAnswer,
       answer_en: modelLanguage === 'en' ? deterministicAnswer : null,
       locale: modelLanguage,
-      model: deterministicNewsSectionAnswer
-        ? 'deterministic_news_section_router'
-        : deterministicMonetizationAnswer
+      model: deterministicCompletedCleanupsAnswer
+        ? 'deterministic_completed_cleanups_router'
+        : deterministicNewsSectionAnswer
+          ? 'deterministic_news_section_router'
+          : deterministicMonetizationAnswer
           ? 'deterministic_monetization_router'
           : deterministicAllDonationsTakenAnswer
           ? 'deterministic_donations_taken_router'
