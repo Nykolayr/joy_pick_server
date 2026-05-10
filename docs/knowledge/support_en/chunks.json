@@ -1312,7 +1312,7 @@
   {
     "chunk_id": "product_profile_screen_full_features_list",
     "title": "Profile screen: all blocks and menu items (as in the app)",
-    "text": "Profile tab (fourth bottom tab). Top: avatar and name. Payouts card: available balance, Available/History, payouts flow and Stripe. JoyCoins card: balance, earned from requests/work, list/history, partner QR exchange. Volunteer hours card: time by request, list, printer icon for participation PDF. White menu card: My Account → edit profile (name, photo, location, about, socials, Stripe in flow); Language; My requests; Notifications; Support → human operator support chat (not Support AI); Stripe / payment account status; Log out; Delete account. More section: Admin panel (admins only); Help & Support → team contact email; Share → App Store and Google Play links. The map UI Guide (icons legend) opens from the Map tab help button—not from this profile menu.",
+    "text": "Profile tab (fourth bottom tab). Top: avatar and name. Payouts card: available balance, Available/History, payouts flow and Stripe. JoyCoins card: balance, earned from requests/work, list/history, partner QR exchange. Volunteer hours card: time by request, list, printer icon for participation PDF. White menu card: My Account → edit profile (name, photo, location, about, socials, Stripe in flow); Language; My requests; Notifications; Support → human operator support chat (not Support AI); Stripe / payment account status; Log out; Delete account. More section: Admin panel (admins only); Help & Support → team contact email; Share → App Store and Google Play links. The map UI Guide (icons legend) opens from the Map tab help button—not from this profile menu. Each menu row and top card has a dedicated chunk profile_menu_* plus index chunk profile_menu_items_index.",
     "tags": [
       "what can i do in profile",
       "profile screen",
@@ -1333,6 +1333,152 @@
       "profile tab",
       "joycoins payouts",
       "help"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_items_index",
+    "title": "Profile: index of chunks per menu entry",
+    "text": "For narrow answers about Profile tab items use chunks: payouts card — profile_menu_card_payouts; JoyCoins — profile_menu_card_joycoins; volunteer hours — profile_menu_card_volunteer_hours; My Account / edit — profile_menu_item_my_account_edit; Language — profile_menu_item_language; My requests — profile_menu_item_my_requests; Notifications — profile_menu_item_notifications; Support (operator) — profile_menu_item_support_operator; Stripe row — profile_menu_item_stripe; Log out — profile_menu_item_log_out; Delete account — profile_menu_item_delete_account; Admin panel — profile_more_admin_panel; Help email — profile_more_help_email; Share app — profile_more_share_app.",
+    "tags": [
+      "profile menu index",
+      "profile chunks list",
+      "profile_menu_items_index"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_card_payouts",
+    "title": "Profile: Your payouts card",
+    "text": "Top gradient card on Profile tab. Shows available balance, paid total, and pending/delay hints when returned by API. Tap opens full Payouts screen with Available / History tabs, withdrawal actions, and payout history. Side icon buttons match profile-block style shortcuts to payouts flows. Fees, instant minimum, and “no payout methods” cases are covered in payout_* and Stripe chunks.",
+    "tags": [
+      "profile payouts card",
+      "your payouts block",
+      "profile_menu_card_payouts"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_card_joycoins",
+    "title": "Profile: JoyCoins card",
+    "text": "Shows JoyCoins balance and breakdown (created requests / completed work / other per API). List button opens completed-requests/history context for coins; Exchange requests a partner QR token and shows a timed QR dialog for paying with coins at a partner — renew QR after expiry. JoyCoins are not cash donations—see joycoins_* chunks.",
+    "tags": [
+      "joycoins profile card",
+      "qr partner coins",
+      "profile_menu_card_joycoins"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_card_volunteer_hours",
+    "title": "Profile: Volunteer hours card",
+    "text": "Shows total tracked volunteer minutes/hours from confirmed cleanups (API work duration). List opens detailed entries per request. Printer icon generates a participation PDF certificate for third parties; generation runs on device with a short cooldown between shares. This is personal tracking, not payouts.",
+    "tags": [
+      "volunteer hours profile",
+      "pdf certificate profile",
+      "profile_menu_card_volunteer_hours"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_my_account_edit",
+    "title": "Profile: My Account / edit",
+    "text": "Opens edit profile: name, photo, country/region/city, about, social links; Stripe payment context is reachable from the same flow. Saves via API; failures—see profile_edit_* chunks.",
+    "tags": [
+      "edit profile",
+      "my account joy pick",
+      "profile_menu_item_my_account_edit"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_language",
+    "title": "Profile: Language",
+    "text": "Opens language picker sheet. Selected locale is stored locally (SharedPreferences); UI strings refresh. May differ from backend profile language field timing.",
+    "tags": [
+      "change language profile",
+      "locale app",
+      "profile_menu_item_language"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_my_requests",
+    "title": "Profile: My requests",
+    "text": "Opens your requests list (UserEvents widget) with navigation to request details—not the global map. For map legend colors see help_map_border_colors.",
+    "tags": [
+      "my requests profile list",
+      "profile_menu_item_my_requests"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_notifications",
+    "title": "Profile: Notifications",
+    "text": "Opens in-app notifications list: open items, refresh, mark read / mark all when available. Push requires OS permission; in-app list may still show entries without push. See notifications_* chunks.",
+    "tags": [
+      "notifications from profile",
+      "profile_menu_item_notifications"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_support_operator",
+    "title": "Profile: Support (human operator)",
+    "text": "Creates or opens operator support chat (standard Chat screen)—not Support AI. Support AI is the separate FAB on home. Uses chats bloc to resolve existing support thread when possible.",
+    "tags": [
+      "support chat operator profile",
+      "human support",
+      "profile_menu_item_support_operator"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_stripe",
+    "title": "Profile: Stripe menu row",
+    "text": "Shows Stripe Connect readiness; tap checks account—if fully enabled, shows already-connected snackbar; otherwise creates Express account and opens in-app Stripe onboarding web flow. Needed for donation payouts per product rules—see stripe_* chunks.",
+    "tags": [
+      "stripe profile menu",
+      "connect stripe profile",
+      "profile_menu_item_stripe"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_log_out",
+    "title": "Profile: Log out",
+    "text": "Signs out and navigates to app start route (/). Use before switching accounts.",
+    "tags": [
+      "log out joy pick",
+      "sign out profile",
+      "profile_menu_item_log_out"
+    ]
+  },
+  {
+    "chunk_id": "profile_menu_item_delete_account",
+    "title": "Profile: Delete account",
+    "text": "Opens bottom-sheet warning with Cancel / Delete. Confirm deletes auth user (Firebase), deletes Firestore user doc when applicable, signs out, navigates to /. Irreversible from client flow—contact support before deleting if unsure.",
+    "tags": [
+      "delete account joy pick",
+      "profile_menu_item_delete_account"
+    ]
+  },
+  {
+    "chunk_id": "profile_more_admin_panel",
+    "title": "Profile: More — Admin panel",
+    "text": "Visible only for users flagged admin in profile. Opens admin tooling inside the app. Hidden for normal users.",
+    "tags": [
+      "admin panel profile",
+      "profile_more_admin_panel"
+    ]
+  },
+  {
+    "chunk_id": "profile_more_help_email",
+    "title": "Profile: More — Help & Support email",
+    "text": "Opens mail client to Help.joypick@gmail.com. For emailing the team outside chat—not operator chat and not Support AI.",
+    "tags": [
+      "help email joy pick",
+      "Help.joypick@gmail.com",
+      "profile_more_help_email"
+    ]
+  },
+  {
+    "chunk_id": "profile_more_share_app",
+    "title": "Profile: More — Share app",
+    "text": "System share sheet with intro text plus App Store and Google Play links for Joy Pick installation.",
+    "tags": [
+      "share app joy pick",
+      "app store play link",
+      "profile_more_share_app"
     ]
   },
   {

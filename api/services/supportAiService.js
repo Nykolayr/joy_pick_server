@@ -587,14 +587,142 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       : `${question} help_ui_guide_sections_outline request types dollar gray circle borders chips distance plant tree pickup top buttons profile`;
   }
 
+  // Узкие формулировки по пунктам меню / карточкам профиля (чанки profile_menu_*)
+  if (
+    /(?:ваши\s+выплат|карточк.{0,16}выплат|блок.{0,12}выплат|your\s+payouts|payouts?\s+card).*(?:профил|profile)|(?:профил|profile).{0,48}(?:выплат|доступн.{0,16}баланс|withdraw|payout)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_card_payouts выплаты карточка профиль`
+      : `${question} profile_menu_card_payouts payouts card profile`;
+  }
+
+  if (
+    /joy\s*coins?|joycoin|(?:монет|коин).{0,16}(?:профил|profile)|(?:профил|profile).{0,36}(?:монет|joycoin|joy\s*coins)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_card_joycoins монеты профиль`
+      : `${question} profile_menu_card_joycoins coins profile`;
+  }
+
+  if (
+    /(?:волонт.{0,16}час|volunteer\s+hours)/i.test(scoutLower) &&
+    /(?:профил|profile|меню|tab)/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} profile_menu_card_volunteer_hours волонтёрские часы`
+      : `${question} profile_menu_card_volunteer_hours volunteer hours`;
+  }
+
+  if (
+    /(?:мой\s+аккаунт|my\s+account).*(?:профил|меню|profile)|(?:пункт|меню|пункте).{0,16}(?:мой\s+аккаунт|my\s+account)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_my_account_edit редактирование профиля`
+      : `${question} profile_menu_item_my_account_edit edit profile`;
+  }
+
+  if (
+    /(?:язык|language|локал|locale).*(?:профил|приложен|profile)|(?:профил|profile).{0,28}(?:язык|language|locale)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_language смена языка`
+      : `${question} profile_menu_item_language language picker`;
+  }
+
+  if (
+    /(?:мои\s+заявк|my\s+requests).*(?:профил|меню|profile)|(?:профил|profile).{0,36}(?:мои\s+заявк|my\s+requests)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_my_requests список заявок`
+      : `${question} profile_menu_item_my_requests user requests list`;
+  }
+
+  if (
+    /(?:уведомлен|notifications?).*(?:профил|меню|profile)|(?:профил|profile).{0,28}(?:уведомлен|notifications)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_notifications экран уведомлений`
+      : `${question} profile_menu_item_notifications notifications screen`;
+  }
+
+  if (
+    /(?:поддержк|support).*(?:оператор|оператором|human|живой|человек)|(?:оператор).*(?:профил|чат)|(?:профил|profile).{0,40}(?:поддержк.{0,24}оператор|human\s+support)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_support_operator чат оператор не support ai`
+      : `${question} profile_menu_item_support_operator human operator chat not support ai`;
+  }
+
+  if (
+    /(?:выйти из аккаунта|выход из приложения|log\s*out|sign\s*out).*(?:профил|profile)|(?:профил|profile).{0,24}(?:выйти|выход|log\s*out|sign\s*out)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_log_out выход`
+      : `${question} profile_menu_item_log_out logout`;
+  }
+
+  if (
+    /удалить.{0,16}(?:аккаунт|профил)|delete.{0,16}(?:account|profile)|(?:профил|profile).{0,24}(?:удалить\s+аккаунт|delete\s+account)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_menu_item_delete_account удаление аккаунта`
+      : `${question} profile_menu_item_delete_account delete account`;
+  }
+
+  if (
+    /(?:админ|admin).{0,24}(?:профил|панел|panel)|(?:панел.{0,16}админ).*(?:профил|profile)/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} profile_more_admin_panel администратор`
+      : `${question} profile_more_admin_panel admin panel`;
+  }
+
+  if (
+    /Help\.?joypick@gmail|help\.joypick|помощь.{0,20}поддержк.{0,20}(?:почт|email)|(?:ещё|ещё\s+раздел|раздел\s+ещё).{0,16}(?:помощь|support\s+email)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_more_help_email почта помощь`
+      : `${question} profile_more_help_email help email`;
+  }
+
+  if (
+    /(?:поделиться).{0,28}(?:приложен|магазин|app\s+store|google\s+play).*(?:профил|profile)|(?:профил|profile).{0,36}(?:поделиться.{0,16}приложен|share\s+app)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} profile_more_share_app ссылки магазины`
+      : `${question} profile_more_share_app app store play`;
+  }
+
   if (
     /что\s+(можно|есть)\s+(в\s+)?профил|что\s+делать\s+в\s+профил|функци.{0,24}профил|возможност.{0,16}профил|что\s+в\s+профиле|экран\s+профил|what\s+(can\s+i\s+do|is\s+there)\s+(in\s+|on\s+)?(the\s+)?profile|profile\s+(features|screen|menu)/i.test(
       scoutLower
     )
   ) {
     return isRu
-      ? `${question} профиль вкладка выплаты монеты волонтёрские часы мои заявки язык уведомления поддержка оператор stripe редактирование выход удалить поделиться ещё product_profile_screen_full_features_list`
-      : `${question} profile tab payouts coins volunteer hours my requests language notifications human support stripe edit logout delete share more product_profile_screen_full_features_list`;
+      ? `${question} профиль вкладка выплаты монеты волонтёрские часы мои заявки язык уведомления поддержка оператор stripe редактирование выход удалить поделиться ещё profile_menu_items_index product_profile_screen_full_features_list`
+      : `${question} profile tab payouts coins volunteer hours my requests language notifications human support stripe edit logout delete share more profile_menu_items_index product_profile_screen_full_features_list`;
   }
 
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
@@ -706,8 +834,8 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
 
   if (/stripe|стрип/i.test(t) && /профил|подключ|connect|выплат|profile|payout/i.test(t)) {
     return isRu
-      ? `${question} stripe connect онбординг в приложении профиль выплаты`
-      : `${question} stripe connect profile onboarding in app payouts`;
+      ? `${question} profile_menu_item_stripe stripe connect онбординг в приложении профиль выплаты`
+      : `${question} profile_menu_item_stripe stripe connect profile onboarding in app payouts`;
   }
 
   if (
