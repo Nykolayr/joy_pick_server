@@ -2114,7 +2114,16 @@
       "help",
       "white circle",
       "creating a request",
-      "tree icon when creating"
+      "tree icon when creating",
+      "pickup truck",
+      "garbage truck",
+      "lorry",
+      "van icon",
+      "car icon on map",
+      "little truck",
+      "machine icon",
+      "haul-away",
+      "waste haulage"
     ]
   },
   {
@@ -2130,6 +2139,35 @@
       "help",
       "ui guide",
       "subbotnik"
+    ]
+  },
+  {
+    "chunk_id": "help_trash_pickup_truck_icon_synonyms",
+    "title": "Truck / pickup icon: Trash pickup only (Help)",
+    "text": "Users may say «little truck», truck, pickup, lorry, van, machine icon, car on the map, garbage truck — in the app and Help it is one meaning: the Trash pickup only indicator (pickup.png asset). Per Help (UI Guide): only haul-away is needed, no cleanup work—truck icon in a white circle; Plant Tree with a tree icon is described in the same section. For Waste Location creation the toggle is trash pickup only; on the map and cards the same marker appears when that flag is set. For Events, Help describes the same card badges. Synonyms for retrieval: pickup truck haul away trash pickup only машинка truck icon white circle.",
+    "tags": [
+      "little truck",
+      "pickup truck",
+      "truck icon",
+      "garbage truck",
+      "lorry",
+      "van icon",
+      "machine icon",
+      "car icon on map",
+      "what is the truck icon",
+      "trash pickup only",
+      "haul away",
+      "haul-away",
+      "waste haulage",
+      "trash pickup",
+      "pickup icon",
+      "help_trash_pickup",
+      "white circle",
+      "waste location",
+      "creating request",
+      "help",
+      "pickup.png",
+      "trash_pickup_only"
     ]
   },
   {

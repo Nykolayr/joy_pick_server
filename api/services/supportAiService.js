@@ -489,6 +489,19 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       : `${question} donation_payment_failed stripe donation payment error retry`;
   }
 
+  if (
+    /машинк|грузовик|фур|пикап|тачк|trash\s*pickup|pickup\s*truck|garbage\s*truck|\bhaul\b|грузович|иконк.*грузов|значок.*грузов|только\s+вывоз|вывоз\s+без\s+уборк/i.test(
+      scoutLower
+    ) &&
+    /иконк|значок|карт|приложен|joy\s*pick|help|что\s+за|what\s+.*icon|созда|заяв|map|мусор|уборк|waste|event|событ|точк/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} только вывоз мусора trash pickup pickup icon грузовик машинка help_trash_pickup белый круг waste location trash_pickup_only pickup.png индикатор`
+      : `${question} trash pickup only truck icon pickup help_trash_pickup white circle waste location haul away garbage truck trash_pickup_only`;
+  }
+
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
   if (
     /какие.{0,40}(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|что\s+за\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|виды\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|список\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)/iu.test(
