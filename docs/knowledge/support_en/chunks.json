@@ -1310,6 +1310,32 @@
     ]
   },
   {
+    "chunk_id": "product_profile_screen_full_features_list",
+    "title": "Profile screen: all blocks and menu items (as in the app)",
+    "text": "Profile tab (fourth bottom tab). Top: avatar and name. Payouts card: available balance, Available/History, payouts flow and Stripe. JoyCoins card: balance, earned from requests/work, list/history, partner QR exchange. Volunteer hours card: time by request, list, printer icon for participation PDF. White menu card: My Account → edit profile (name, photo, location, about, socials, Stripe in flow); Language; My requests; Notifications; Support → human operator support chat (not Support AI); Stripe / payment account status; Log out; Delete account. More section: Admin panel (admins only); Help & Support → team contact email; Share → App Store and Google Play links. The map UI Guide (icons legend) opens from the Map tab help button—not from this profile menu.",
+    "tags": [
+      "what can i do in profile",
+      "profile screen",
+      "profile features",
+      "payouts profile",
+      "coins profile",
+      "volunteer hours profile",
+      "my requests",
+      "edit profile",
+      "language settings",
+      "notifications profile",
+      "support chat operator",
+      "not support ai profile",
+      "stripe profile",
+      "logout delete account",
+      "share app",
+      "admin panel profile",
+      "profile tab",
+      "joycoins payouts",
+      "help"
+    ]
+  },
+  {
     "chunk_id": "news_unread_pulse_dot_behavior",
     "title": "Unread news pulse dot behavior",
     "text": "Main navigation shows a pulse dot on News tab when unseen news IDs are detected versus saved seen IDs. Opening News tab marks current news list as seen and removes the dot. This is local unread-news indicator behavior.",

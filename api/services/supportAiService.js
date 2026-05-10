@@ -587,6 +587,16 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       : `${question} help_ui_guide_sections_outline request types dollar gray circle borders chips distance plant tree pickup top buttons profile`;
   }
 
+  if (
+    /что\s+(можно|есть)\s+(в\s+)?профил|что\s+делать\s+в\s+профил|функци.{0,24}профил|возможност.{0,16}профил|что\s+в\s+профиле|экран\s+профил|what\s+(can\s+i\s+do|is\s+there)\s+(in\s+|on\s+)?(the\s+)?profile|profile\s+(features|screen|menu)/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} профиль вкладка выплаты монеты волонтёрские часы мои заявки язык уведомления поддержка оператор stripe редактирование выход удалить поделиться ещё product_profile_screen_full_features_list`
+      : `${question} profile tab payouts coins volunteer hours my requests language notifications human support stripe edit logout delete share more product_profile_screen_full_features_list`;
+  }
+
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
   if (
     /какие.{0,40}(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|что\s+за\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|виды\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|список\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)/iu.test(
