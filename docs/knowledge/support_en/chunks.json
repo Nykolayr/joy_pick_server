@@ -2040,10 +2040,115 @@
       "yellow",
       "purple",
       "black",
+      "green border",
+      "orange border",
+      "yellow border",
+      "purple border",
+      "black border",
+      "my requests border",
+      "joined border",
+      "donated border",
       "gray circle",
+      "grey circle",
+      "grey ring",
       "map",
       "dollar sign",
-      "what does color mean"
+      "green dollar",
+      "buck bucks",
+      "money badge map",
+      "what does color mean",
+      "card outline",
+      "halo around marker",
+      "donation marker under pin"
+    ]
+  },
+  {
+    "chunk_id": "help_synonyms_dollar_icon_on_map",
+    "title": "Synonyms: green dollar under map marker (Help)",
+    "text": "Users may say: dollar sign, bucks, money under the pin, $ under the icon, donation badge on map, paid marker. Per Help (UI Guide): the green dollar ($) under the request marker means the request accepts donations. It is not a separate create-menu request type—it marks donation-enabled requests on the map. Full legend: Help from the main tab (question icon). Synonyms for retrieval: donation map marker stripe paid request pin.",
+    "tags": [
+      "dollar on map",
+      "dollar sign map",
+      "green dollar",
+      "bucks",
+      "money under icon",
+      "donation marker",
+      "paid request icon",
+      "donation pin",
+      "map dollar",
+      "green dollar sign",
+      "help_dollar_on_map",
+      "help"
+    ]
+  },
+  {
+    "chunk_id": "help_synonyms_gray_circle_around_icon",
+    "title": "Synonyms: gray circle around map icon (Help)",
+    "text": "Users say gray circle, grey ring, halo, outline around pin, circular border on marker. Per Help: a gray circle around the icon means the request is overdue, approved, or completed (see Help for nuance). Synonyms: gray circle grey halo map marker overdue approved completed.",
+    "tags": [
+      "gray circle",
+      "grey circle",
+      "grey ring",
+      "halo marker",
+      "outline around icon",
+      "circle around pin",
+      "help_map_gray_circle",
+      "help"
+    ]
+  },
+  {
+    "chunk_id": "help_synonyms_top_bar_and_profile_icons",
+    "title": "Synonyms: home top bar buttons and profile block icons (Help)",
+    "text": "Top of Map tab per Help: Chat—threads with creators/participants, red badge unread; Refresh—reload map/list; News—Joy Pick news, orange icon and pulsing dot for new items; Wallet—available balance, opens payouts. Synonyms: messages icon top, refresh requests list, news pulse dot, header wallet. Profile block per Help: List—completed requests (Coins) or payout history (Payouts); Exchange—QR JoyCoins at partner; Pay out—payouts page. Synonyms: coins history, QR partner coins, withdraw profile.",
+    "tags": [
+      "top bar chat",
+      "refresh map button",
+      "news pulsing dot",
+      "wallet icon header",
+      "unread chat badge",
+      "profile coins list",
+      "joycoins qr",
+      "payout icon profile",
+      "help_top_btn",
+      "help_profile_icon",
+      "help"
+    ]
+  },
+  {
+    "chunk_id": "help_synonyms_request_type_map_icons",
+    "title": "Synonyms: three request types—map marker icons (Help)",
+    "text": "Help shows three types: Event (community cleanup, multiple participants); Waste Location (single spot, one executor after join); Speed Cleanup (solo quick cleanup). Synonyms: what icon means, three map markers, trash pin icon, speed broom icon, event calendar icon, tell waste speed event apart by marker.",
+    "tags": [
+      "request type icon",
+      "three types map",
+      "waste marker",
+      "speed marker",
+      "event marker",
+      "subbotnik icon",
+      "trash pin icon",
+      "help_event",
+      "help_waste_location",
+      "help_speed_cleanup",
+      "help"
+    ]
+  },
+  {
+    "chunk_id": "help_synonyms_tree_planting_icon",
+    "title": "Synonyms: tree / planting icon (Help)",
+    "text": "Users ask about tree, planting, sapling, seedling, plant tree, green tree in circle, ecology tree, forest icon. Per Help this is the Plant Tree indicator for Events with tree planting—not Waste Location type. Pair with Trash pickup truck in Help. Asset tree.png. Synonyms: plant_tree white circle event subbotnik.",
+    "tags": [
+      "plant tree",
+      "tree planting",
+      "sapling",
+      "seedling",
+      "green tree icon",
+      "tree icon white circle",
+      "ecology tree icon",
+      "what tree icon means",
+      "tree.png",
+      "help_plant_tree",
+      "event tree marker",
+      "help"
     ]
   },
   {
@@ -2055,12 +2160,18 @@
       "yellow donation",
       "chip",
       "donation total",
+      "orange chip",
+      "yellow chip",
+      "money on card",
+      "distance chip",
+      "km to request",
       "fees",
       "stripe",
       "performer",
       "creator",
       "help",
-      "donation chip"
+      "donation chip",
+      "orange yellow donation chip"
     ]
   },
   {

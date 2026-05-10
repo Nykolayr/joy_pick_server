@@ -502,6 +502,70 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
       : `${question} trash pickup only truck icon pickup help_trash_pickup white circle waste location haul away garbage truck trash_pickup_only`;
   }
 
+  if (
+    /доллар|бакс|баксы|знак\s*\$|\$\s*под|green\s+dollar|dollar\s+sign\s+under|money\s+under\s+(pin|icon|marker)|donation\s+marker/i.test(
+      scoutLower
+    ) &&
+    /иконк|значок|карт|map|заяв|маркер|help|что\s+за|what.*icon|pin/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} зелёный доллар под иконкой заявка с донатами help_synonyms_dollar_on_map donation map marker stripe`
+      : `${question} green dollar under icon donation request map marker help_synonyms_dollar_on_map stripe`;
+  }
+
+  if (
+    /серый\s+круг|серое\s+кольцо|серый\s+ободок|gray\s+circle|grey\s+(circle|ring)|halo\s+around|ореол/i.test(
+      scoutLower
+    ) &&
+    /иконк|карт|map|заяв|маркер|help|что\s+за|what.*mean/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} серый круг вокруг иконки просрочена одобрена завершена help_synonyms_gray_circle map`
+      : `${question} gray circle around icon overdue approved completed help_synonyms_gray_circle map`;
+  }
+
+  if (
+    /цвет\s+рамки|рамк.*зелён|рамк.*оранж|рамк.*жёлт|рамк.*фиолет|рамк.*черн|border\s+color|green\s+border|purple\s+border|orange\s+border/i.test(
+      scoutLower
+    ) &&
+    /карт|map|заяв|карточк|help|что\s+за|what.*color/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} цвета рамок карточки зелёная мои оранжевая участие жёлтая донат фиолетовая 7 дней чёрная остальные help_map_border_colors`
+      : `${question} card border colors green orange yellow purple black creator joined donated help_map_border_colors`;
+  }
+
+  if (
+    /посадк.*дерев|сажен|plant\s+tree|sapling|seedling|дерев.*белом\s+круге|tree\s+icon.*white/i.test(scoutLower) &&
+    /иконк|значок|что\s+за|help|карт|субботник|event|событ|map|заяв/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} посадка дерева event субботник help_plant_tree tree.png белый круг help_synonyms_tree_planting не waste location`
+      : `${question} plant tree event subbotnik help_plant_tree tree.png white circle help_synonyms_tree_planting not waste location`;
+  }
+
+  if (
+    /оранжев.*чип|жёлт.*чип|orange\s+chip|yellow\s+chip|чип\s+сумм|donation\s+chip|расстояние\s+км|distance\s+chip/i.test(
+      scoutLower
+    ) &&
+    /донат|donat|карт|card|заяв|help|что\s+за/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} оранжевый жёлтый чип донатов сумма расстояние км help_donation_chips_orange_vs_yellow`
+      : `${question} orange yellow donation chip total distance help_donation_chips_orange_vs_yellow`;
+  }
+
+  if (
+    /кошелёк\s+(сверху|на\s+главн)|wallet\s+(header|top)|новости\s+точк|news\s+pulse|обновить\s+список\s+заявк|иконк.*чат.*списк/i.test(
+      scoutLower
+    ) &&
+    /главн|home|map|help|что\s+за|верх/i.test(scoutLower)
+  ) {
+    return isRu
+      ? `${question} чат обновить новости кошелёк верх экрана профиль список QR выплаты help_synonyms_top_bar_and_profile_icons`
+      : `${question} chat refresh news wallet top bar profile list qr payouts help_synonyms_top_bar_and_profile_icons`;
+  }
+
   // \w не матчит кириллицу — используем \p{L} для слов «заявки», «заявок» и т.д.
   if (
     /какие.{0,40}(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|что\s+за\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|виды\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)|список\s+(заяв[\p{L}\p{N}_]*|запрос[\p{L}\p{N}_]*)/iu.test(
