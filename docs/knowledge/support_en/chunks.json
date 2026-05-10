@@ -2102,7 +2102,7 @@
   {
     "chunk_id": "help_event_tree_and_trash_pickup_icons",
     "title": "Help: tree and truck icons on a card",
-    "text": "Per the in-app Help (UI Guide): the Plant Tree indicator appears when an Event includes tree planting—shows a tree icon inside a white circle on the card. Trash Pickup Only means only haul-away is needed, no cleanup work—shows a truck icon in a white circle. These are extra markers on a request; users can see the visuals in Help inside the app.",
+    "text": "Per the in-app Help (UI Guide): the Plant Tree indicator appears when an Event includes tree planting—shows a tree icon inside a white circle on the card. Trash Pickup Only means only haul-away is needed, no cleanup work—shows a truck icon in a white circle. These are extra markers on a request, not the request type chosen from the «+» menu (Waste/Speed/Event are separate). The tree icon does not mean «Waste Location trash cleanup request type». See Help on the main tab for captions and samples.",
     "tags": [
       "plant tree",
       "tree planting",
@@ -2112,7 +2112,24 @@
       "tree icon",
       "event",
       "help",
-      "white circle"
+      "white circle",
+      "creating a request",
+      "tree icon when creating"
+    ]
+  },
+  {
+    "chunk_id": "product_plant_tree_icon_not_request_type_waste",
+    "title": "Tree icon: Plant a tree (Event), not Waste Location type",
+    "text": "The tree icon in Joy Pick does not mean the request type is Waste Location (trash cleanup). Per Help → UI Guide it is the Plant Tree indicator: for an Event (subbotnik) when tree planting is included—tree in a white circle on the map and card; in Event creation the same icon marks the Plant a tree option. Help also describes the paired Trash pickup only marker with a truck icon. Request type (Waste / Speed / Event) is chosen separately in the create menu; Waste uses different fields/icons—do not equate the tree with Waste Location.",
+    "tags": [
+      "what is the tree icon",
+      "tree icon when creating request",
+      "plant tree",
+      "event",
+      "not waste location",
+      "help",
+      "ui guide",
+      "subbotnik"
     ]
   },
   {
