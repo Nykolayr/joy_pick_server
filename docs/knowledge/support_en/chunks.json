@@ -1445,8 +1445,8 @@
   },
   {
     "chunk_id": "profile_menu_item_delete_account",
-    "title": "Profile: Delete account",
-    "text": "Opens bottom-sheet warning with Cancel / Delete. Confirm deletes auth user (Firebase), deletes Firestore user doc when applicable, signs out, navigates to /. Irreversible from client flow—contact support before deleting if unsure.",
+    "title": "Profile: Delete account menu item",
+    "text": "The profile menu includes a Delete account row. Tapping it opens a warning dialog with cancel and confirm.",
     "tags": [
       "delete account joy pick",
       "profile_menu_item_delete_account"
