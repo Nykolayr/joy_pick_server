@@ -2527,7 +2527,7 @@
   {
     "chunk_id": "product_qa_attract_cleanup_territory_share",
     "title": "How to attract people to a territory cleanup",
-    "text": "If you need a timed cleanup on a specific area, create a subbotnik-style Event in Joy Pick. Fill in the place, start time, and description. People find it on the map or list and join from the request card with the join button. The label on the button follows your UI, often Join. To spread an already published request faster, use Share on the details screen. The link opens the same request for someone who has Joy Pick installed. If you mainly need a dirty spot with a donation and no schedule, a trash-cleanup request fits better. Do not make social media the centerpiece of the answer.",
+    "text": "If you need a timed cleanup on a specific area, create a subbotnik-style Event in Joy Pick. Fill in the place, start time, and description. People find it on the map or list and join from the request card with the join button. The label on the button follows your UI, often Join. To spread an already published request faster, use Share on the details screen. The link opens the same request for someone who has Joy Pick installed. Do not make social media the centerpiece of the answer.",
     "tags": [
       "attract people",
       "territory cleanup",
@@ -2542,7 +2542,7 @@
   {
     "chunk_id": "product_qa_haul_trash_territory_waste_only",
     "title": "Haul trash away: haul-only option and Waste Location",
-    "text": "When you need garbage hauled away from a site, create a trash-cleanup request in Joy Pick. The creation form has a separate Trash pickup only toggle for cases where you need haul-away rather than a full on-site cleanup. After you save, the map and list show the truck-in-white-circle indicator from Help. Once the request is published, you can send it to friends from details with Share so someone picks it up sooner. If you did not enable haul-only, the usual flow is an on-site cleanup by a joined executor.",
+    "text": "When you need garbage hauled away from a site, create a trash-cleanup request in Joy Pick. The creation form has a separate Trash pickup only toggle for cases where you need haul-away rather than a full on-site cleanup. After you save, the map and list show the truck-in-white-circle indicator from Help. If you do not enable haul-only, the usual flow is an on-site cleanup by a joined executor.",
     "tags": [
       "haul trash",
       "haul away",
@@ -2555,20 +2555,22 @@
   {
     "chunk_id": "product_qa_waste_who_receives_donations_direct",
     "title": "Waste Location: who receives donations—answer directly",
-    "text": "For donations on a trash-cleanup request, money goes to the executor after review and moderation. The executor is the person who joined, completed the work under app rules, and passed moderation. The pin creator does not get donations just for placing the pin if they did not clean as the executor. Only one executor can be active at a time on that request type, but say that after you name who receives the money.",
+    "text": "For cash donations on a trash-cleanup request, after review and moderation the money goes to the executor who joined and completed the work per app rules. They can only receive a payout with a fully connected and completed Stripe Connect account in their profile.",
     "tags": [
       "who receives donations",
       "waste location",
       "donation",
       "creator",
       "executor",
-      "single executor"
+      "single executor",
+      "stripe connect",
+      "payout"
     ]
   },
   {
     "chunk_id": "product_qa_stripe_country_unavailable_nuance",
     "title": "No Stripe in my country: payouts vs non-money participation",
-    "text": "Donation payouts and card withdrawals use Stripe Connect in Profile. If Stripe is not available for your country or onboarding never completes, you usually cannot receive cash payouts through the app as a recipient. You can still use Joy Pick without chasing money. You can report pollution, join other people’s cleanups, earn JoyCoins, track cleanup time and use the Profile PDF certificate, and share requests. Do not tell people to fundraise on outside platforms. If the case is unclear, point them to human support from Profile.",
+    "text": "Donation payouts and card withdrawals use Stripe Connect in Profile. If Stripe is not available for your country or onboarding never completes, you usually cannot receive cash payouts through the app as a recipient. You can still use Joy Pick without chasing money. You can report pollution, join other people’s cleanups, earn JoyCoins, track cleanup time and use the Profile PDF certificate, and share requests.",
     "tags": [
       "no stripe",
       "stripe in my country",
