@@ -75,6 +75,6 @@
         ├── user-ids.md       # ID пользователей
         ├── dates-time.md     # Даты и время
         ├── cron-jobs.md      # Cron задачи
-        └── ssh-server.md     # SSH на прод (PowerShell)
+        └── ssh-server.md     # SSH/деплой на прод (агент в CLI + Allow)
 ```
 
