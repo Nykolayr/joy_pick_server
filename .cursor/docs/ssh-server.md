@@ -28,6 +28,7 @@ scp -i $key docs/knowledge/support_ru/chunks.json "${srv}:/opt/joypick/docs/know
 scp -i $key package.json "${srv}:/opt/joypick/package.json"
 scp -i $key scripts/run_support_eval_direct.js "${srv}:/opt/joypick/scripts/run_support_eval_direct.js"
 scp -i $key scripts/run_support_eval_openrouter_first.js "${srv}:/opt/joypick/scripts/run_support_eval_openrouter_first.js"
+scp -i $key scripts/run_support_six_qa.js "${srv}:/opt/joypick/scripts/run_support_six_qa.js"
 scp -i $key scripts/run_support_rag_stress.js "${srv}:/opt/joypick/scripts/run_support_rag_stress.js"
 scp -i $key scripts/support_eval_cases.json "${srv}:/opt/joypick/scripts/support_eval_cases.json"
 
