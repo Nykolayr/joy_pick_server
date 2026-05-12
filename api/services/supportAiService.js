@@ -1346,8 +1346,8 @@ function buildSystemInstruction(answerLanguage) {
     'If the user asks what requests exist, what request types exist, or how to see/browse requests on the map/list, answer immediately: list the three types and say they appear on the main map/list—do NOT use the create-flow clarification question.',
     'If user already answered the clarifying question with a short synonym (for example: subbotnik, event, cleanup event), do not repeat the same clarifying question again.',
     answerLanguage === 'ru'
-      ? 'Если пользователь спрашивает, как привлечь людей/участников на уборку или событие, сначала дай короткий пошаговый in-app флоу: создать Event (субботник), указать дату/время и описание, затем участники присоединяются через кнопку Join в карточке события. Советы про соцсети допускаются только как необязательное дополнение в конце одной короткой фразой.'
-      : 'If user asks how to attract people/participants to a cleanup or event, answer with a short in-app step flow first: create an Event, set date/time and description, then participants join via the Join button on the event card. Social media tips are optional and should appear only as one brief add-on sentence at the end.',
+      ? 'Если спрашивают, как привлечь людей на уборку территории или событие: сначала коротко — заявку создаёт сам пользователь в приложении. Для запланированной уборки с временем — Субботник (Event): дата/время, описание, присоединение из карточки (подпись кнопки как в UI, может быть Join). Для внимания к точке на карте — часто Уборка мусора (Waste Location) с донатом. Обязательно упомяни «поделиться заявкой» из деталей (диплинк). Не веди ответом про продвижение в соцсетях как основной совет — максимум одна нейтральная короткая фраза, если без этого никак.'
+      : 'If asked how to attract people to a territory cleanup or event: note the user creates the request in the app. For scheduled cleanups—Event: date/time, description, join from the card (button label per UI, may be Join). For map attention to a dirty spot—often Waste Location with donation. Always mention Share request from details (deeplink). Do not lead with social-media promotion—at most one brief neutral phrase if unavoidable.',
     'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
     'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval. For Event, payout logic follows the chain: participant submits result -> creator approves participant result -> moderation/approval -> split among eligible Stripe-connected participants per Knowledge.',
     answerLanguage === 'ru'
@@ -1417,6 +1417,18 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Если пользователь уже написал, что выполнил заявку, не выясняйте «вы были волонтёром?» — такой роли нет; отвечайте по модерации, срокам и Stripe.'
       : 'If the user already said they completed a request, do not grill them about being a «volunteer»—answer moderation timing and Stripe.',
+    answerLanguage === 'ru'
+      ? 'Закрытие ответа: не используй длинные шаблоны вроде «если у вас есть дополнительные вопросы, пожалуйста, спрашивайте» — максимум очень короткая нейтральная фраза или без неё.'
+      : 'Do not end with long templates like «If you have additional questions, please ask»—at most a very short neutral line or omit.',
+    answerLanguage === 'ru'
+      ? 'На вопрос «кто получит донаты / донейшен» по Уборке мусора (Waste Location) сначала прямо назови получателя денег: исполнитель после выполнения и модерации; автор точки не получает только за создание, если не был исполнителем. Фраза «исполнитель может быть только один» — уточнение после ответа «кому», а не вместо него.'
+      : 'For «who gets donations» on Waste Location, name the payout recipient first: the executor after completion and moderation; the pin creator does not get paid for creating alone unless they were the executor. «Only one executor» is a follow-up constraint, not a substitute for naming who receives money.',
+    answerLanguage === 'ru'
+      ? 'Если пользователь явно про вывоз мусора с территории (вывезли, вывезти, вывоз): используй Knowledge про опцию «Только вывоз мусора» / индикатор грузовика при создании Waste Location; не ограничивайся только цепочкой «присоединился — убрал на месте», когда смысл — именно вывоз.'
+      : 'When the user clearly means hauling trash away (haul, haul-away): use Knowledge about Trash pickup only / truck indicator on Waste Location creation; do not answer only with join-and-clean-on-site if they mean haul-away.',
+    answerLanguage === 'ru'
+      ? 'Если спрашивают про «нет Stripe / нет Страйп в стране»: отдели невозможность денежных выплат (Stripe Connect в профиле) от участия без денег — уборки, точки на карте, JoyCoins, учёт времени, шаринг заявок; не всё только ради выплат. Не советуй собирать деньги на сторонних платформах вместо Joy Pick.'
+      : 'For «no Stripe in my country»: separate missing cash payouts (Stripe Connect in Profile) from non-monetary participation—cleanups, map pins, JoyCoins, tracked time, sharing requests; not everything is about payouts. Never advise fundraising on third-party platforms instead of Joy Pick.',
     'Keep responses concise and practical.'
   ].join('\n');
 }
@@ -1778,8 +1790,16 @@ function buildDeterministicAmountAnswer(question, roleHint, answerLanguage) {
 function isWasteSingleExecutorQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
+  // «Кто получит донаты» — про получателя выплат, не про лимит исполнителей; ответ через LLM+RAG.
+  if (
+    /кто\s+получит|кому\s+.*донат|донейшен|who\s+gets\s+(the\s+)?donation|who\s+receives\s+donations|donation\s+recipient/i.test(
+      q
+    )
+  ) {
+    return false;
+  }
   const asksMany =
-    /нескольк|много\s+желающ|кто\s+получит|кто\s+из\s+них|несколько\s+исполнител|several|multiple|many\s+people|who\s+gets\s+the\s+money/i.test(
+    /нескольк|много\s+желающ|кто\s+из\s+них|несколько\s+исполнител|several|multiple|many\s+people|who\s+gets\s+the\s+money/i.test(
       q
     );
   const wasteCtx = /уборк[а-яё]*\s+мусор[а-яё]*|waste\s+location|waste\s+cleanup|trash\s+cleanup|garbage/i.test(q);

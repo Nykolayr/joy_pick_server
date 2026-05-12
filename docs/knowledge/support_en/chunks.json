@@ -2511,16 +2511,71 @@
   {
     "chunk_id": "intent_what_is_app_for_beginners",
     "title": "What Joy Pick is for and what you can do in the app",
-    "text": "Joy Pick is an app for environmental cleanups and volunteer actions. You see requests and events on a map. You can create a Waste Location (report pollution), Speed Cleanup (quick cleanup with before/after photos), or Event (scheduled cleanup or gathering). The app supports donations, JoyCoins, volunteer hours, chats on requests, and profile payouts via Stripe. The goal is to help clean polluted areas and motivate volunteers.",
+    "text": "Joy Pick is an app for environmental cleanups and community action. You see requests and events on a map. You can create Trash cleanup (Waste Location — mark pollution), Solo cleanup (Speed Cleanup — quick cleanup with before/after photos), or Event (scheduled cleanup or gathering with participants). The app supports donations (cash flow and payouts via Stripe in Profile), JoyCoins, tracked cleanup time plus a PDF certificate from Profile, and chats on requests. The goal is to help remove trash and motivate participants.",
     "tags": [
       "what is joy pick",
       "what is the app for",
+      "what is this application",
       "what to do in the app",
       "how to use",
       "getting started",
       "onboarding",
       "purpose",
       "beginner"
+    ]
+  },
+  {
+    "chunk_id": "product_qa_attract_cleanup_territory_share",
+    "title": "How to attract people to a territory cleanup",
+    "text": "You create the request yourself in Joy Pick. For a scheduled cleanup with date and time, create an Event: set place, start time, and description; participants join from the request card via the join action (the UI label may be Join). To draw attention to an existing request, use Share from request details (deeplink: opens that request in the app; without the app, store install is offered). For a dirty spot on the map with a donation but no schedule, Trash cleanup (Waste Location) fits. Do not lead with generic social-media promotion—at most one brief neutral mention if needed.",
+    "tags": [
+      "attract people",
+      "territory cleanup",
+      "invite participants",
+      "event",
+      "waste location",
+      "share request",
+      "join",
+      "landing"
+    ]
+  },
+  {
+    "chunk_id": "product_qa_haul_trash_territory_waste_only",
+    "title": "Haul trash away: haul-only option and Waste Location",
+    "text": "If you need garbage hauled away from a site: create a Trash cleanup (Waste Location) in Joy Pick. When creating, if you need haul-away without a full on-site cleanup by a volunteer, enable Trash pickup only (per Help it is a separate toggle; map/list shows the truck-in-white-circle indicator). After publishing, share from details so people find it faster. A normal on-site cleanup by a joined executor is a different flow without that toggle; do not mix steps when the user clearly means haul-away.",
+    "tags": [
+      "haul trash",
+      "haul away",
+      "trash pickup only",
+      "truck icon",
+      "waste location",
+      "create request"
+    ]
+  },
+  {
+    "chunk_id": "product_qa_waste_who_receives_donations_direct",
+    "title": "Waste Location: who receives donations—answer directly",
+    "text": "For «who gets the donations» on Trash cleanup (Waste Location), answer the recipient first: after review and moderation, donation payouts go to the executor—the user who joined as executor, completed the work per app rules, and passed moderation. The pin creator does not get donations for creating the pin alone unless they executed the cleanup as the executor. Add as a second point: Waste allows only one executor at a time—do not give only the «one executor» line instead of naming who is paid.",
+    "tags": [
+      "who receives donations",
+      "waste location",
+      "donation",
+      "creator",
+      "executor",
+      "single executor"
+    ]
+  },
+  {
+    "chunk_id": "product_qa_stripe_country_unavailable_nuance",
+    "title": "No Stripe in my country: payouts vs non-money participation",
+    "text": "Donation payouts and card withdrawals in Joy Pick rely on Stripe Connect in Profile; if Stripe is not available for your country or onboarding fails, you usually cannot receive cash payouts through the app as a recipient. Participation is not only about money: you can still report pollution, join cleanups, help without donations, earn JoyCoins, track cleanup time and use the Profile PDF certificate, and share requests. Never advise fundraising on other platforms instead of Joy Pick—stay in-product; for edge cases point to human support from Profile.",
+    "tags": [
+      "no stripe",
+      "stripe in my country",
+      "country stripe",
+      "stripe unavailable",
+      "without stripe",
+      "payouts"
     ]
   },
   {
