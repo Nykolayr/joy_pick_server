@@ -429,5 +429,17 @@
     "locale": "ru",
     "sourcesMustIncludeAny": ["request_donation_balance_shown_waste_executor_event_total"],
     "answerMustNotContain": []
+  },
+  {
+    "id": "waste_trash_participant_count_ru",
+    "message": "а сколько могут участвовать человек в обычной уборке мусора?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": [],
+    "answerMustNotContain": [
+      "любое количество",
+      "рекомендуется",
+      "any number",
+      "recommended to have"
+    ]
   }
 ]

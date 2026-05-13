@@ -1814,6 +1814,30 @@ function buildDeterministicAmountAnswer(question, roleHint, answerLanguage) {
   return 'You receive the donation amount assigned to your role by request type, minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”). For Event, this is participant share.';
 }
 
+function isWasteTrashParticipantCountQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  if (/субботник|subbotnik|мероприят|\bevent\b|ивент|событи/i.test(q)) return false;
+  if (/speed|быстр/i.test(q) && !/waste|мусор|уборк/i.test(q)) return false;
+  const wastes =
+    /обычн.{0,24}(уборк|мусор)|уборк[а-яё]*\s+мусор|мусор.{0,16}убор|waste\s+location|waste\s+cleanup|trash\s+cleanup|garbage\s+cleanup/i.test(
+      q
+    );
+  if (!wastes) return false;
+  const countish =
+    /сколько\s+(человек|людей|участник|исполнител|могут|может)|how\s+many\s+(people|participants|executors)/i.test(q) ||
+    (/сколько/i.test(q) && /участв|исполнител|человек|людей/i.test(q)) ||
+    /сколько.{0,40}участв/i.test(q);
+  return countish;
+}
+
+function buildWasteTrashParticipantCountAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'В **обычной уборке мусора** (тип **Waste Location** на карте) **одновременно один исполнитель**: он нажимает **Join**, заявка примерно на **24 часа** резервируется за ним. **Доноры** могут поддержать заявку деньгами без уборки — это не второй исполнитель. В **субботнике / Event** к событию присоединяются **несколько участников** — другой тип заявки.';
+  }
+  return 'For a **regular trash cleanup** (**Waste Location**), there is **one executor at a time**: tap **Join** and the request is **reserved ~24h** for you. **Donors** can fund the cleanup without performing it—they are **not** a second executor. For a **subbotnik / Event**, **multiple participants** join—a different request type.';
+}
+
 function isWasteSingleExecutorQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
@@ -2354,6 +2378,9 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
   const deterministicConcurrentExecutionAnswer = isConcurrentExecutionQuestion(questionForModel)
     ? buildConcurrentExecutionAnswer(roleHintForDeterministic, modelLanguage)
     : null;
+  const deterministicWasteTrashParticipantCountAnswer = isWasteTrashParticipantCountQuestion(questionForModel)
+    ? buildWasteTrashParticipantCountAnswer(modelLanguage)
+    : null;
   const deterministicWasteSingleExecutorAnswer = isWasteSingleExecutorQuestion(questionForModel)
     ? buildWasteSingleExecutorAnswer(modelLanguage)
     : null;
@@ -2385,6 +2412,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     deterministicExtendAnswer ||
     deterministicReservationAnswer ||
     deterministicConcurrentExecutionAnswer ||
+    deterministicWasteTrashParticipantCountAnswer ||
     deterministicWasteSingleExecutorAnswer ||
     deterministicAmountAnswer ||
     deterministicExistingRequestActionsAnswer ||
@@ -2410,7 +2438,9 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
           ? 'deterministic_reservation_split_router'
           : deterministicConcurrentExecutionAnswer
           ? 'deterministic_concurrent_execution_router'
-          : deterministicWasteSingleExecutorAnswer
+          : deterministicWasteTrashParticipantCountAnswer
+            ? 'deterministic_waste_trash_participant_cap_router'
+            : deterministicWasteSingleExecutorAnswer
           ? 'deterministic_waste_single_executor_router'
           : deterministicAmountAnswer
           ? 'deterministic_amount_router'
