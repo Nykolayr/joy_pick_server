@@ -441,5 +441,14 @@
       "any number",
       "recommended to have"
     ]
+  },
+  {
+    "id": "event_donation_who_receives_ru",
+    "message": "кто получает донат после субботника?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": [],
+    "answerMustNotContain": [
+      "тот участник"
+    ]
   }
 ]

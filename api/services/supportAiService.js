@@ -1430,8 +1430,8 @@ function buildSystemInstruction(answerLanguage) {
       ? 'Закрытие ответа: не используй длинные шаблоны вроде «если у вас есть дополнительные вопросы, пожалуйста, спрашивайте» — максимум очень короткая нейтральная фраза или без неё.'
       : 'Do not end with long templates like «If you have additional questions, please ask»—at most a very short neutral line or omit.',
     answerLanguage === 'ru'
-      ? 'Любой ответ про донаты, кто получит деньги, донейшен или выплату по донату: обязательно одним коротким предложением уточни, что деньги на карту получит только тот, у кого в профиле полностью подключён и настроен Stripe Connect. Если вопрос звучит как простое «кто получит», без спора про создателя, не добавляй отдельное предложение про то, что создатель или автор точки «не получает только за создание» — достаточно исполнителя и Stripe.'
-      : 'For any donation, who-gets-paid, or donation-payout question: always add one short sentence that cash goes only to someone with a fully connected Stripe Connect profile. For a plain «who gets it» question with no creator dispute, do not add an extra sentence that the creator or pin author is not paid just for creating—executor plus Stripe is enough.',
+      ? 'Любой ответ про донаты, кто получит деньги, донейшен или выплату по донату: одним коротким предложением уточни, что выплата на карту возможна только при полностью подключённом Stripe Connect у получателя. Для Event (субботник) получателей несколько: донаты делятся между участниками по правилам заявки; не формулируй ответ так, будто всю сумму получает один человек. Для Waste Location после уборки донаты получает один исполнитель. Если вопрос — простое «кто получит» именно про Waste без спора про создателя, не добавляй отдельное предложение, что автор точки «не получает только за создание» — достаточно исполнителя и Stripe.'
+      : 'For any donation, who-gets-paid, or donation-payout question: add one short sentence that card payout requires a fully connected Stripe Connect profile for the recipient. For Event (subbotnik), multiple recipients split donations per app rules—do not phrase it as if one person receives everything. For Waste Location after cleanup, one executor receives the donations. For a plain «who gets it» Waste question with no creator dispute, do not add an extra sentence that the pin creator is not paid just for creating—executor plus Stripe is enough.',
     answerLanguage === 'ru'
       ? 'Если пользователь явно про вывоз мусора с территории (вывезли, вывезти, вывоз): используй Knowledge про опцию «Только вывоз мусора» / индикатор грузовика при создании Waste Location; не ограничивайся только цепочкой «присоединился — убрал на месте», когда смысл — именно вывоз. Не уводи ответ в «поделиться заявкой», если вопрос только про вывоз.'
       : 'When the user clearly means hauling trash away (haul, haul-away): use Knowledge about Trash pickup only / truck indicator on Waste Location creation; do not answer only with join-and-clean-on-site if they mean haul-away. Do not pivot to Share request if the question is only about haul-away.',
@@ -1837,6 +1837,32 @@ function buildWasteTrashParticipantCountAnswer(answerLanguage) {
     return 'В обычной уборке мусора одну заявку выполняет один человек. В субботнике участников может быть несколько.';
   }
   return 'In a regular trash cleanup, one person handles each request. A community cleanup (subbotnik) can have several participants.';
+}
+
+/** «Кто получит донат» про субботник/Event — не подменять сценарием одного исполнителя Waste. */
+function isSubbotnikEventDonationWhoReceivesQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const eventCtx =
+    /субботник|subbotnik|\bevent\b|мероприят|ивент|событи(е|я|ю|ем|и|й|ям)?/i.test(q);
+  if (!eventCtx) return false;
+  if (
+    /уборк[а-яё]*\s+мусор|waste\s+location|обычн.{0,12}уборк|trash\s+cleanup|garbage/i.test(q) &&
+    /субботник|subbotnik|\bevent\b|мероприят|ивент/i.test(q)
+  ) {
+    return false;
+  }
+  return (
+    /кто\s+получ|кому\s+(идут|достан|выплат)|who\s+gets|who\s+receives|receive\s+(the\s+)?(donation|payout)/i.test(q) ||
+    (/донат/i.test(q) && /получ|выплат|кому|идут|после/i.test(q))
+  );
+}
+
+function buildSubbotnikEventDonationWhoReceivesAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return 'В субботнике участников несколько. После сдачи работы, проверок и модерации донаты распределяются между участниками события. Между теми, у кого в профиле подключён Stripe, сумма делится поровну по правилам приложения. На обычной уборке мусора донаты получает один исполнитель, это другой тип заявки.';
+  }
+  return 'A subbotnik is an Event with several participants. After work submission, checks, and moderation, donations are shared among Event participants. Among participants with Stripe connected in Profile, the collected amount is split equally per app rules. A regular trash cleanup pays one executor—that is a different request type.';
 }
 
 function isWasteSingleExecutorQuestion(question) {
@@ -2379,6 +2405,10 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
   const deterministicConcurrentExecutionAnswer = isConcurrentExecutionQuestion(questionForModel)
     ? buildConcurrentExecutionAnswer(roleHintForDeterministic, modelLanguage)
     : null;
+  const deterministicSubbotnikEventDonationWhoReceivesAnswer =
+    isSubbotnikEventDonationWhoReceivesQuestion(questionForModel)
+      ? buildSubbotnikEventDonationWhoReceivesAnswer(modelLanguage)
+      : null;
   const deterministicWasteTrashParticipantCountAnswer = isWasteTrashParticipantCountQuestion(questionForModel)
     ? buildWasteTrashParticipantCountAnswer(modelLanguage)
     : null;
@@ -2413,6 +2443,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     deterministicExtendAnswer ||
     deterministicReservationAnswer ||
     deterministicConcurrentExecutionAnswer ||
+    deterministicSubbotnikEventDonationWhoReceivesAnswer ||
     deterministicWasteTrashParticipantCountAnswer ||
     deterministicWasteSingleExecutorAnswer ||
     deterministicAmountAnswer ||
@@ -2440,7 +2471,9 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
           ? 'deterministic_reservation_split_router'
           : deterministicConcurrentExecutionAnswer
           ? 'deterministic_concurrent_execution_router'
-          : deterministicWasteTrashParticipantCountAnswer
+          : deterministicSubbotnikEventDonationWhoReceivesAnswer
+            ? 'deterministic_event_donation_recipients_router'
+            : deterministicWasteTrashParticipantCountAnswer
             ? 'deterministic_waste_trash_participant_cap_router'
             : deterministicWasteSingleExecutorAnswer
           ? 'deterministic_waste_single_executor_router'
