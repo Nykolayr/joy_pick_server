@@ -1834,9 +1834,9 @@ function isWasteTrashParticipantCountQuestion(question) {
 
 function buildWasteTrashParticipantCountAnswer(answerLanguage) {
   if (answerLanguage === 'ru') {
-    return 'В обычной уборке мусора одновременно один исполнитель: одну и ту же заявку убирает один человек. В субботнике участников может быть несколько.';
+    return 'В обычной уборке мусора одну заявку выполняет один человек. В субботнике участников может быть несколько.';
   }
-  return 'For a regular one-spot trash cleanup, one person performs it at a time—the same request is not split among several cleaners. A community cleanup (subbotnik) can have several participants.';
+  return 'In a regular trash cleanup, one person handles each request. A community cleanup (subbotnik) can have several participants.';
 }
 
 function isWasteSingleExecutorQuestion(question) {
