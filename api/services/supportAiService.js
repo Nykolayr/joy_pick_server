@@ -8,13 +8,13 @@ const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
 const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 400);
 const DEFAULT_TEMPERATURE = Number(process.env.AI_SUPPORT_TEMPERATURE || 0.2);
-/** Оценка размера prompt (system + user) для OpenRouter; занижаем chars/token = завышаем токены (безопаснее). */
-const PROMPT_CHARS_PER_TOKEN_EST = Math.max(2, Number(process.env.AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST || 3));
+/** Оценка размера prompt (system + user) для OpenRouter; меньше chars/token = выше оценка (ближе к реальному счёту OR). */
+const PROMPT_CHARS_PER_TOKEN_EST = Math.max(1.8, Number(process.env.AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST || 2.25));
 const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
   2000,
-  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 12500)
+  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 11000)
 );
-const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 300));
+const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
@@ -2063,7 +2063,10 @@ function fitChunksForOpenRouterPromptBudget({
   systemInstruction,
   maxPromptTokens
 }) {
-  const cap = Math.max(1000, maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER);
+  const cap = Math.max(
+    1000,
+    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS
+  );
   const sysTok = roughPromptTokenEstimate(systemInstruction);
   if (sysTok >= cap) {
     return [];
