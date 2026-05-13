@@ -22,6 +22,20 @@ function defaultStripeReturnUrl() {
 }
 
 /**
+ * Страна для Stripe Connect: только ISO 3166-1 alpha-2, без дефолта US.
+ * Пустая строка из клиента считается как «не передано».
+ * @param {unknown} raw
+ * @returns {{ ok: true, country: string } | { ok: false, reason: 'missing' | 'invalid' }}
+ */
+function normalizeConnectCountry(raw) {
+  if (raw == null) return { ok: false, reason: 'missing' };
+  const s = String(raw).trim().toUpperCase();
+  if (s.length === 0) return { ok: false, reason: 'missing' };
+  if (!/^[A-Z]{2}$/.test(s)) return { ok: false, reason: 'invalid' };
+  return { ok: true, country: s };
+}
+
+/**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
  * @param {string} userId - ID пользователя
@@ -90,8 +104,18 @@ router.post('/create-account', authenticate, [
       return error(res, 'Validation error', 400, errors.array());
     }
 
-    const { email, first_name, last_name, phone, city, country = 'US' } = req.body;
-    
+    const { email, first_name, last_name, phone, city } = req.body;
+
+    const countryNorm = normalizeConnectCountry(req.body.country);
+    if (!countryNorm.ok) {
+      const code = countryNorm.reason === 'missing' ? 'STRIPE_COUNTRY_REQUIRED' : 'STRIPE_COUNTRY_INVALID';
+      const message = countryNorm.reason === 'missing'
+        ? 'country is required (ISO 3166-1 alpha-2, e.g. BR, US)'
+        : 'country must be exactly 2 letters (ISO 3166-1 alpha-2)';
+      return error(res, message, 400, { code });
+    }
+    const country = countryNorm.country;
+
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
 
@@ -122,12 +146,11 @@ router.post('/create-account', authenticate, [
       }
     }
 
-    // Создаем Express Account в Stripe
     let account;
     try {
       account = await stripe.accounts.create({
         type: 'express',
-        country: country,
+        country,
         business_type: 'individual',
         capabilities: {
           card_payments: { requested: true },
@@ -148,7 +171,7 @@ router.post('/create-account', authenticate, [
           phone: phone || undefined,
           address: {
             city: city || undefined,
-            country: country
+            country
           }
         },
         business_profile: {
@@ -165,54 +188,15 @@ router.post('/create-account', authenticate, [
         }
       });
     } catch (stripeErr) {
-      // Если country не поддерживается, пробуем с US
-      if (stripeErr.code === 'account_country_invalid' || stripeErr.message?.includes('country')) {
-        try {
-          account = await stripe.accounts.create({
-            type: 'express',
-            country: 'US',
-            business_type: 'individual',
-            capabilities: {
-              card_payments: { requested: true },
-              transfers: { requested: true }
-            },
-            settings: {
-              payouts: {
-                schedule: {
-                  interval: 'daily' // Ежедневные выплаты по умолчанию
-                }
-              }
-            },
-            email: email,
-            individual: {
-              first_name: first_name,
-              last_name: last_name,
-              email: email,
-              phone: phone || undefined,
-              address: {
-                city: city || undefined,
-                country: 'US'
-              }
-            },
-            business_profile: {
-              url: `${publicSiteOrigin()}/profile/${user_id}`,
-              product_description: 'Environmental cleanup volunteer on JoyPick platform',
-              mcc: '8398',
-              support_email: email,
-              support_phone: phone || undefined
-            },
-            metadata: {
-              platform: 'joypick',
-              account_type: 'volunteer',
-              user_id: user_id
-            }
-          });
-        } catch (retryErr) {
-          return error(res, 'Error creating Stripe account', 500, retryErr);
-        }
-      } else {
-        return error(res, 'Error creating Stripe account', 500, stripeErr);
+      const isCountry = stripeErr?.code === 'account_country_invalid'
+        || String(stripeErr?.message || '').toLowerCase().includes('country');
+      if (isCountry) {
+        return error(res, stripeErr.message || 'Stripe rejected this country for Connect', 400, {
+          code: 'STRIPE_COUNTRY_NOT_SUPPORTED',
+          stripeCode: stripeErr.code
+        });
       }
+      return error(res, 'Error creating Stripe account', 500, stripeErr);
     }
 
     // Сохраняем аккаунт в базу данных

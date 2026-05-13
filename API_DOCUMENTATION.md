@@ -7062,15 +7062,21 @@ title[|||]short_description[|||]text
 **Request Body:**
 ```json
 {
-  "user_id": "uuid-пользователя",
   "email": "user@example.com",
   "first_name": "John",
   "last_name": "Doe",
-  "phone": "+1234567890",
-  "city": "New York",
-  "country": "US"
+  "phone": "+5511999999999",
+  "city": "São Paulo",
+  "country": "BR"
 }
 ```
+
+`user_id` берётся из JWT (тело `user_id` не используется для привязки аккаунта).
+
+**Поле `country` (обязательное при первом создании аккаунта):**
+- Формат: **ISO 3166-1 alpha-2**, ровно две латинские буквы в любом регистре (на сервере приводится к верхнему).
+- Пустая строка, `null` или отсутствие поля — **ошибка** (см. ниже). Дефолта `US` нет.
+- Страна Connected Account задаётся **только здесь** при `accounts.create`; в hosted onboarding Stripe **нельзя** сменить страну аккаунта.
 
 **Response (200):**
 ```json
@@ -7085,11 +7091,45 @@ title[|||]short_description[|||]text
 }
 ```
 
-**Ошибка (400):**
+**Ошибка (400) — нет или неверный формат страны:**
 ```json
 {
   "success": false,
-  "message": "Ошибка валидации",
+  "message": "country is required (ISO 3166-1 alpha-2, e.g. BR, US)",
+  "timestamp": "...",
+  "errorDetails": {
+    "code": "STRIPE_COUNTRY_REQUIRED"
+  }
+}
+```
+или
+```json
+{
+  "success": false,
+  "message": "country must be exactly 2 letters (ISO 3166-1 alpha-2)",
+  "errorDetails": {
+    "code": "STRIPE_COUNTRY_INVALID"
+  }
+}
+```
+
+**Ошибка (400) — Stripe не принимает страну для Connect (например не включена в Dashboard):**
+```json
+{
+  "success": false,
+  "message": "...",
+  "errorDetails": {
+    "code": "STRIPE_COUNTRY_NOT_SUPPORTED",
+    "stripeCode": "account_country_invalid"
+  }
+}
+```
+
+**Ошибка (400) — валидация express-validator:**
+```json
+{
+  "success": false,
+  "message": "Validation error",
   "errors": [...]
 }
 ```
@@ -7098,14 +7138,14 @@ title[|||]short_description[|||]text
 ```json
 {
   "success": false,
-  "message": "Ошибка при создании Stripe аккаунта",
+  "message": "Error creating Stripe account",
   "error": "..."
 }
 ```
 
 **Важно:**
-- Если аккаунт уже существует, возвращается существующий `account_id` и новый `account_link_url` для доонбординга
-- Если `country` не поддерживается, автоматически используется `US`
+- Если запись в `stripe_accounts` уже есть, возвращается существующий `account_id` и новый `account_link_url` для доонбординга (**поле `country` в теле не меняет** уже созданный аккаунт).
+- Автоматической подстановки `US` при ошибке страны **нет**.
 
 ---
 
