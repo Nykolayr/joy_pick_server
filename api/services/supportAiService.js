@@ -20,6 +20,9 @@ const OPENROUTER_MAX_PROMPT_TOKENS_RU = Math.max(
   Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 9000)
 );
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
+/** В LLM-пrompt только последние N реплик и укороченный текст — иначе гостевой чат раздувает prompt выше лимита OpenRouter. */
+const CONTEXT_PROMPT_MAX_TURNS = Math.min(12, Math.max(1, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS || 4)));
+const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(800, Math.max(80, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_FIELD_CHARS || 260)));
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
@@ -1486,10 +1489,11 @@ function buildConversationContextBlock(conversationContext, answerLanguage) {
   if (!Array.isArray(conversationContext) || !conversationContext.length) return '';
   const userLabel = answerLanguage === 'ru' ? 'Пользователь' : 'User';
   const assistantLabel = answerLanguage === 'ru' ? 'Ассистент' : 'Assistant';
-  const turns = conversationContext
+  const slice = conversationContext.slice(-CONTEXT_PROMPT_MAX_TURNS);
+  const turns = slice
     .map((turn, index) => {
-      const userMessage = normalizeText(turn.user_message || '').slice(0, 600);
-      const assistantAnswer = normalizeText(turn.answer || '').slice(0, 600);
+      const userMessage = normalizeText(turn.user_message || '').slice(0, CONTEXT_PROMPT_MAX_FIELD_CHARS);
+      const assistantAnswer = normalizeText(turn.answer || '').slice(0, CONTEXT_PROMPT_MAX_FIELD_CHARS);
       return [
         `Turn ${index + 1}:`,
         `${userLabel}: ${userMessage}`,
