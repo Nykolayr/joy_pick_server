@@ -2072,7 +2072,7 @@ function fitChunksForOpenRouterPromptBudget({
 }) {
   const cap = Math.max(
     1000,
-    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS
+    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS - 150
   );
   const sysTok = roughPromptTokenEstimate(systemInstruction);
   if (sysTok >= cap) {
