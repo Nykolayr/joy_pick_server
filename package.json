@@ -8,6 +8,7 @@
     "dev": "nodemon src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "support:eval": "node scripts/run_support_eval.js",
+    "support:eval:once": "node scripts/support_eval_once.js",
     "support:eval:direct": "node scripts/run_support_eval_direct.js",
     "support:eval:direct:openrouter": "node scripts/run_support_eval_openrouter_first.js",
     "support:eval:rag": "node scripts/run_support_rag_eval.js",
