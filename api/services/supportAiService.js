@@ -1444,6 +1444,21 @@ function buildSystemInstruction(answerLanguage) {
   ].join('\n');
 }
 
+/**
+ * OpenRouter: русский system в join('\n') сильно раздувает prompt (лимит ~10k токенов на ключе).
+ * Берём англоязычные правила (обычно короче) и явно требуем ответ по-русски.
+ */
+function buildOpenRouterSystemInstruction(modelLanguage) {
+  if (modelLanguage !== 'ru') {
+    return buildSystemInstruction(modelLanguage);
+  }
+  const body = buildSystemInstruction('en');
+  return body.replace(
+    /^Answer in English only\.$/m,
+    'Answer in Russian only. The user question and Knowledge snippets may be in Russian; follow Knowledge and reply in concise Russian.'
+  );
+}
+
 function detectRequestTypeAlias(value, locale) {
   let text = normalizeText(value).toLowerCase();
   const isRu = locale === 'ru';
@@ -2053,7 +2068,7 @@ function roughPromptTokenEstimate(text) {
   if (!s.length) return 0;
   const base = Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
   /** Запас к реальному счёту OpenRouter (часто выше chars/токен для RU system). */
-  return Math.ceil(base * 1.38);
+  return Math.ceil(base * 1.28);
 }
 
 function truncateChunkTextForBudget(text, maxChars) {
@@ -2406,7 +2421,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   }
-  const systemInstruction = buildSystemInstruction(modelLanguage);
+  const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
   const fittedChunks = fitChunksForOpenRouterPromptBudget({
     userQuestion: questionForModel,
     chunks,
