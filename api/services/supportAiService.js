@@ -277,6 +277,7 @@ function stripSupportAnswerMarkdown(text) {
   s = s.replace(/\*([^*\n]+)\*/g, '$1');
   s = s.replace(/__([^_]+)__/g, '$1');
   s = s.replace(/`([^`]+)`/g, '$1');
+  s = s.replace(/\*\*/g, '');
   return s.trim();
 }
 
@@ -1833,9 +1834,9 @@ function isWasteTrashParticipantCountQuestion(question) {
 
 function buildWasteTrashParticipantCountAnswer(answerLanguage) {
   if (answerLanguage === 'ru') {
-    return 'В **обычной уборке мусора** (тип **Waste Location** на карте) **одновременно один исполнитель**: он нажимает **Join**, заявка примерно на **24 часа** резервируется за ним. **Доноры** могут поддержать заявку деньгами без уборки — это не второй исполнитель. В **субботнике / Event** к событию присоединяются **несколько участников** — другой тип заявки.';
+    return 'В обычной уборке мусора одновременно один исполнитель: одну и ту же заявку убирает один человек. В субботнике участников может быть несколько.';
   }
-  return 'For a **regular trash cleanup** (**Waste Location**), there is **one executor at a time**: tap **Join** and the request is **reserved ~24h** for you. **Donors** can fund the cleanup without performing it—they are **not** a second executor. For a **subbotnik / Event**, **multiple participants** join—a different request type.';
+  return 'For a regular one-spot trash cleanup, one person performs it at a time—the same request is not split among several cleaners. A community cleanup (subbotnik) can have several participants.';
 }
 
 function isWasteSingleExecutorQuestion(question) {
@@ -2418,9 +2419,10 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     deterministicExistingRequestActionsAnswer ||
     deterministicStageAnswer;
   if (deterministicAnswer) {
+    const plainDeterministic = stripSupportAnswerMarkdown(deterministicAnswer);
     return {
-      answer: deterministicAnswer,
-      answer_en: modelLanguage === 'en' ? deterministicAnswer : null,
+      answer: plainDeterministic,
+      answer_en: modelLanguage === 'en' ? plainDeterministic : null,
       locale: modelLanguage,
       model: deterministicCompletedCleanupsAnswer
         ? 'deterministic_completed_cleanups_router'
