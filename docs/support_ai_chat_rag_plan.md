@@ -8,9 +8,7 @@
   - `ru` -> `docs/knowledge/support_ru/chunks.json`
   - остальные локали -> `docs/knowledge/support_en/chunks.json`
 - Контекст беседы собирается на сервере из последних сообщений пользователя (из БД), клиент не отправляет всю историю.
-- Провайдеры LLM:
-  - primary: Gemini
-  - fallback: OpenRouter
+- Провайдер LLM для Support AI: **только OpenRouter** (`OPENROUTER_API_KEY`); размер prompt ограничивается **`AI_SUPPORT_MAX_PROMPT_TOKENS`** (по умолчанию 12500 оценочных токенов), лишние чанки урезаются.
 
 ### Гостевой режим (лендинг без JWT)
 
@@ -28,7 +26,7 @@
 - Заголовок **`X-Support-Eval-Secret`** должен совпадать с этим секретом (иначе **`403`**).
 - **Один произвольный вопрос к прод-API с машины разработчика:** **`npm run support:eval:once -- "текст вопроса"`** (`scripts/support_eval_once.js`) — читает **`SUPPORT_EVAL_SECRET`** и **`SUPPORT_EVAL_BASE_URL`** из **локального** `.env`; предпочтительнее «голого» `curl` из PowerShell из‑за кавычек и JSON.
 - Прогон всех эталонов по HTTP: **`npm run support:eval`** (`scripts/run_support_eval.js`, кейсы в `scripts/support_eval_cases.json`). Переменные: **`SUPPORT_EVAL_SECRET`** (обязательно, **тот же**, что на целевом сервере), **`SUPPORT_EVAL_BASE_URL`** (для прода: **`https://joypick.world/api`**; по умолчанию в скрипте — `http://127.0.0.1:300/api` для локального сервера с тем же секретом).
-- **`npm run support:eval:direct`** — те же кейсы, вызов **`getSupportAiAnswer`** в процессе Node (**без** HTTP и **без** `SUPPORT_EVAL_SECRET`); нужны **`GEMINI_API_KEY` и/или `OPENROUTER_API_KEY`**. Если Gemini отвечает `User location is not supported` — задайте **`OPENROUTER_API_KEY`** / **`AI_SUPPORT_OPENROUTER_FIRST`** или проверяйте через прод (`support:eval:once` / `support:eval`).
+- **`npm run support:eval:direct`** — те же кейсы, вызов **`getSupportAiAnswer`** в процессе Node (**без** HTTP и **без** `SUPPORT_EVAL_SECRET`); для ответа с LLM нужен **`OPENROUTER_API_KEY`** (Support AI на сервере использует только OpenRouter). Проверка через прод: `support:eval:once` / `support:eval`.
 - **`npm run support:eval:rag`** — только ретривал чанков (`previewSupportRetrieval`), без LLM; проверяет, что ожидаемые `chunk_id` попадают в top‑K.
 - Подробный чеклист, типовые ошибки агента (`.env`, PowerShell, 403/404): **`docs/support_eval_checklist.md`** (раздел «Инструкция для агента»).
 

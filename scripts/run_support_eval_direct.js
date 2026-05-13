@@ -2,10 +2,7 @@
  * Те же кейсы, что support_eval_cases.json, но вызов getSupportAiAnswer напрямую
  * (без HTTP и SUPPORT_EVAL_SECRET).
  *
- * Ключи: GEMINI_API_KEY и/или OPENROUTER_API_KEY.
- * Если Gemini недоступен по региону: задайте OPENROUTER_API_KEY и в .env добавьте
- *   AI_SUPPORT_OPENROUTER_FIRST=true
- * (сначала OpenRouter, потом Gemini).
+ * Ключ: OPENROUTER_API_KEY (Support AI вызывает только OpenRouter).
  *
  * Запуск: npm run support:eval:direct
  */
@@ -76,7 +73,7 @@ async function main() {
     console.error(`\nИтого: ${failed}/${cases.length} ошибок`);
     if (failed === cases.length) {
       console.error(
-        '\nЕсли все ответы — заглушка AI: проверьте GEMINI_API_KEY / OPENROUTER_API_KEY и сеть. ' +
+        '\nЕсли все ответы — заглушка AI: проверьте OPENROUTER_API_KEY и сеть. ' +
           'При блокировке региона Gemini используйте OPENROUTER_API_KEY и AI_SUPPORT_OPENROUTER_FIRST=true в .env.'
       );
     }

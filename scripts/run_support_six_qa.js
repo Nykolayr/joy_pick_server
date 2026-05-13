@@ -1,7 +1,7 @@
 /**
  * Прогон шести ручных вопросов через getSupportAiAnswer (без HTTP).
  * Запуск: node scripts/run_support_six_qa.js
- * Нужны GEMINI_API_KEY и/или OPENROUTER_API_KEY в .env.
+ * Нужен OPENROUTER_API_KEY в .env.
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });

@@ -15,7 +15,7 @@ alwaysApply: false
 
 | Зона | Файлы |
 |------|--------|
-| Промпты, RAG, scope-guard, детерминированные ответы, Gemini/OpenRouter | `api/services/supportAiService.js` |
+| Промпты, RAG, scope-guard, детерминированные ответы, OpenRouter (Support LLM) | `api/services/supportAiService.js` |
 | Словарь scope (оффтоп / in-app) без правки кода | `docs/knowledge/support_scope_dictionary.v1.json` (опционально; есть дефолт в коде) |
 | Факты и формулировки под UX приложения | `docs/knowledge/support_ru/chunks.json`, `docs/knowledge/support_en/chunks.json` (одинаковые `chunk_id`, синхронно RU+EN) |
 | HTTP: async чат, eval, гость | `api/routes/support.js` |
@@ -38,7 +38,7 @@ alwaysApply: false
 
 ## ENV (часто трогают при тюнинге)
 
-`AI_SUPPORT_ENABLED`, `AI_SUPPORT_TOP_K`, `AI_SUPPORT_TIMEOUT_MS`, `AI_SUPPORT_CONTEXT_TURNS`, `AI_SUPPORT_MAX_OUTPUT_TOKENS`, `AI_SUPPORT_TEMPERATURE`, `AI_SUPPORT_OPENROUTER_FIRST`, `GEMINI_*`, `OPENROUTER_*`. Секрет eval: `SUPPORT_EVAL_SECRET`, база: `SUPPORT_EVAL_BASE_URL`.
+`AI_SUPPORT_ENABLED`, `AI_SUPPORT_TOP_K`, `AI_SUPPORT_TIMEOUT_MS`, `AI_SUPPORT_CONTEXT_TURNS`, `AI_SUPPORT_MAX_OUTPUT_TOKENS`, `AI_SUPPORT_TEMPERATURE`, **`OPENROUTER_API_KEY`**, **`OPENROUTER_MODEL`**, **`AI_SUPPORT_MAX_PROMPT_TOKENS`** (по умолчанию 12500, оценка prompt), **`AI_SUPPORT_PROMPT_TOKEN_BUFFER`**, **`AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST`**. Локальный eval без HTTP: `GEMINI_*` / `OPENROUTER_*` в `support:eval:direct`. Секрет eval: `SUPPORT_EVAL_SECRET`, база: `SUPPORT_EVAL_BASE_URL`.
 
 ## Принципы качества
 

@@ -2,13 +2,19 @@ const fs = require('fs');
 const path = require('path');
 const { SUPPORTED_LOCALES, translateOne } = require('./translateNews');
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 // Держим таймаут заметно ниже клиентского (обычно 30s), чтобы вернуть fallback до обрыва запроса в приложении.
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
 const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 400);
 const DEFAULT_TEMPERATURE = Number(process.env.AI_SUPPORT_TEMPERATURE || 0.2);
+/** Оценка размера prompt (system + user) для OpenRouter; занижаем chars/token = завышаем токены (безопаснее). */
+const PROMPT_CHARS_PER_TOKEN_EST = Math.max(2, Number(process.env.AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST || 3));
+const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
+  2000,
+  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 12500)
+);
+const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 300));
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
@@ -17,12 +23,6 @@ const KNOWLEDGE_PATH_RU = path.join(KNOWLEDGE_ROOT, 'support_ru', 'chunks.json')
 function isAiEnabled() {
   const value = String(process.env.AI_SUPPORT_ENABLED || 'true').trim().toLowerCase();
   return !['0', 'false', 'off', 'no'].includes(value);
-}
-
-/** Если Gemini в регионе недоступен, а OpenRouter есть — удобно для локального eval (`npm run support:eval:direct`). */
-function isOpenRouterFirstEnabled() {
-  const v = String(process.env.AI_SUPPORT_OPENROUTER_FIRST || '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(v);
 }
 
 /** Язык ответа по тексту вопроса (не только по locale из запроса). */
@@ -83,7 +83,7 @@ function buildUnavailableAnswer(locale, reason) {
       answer: 'AI-поддержка временно недоступна. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
       answer_en: fallbackEn,
       locale: 'ru',
-      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      model: process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL,
       translation_fallback: false,
       sources: [],
       degraded: true,
@@ -97,7 +97,7 @@ function buildUnavailableAnswer(locale, reason) {
     answer: fallbackEn,
     answer_en: fallbackEn,
     locale,
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    model: process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL,
     translation_fallback: locale !== 'en',
     sources: [],
     degraded: true,
@@ -2039,81 +2039,68 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage, 
   return body;
 }
 
-async function callGeminiAnswer({ userQuestion, chunks, answerLanguage, conversationContext, roleHint }) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured');
-  }
-
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-
-  try {
-    const payload = {
-      systemInstruction: {
-        parts: [{ text: buildSystemInstruction(answerLanguage) }]
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }]
-        }
-      ],
-      generationConfig: {
-        temperature: DEFAULT_TEMPERATURE,
-        maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS
-      }
-    };
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    const json = await response.json();
-    if (!response.ok) {
-      const msg = json?.error?.message || `Gemini error ${response.status}`;
-      throw new Error(msg);
-    }
-
-    const blockReason = json?.promptFeedback?.blockReason;
-    if (blockReason) {
-      throw new Error(`Gemini prompt blocked: ${blockReason}`);
-    }
-    const cand = json?.candidates?.[0];
-    if (!cand) {
-      throw new Error('Gemini returned no candidates');
-    }
-    const fr = cand.finishReason;
-    if (fr === 'SAFETY' || fr === 'RECITATION' || fr === 'BLOCKLIST') {
-      throw new Error(`Gemini finish: ${fr}`);
-    }
-    const parts = cand?.content?.parts;
-    let answer = '';
-    if (Array.isArray(parts)) {
-      for (const p of parts) {
-        if (p && typeof p.text === 'string') answer += p.text;
-      }
-    }
-    answer = answer.trim();
-    if (!answer) {
-      throw new Error(fr ? `Gemini empty (${fr})` : 'Gemini returned empty response');
-    }
-
-    return {
-      answer,
-      model
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+function roughPromptTokenEstimate(text) {
+  const s = String(text || '');
+  if (!s.length) return 0;
+  return Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
 }
 
-async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conversationContext, roleHint }) {
+function truncateChunkTextForBudget(text, maxChars) {
+  const t = normalizeText(text);
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+/**
+ * Укладываем system+user в лимит OpenRouter: сначала уменьшаем число чанков, затем обрезаем text у оставшихся.
+ */
+function fitChunksForOpenRouterPromptBudget({
+  userQuestion,
+  chunks,
+  conversationContext,
+  answerLanguage,
+  roleHint,
+  systemInstruction,
+  maxPromptTokens
+}) {
+  const cap = Math.max(1000, maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER);
+  const sysTok = roughPromptTokenEstimate(systemInstruction);
+  if (sysTok >= cap) {
+    return [];
+  }
+
+  let list = Array.isArray(chunks) && chunks.length ? chunks.map((c) => ({ ...c })) : [];
+  const userTok = () =>
+    sysTok +
+    roughPromptTokenEstimate(
+      buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint)
+    );
+
+  while (list.length > 1 && userTok() > cap) {
+    list.pop();
+  }
+
+  let maxChunkChars = 24000;
+  let guard = 0;
+  while (list.length && userTok() > cap && guard++ < 48) {
+    maxChunkChars = Math.max(400, Math.floor(maxChunkChars * 0.82));
+    list = list.map((c) => ({
+      ...c,
+      text: truncateChunkTextForBudget(c.text || '', maxChunkChars)
+    }));
+  }
+
+  return list;
+}
+
+async function callOpenRouterAnswer({
+  userQuestion,
+  chunks,
+  answerLanguage,
+  conversationContext,
+  roleHint,
+  systemInstruction: prebuiltSystem
+}) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured');
@@ -2123,12 +2110,14 @@ async function callOpenRouterAnswer({ userQuestion, chunks, answerLanguage, conv
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const systemInstruction =
+    prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
 
   try {
     const payload = {
       model,
       messages: [
-        { role: 'system', content: buildSystemInstruction(answerLanguage) },
+        { role: 'system', content: systemInstruction },
         { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }
       ],
       temperature: DEFAULT_TEMPERATURE,
@@ -2390,29 +2379,27 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   }
-  let aiResult = null;
-  let lastAiError = null;
-  const primaryProvider = isOpenRouterFirstEnabled() ? 'openrouter' : 'gemini';
-  const fallbackProvider = isOpenRouterFirstEnabled() ? 'gemini' : 'openrouter';
-  const llmArgs = {
+  const systemInstruction = buildSystemInstruction(modelLanguage);
+  const fittedChunks = fitChunksForOpenRouterPromptBudget({
     userQuestion: questionForModel,
     chunks,
+    conversationContext,
+    answerLanguage: modelLanguage,
+    roleHint,
+    systemInstruction,
+    maxPromptTokens: OPENROUTER_MAX_PROMPT_TOKENS
+  });
+  const llmArgs = {
+    userQuestion: questionForModel,
+    chunks: fittedChunks,
     answerLanguage: modelLanguage,
     conversationContext,
-    roleHint
+    roleHint,
+    systemInstruction
   };
 
   try {
-    try {
-      aiResult = isOpenRouterFirstEnabled()
-        ? await callOpenRouterAnswer(llmArgs)
-        : await callGeminiAnswer(llmArgs);
-    } catch (primaryErr) {
-      lastAiError = primaryErr;
-      aiResult = isOpenRouterFirstEnabled()
-        ? await callGeminiAnswer(llmArgs)
-        : await callOpenRouterAnswer(llmArgs);
-    }
+    const aiResult = await callOpenRouterAnswer(llmArgs);
 
     const { answer, model } = aiResult;
     const plainEn = stripSupportAnswerMarkdown(answer);
@@ -2424,7 +2411,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
         locale: 'ru',
         model,
         translation_fallback: false,
-        sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
+        sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
       };
     }
 
@@ -2436,13 +2423,10 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
       locale: localized.locale,
       model,
       translation_fallback: localized.translationFallback,
-      sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
+      sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   } catch (err) {
-    const primaryError =
-      lastAiError && lastAiError.message ? `${primaryProvider}: ${lastAiError.message}` : '';
-    const currentError = err?.message || 'ai_unavailable';
-    const reason = primaryError ? `${primaryError}; ${fallbackProvider}: ${currentError}` : currentError;
+    const reason = err?.message ? `openrouter: ${err.message}` : 'ai_unavailable';
     return buildUnavailableAnswer(answerLocale, reason);
   }
 }
