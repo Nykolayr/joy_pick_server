@@ -17,12 +17,12 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
 /** Русский system prompt длиннее — жёстче потолок, иначе OpenRouter: prompt > ~11612. */
 const OPENROUTER_MAX_PROMPT_TOKENS_RU = Math.max(
   2000,
-  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 9000)
+  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 8000)
 );
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 /** В LLM-пrompt только последние N реплик и укороченный текст — иначе гостевой чат раздувает prompt выше лимита OpenRouter. */
-const CONTEXT_PROMPT_MAX_TURNS = Math.min(12, Math.max(1, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS || 4)));
-const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(800, Math.max(80, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_FIELD_CHARS || 260)));
+const CONTEXT_PROMPT_MAX_TURNS = Math.min(12, Math.max(1, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS || 3)));
+const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(800, Math.max(80, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_FIELD_CHARS || 200)));
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
@@ -2053,7 +2053,7 @@ function roughPromptTokenEstimate(text) {
   if (!s.length) return 0;
   const base = Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
   /** Запас к реальному счёту OpenRouter (часто выше chars/токен для RU system). */
-  return Math.ceil(base * 1.22);
+  return Math.ceil(base * 1.38);
 }
 
 function truncateChunkTextForBudget(text, maxChars) {
@@ -2076,7 +2076,7 @@ function fitChunksForOpenRouterPromptBudget({
 }) {
   const cap = Math.max(
     1000,
-    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS - 150
+    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS - 420
   );
   const sysTok = roughPromptTokenEstimate(systemInstruction);
   if (sysTok >= cap) {
