@@ -2047,7 +2047,9 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage, 
 function roughPromptTokenEstimate(text) {
   const s = String(text || '');
   if (!s.length) return 0;
-  return Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
+  const base = Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
+  /** Запас к реальному счёту OpenRouter (часто выше chars/токен для RU system). */
+  return Math.ceil(base * 1.22);
 }
 
 function truncateChunkTextForBudget(text, maxChars) {
@@ -2092,6 +2094,19 @@ function fitChunksForOpenRouterPromptBudget({
   let guard = 0;
   while (list.length && userTok() > cap && guard++ < 48) {
     maxChunkChars = Math.max(400, Math.floor(maxChunkChars * 0.82));
+    list = list.map((c) => ({
+      ...c,
+      text: truncateChunkTextForBudget(c.text || '', maxChunkChars)
+    }));
+  }
+
+  guard = 0;
+  while (list.length && userTok() > cap && guard++ < 24) {
+    if (list.length > 1) {
+      list.pop();
+      continue;
+    }
+    maxChunkChars = Math.max(200, Math.floor(maxChunkChars * 0.7));
     list = list.map((c) => ({
       ...c,
       text: truncateChunkTextForBudget(c.text || '', maxChunkChars)
