@@ -1,0 +1,52 @@
+---
+description: Карта Support AI (RAG, промпты, eval) — для правок качества ответов чата
+alwaysApply: false
+---
+
+Подключай через @Rules в чатах про Support AI / RAG / eval (не подмешивается в каждую сессию автоматически).
+
+# Support AI — ориентир для агента
+
+Полный контракт API и продуктовые детали: `docs/support_ai_chat_rag_plan.md`. Чеклист кейсов и прогонов: **`docs/support_eval_checklist.md`** — там же блок **«Инструкция для агента»** (секрет с сервера, ловушки `.env`/PowerShell, 403/404, чем `eval:direct` отличается от HTTP). **Сначала прочитай этот блок**, если пользователь просит «один вопрос к AI» или `curl` к eval.
+
+**Без споров с пользователем:** если локально нет `SUPPORT_EVAL_SECRET`, это не значит «эндпоинта нет» — секрет есть на проде; нужно синхронизировать `.env` (SSH в `.cursor/docs/ssh-server.md`), **не вставляя секрет в репозиторий и не цитируя его в ответе**. Один вопрос к проду: **`npm run support:eval:once -- "…"`**, не обязательно `curl`.
+
+## Где менять поведение
+
+| Зона | Файлы |
+|------|--------|
+| Промпты, RAG, scope-guard, детерминированные ответы, Gemini/OpenRouter | `api/services/supportAiService.js` |
+| Словарь scope (оффтоп / in-app) без правки кода | `docs/knowledge/support_scope_dictionary.v1.json` (опционально; есть дефолт в коде) |
+| Факты и формулировки под UX приложения | `docs/knowledge/support_ru/chunks.json`, `docs/knowledge/support_en/chunks.json` (одинаковые `chunk_id`, синхронно RU+EN) |
+| HTTP: async чат, eval, гость | `api/routes/support.js` |
+| История / pending | `api/services/supportAiHistory.js`, `supportAiGuestHistory.js` |
+
+## Контракт для клиента (не ломать без согласования)
+
+- `POST /api/support/chat` → `accepted` + polling по `GET .../messages/:id` (`pending` / `done` / `error`).
+- Поля ответа: `answer`, `answer_en`, `locale`, `model`, `sources`, `translation_fallback`, при деградации `degraded`, `ai_error_code`, `ai_error_message`.
+- Markdown в ответе снимается (`stripSupportAnswerMarkdown`).
+
+## Проверка после правок
+
+1. Добавить или обновить кейс в `scripts/support_eval_cases.json` (`sourcesMustIncludeAny`, `answerMustNotContain`).
+2. Прогнать: `npm run support:eval:rag` (ретривал).
+3. Spot-check ответа с LLM **как на проде:** **`npm run support:eval:once -- "типовой вопрос"`** — нужны **`SUPPORT_EVAL_SECRET`** + **`SUPPORT_EVAL_BASE_URL=https://joypick.world/api`** в локальном `.env` (секрет с сервера, см. чеклист).
+4. Локально без секрета (другой контур): **`npm run support:eval:direct`** — только ключи **`GEMINI_*` / `OPENROUTER_*`**, не путать с прод-HTTP.
+5. Перед релизом полный прогон: **`npm run support:eval`**.
+6. Стресс RAG при сомнениях в retrieval: `npm run support:eval:rag:stress`.
+
+## ENV (часто трогают при тюнинге)
+
+`AI_SUPPORT_ENABLED`, `AI_SUPPORT_TOP_K`, `AI_SUPPORT_TIMEOUT_MS`, `AI_SUPPORT_CONTEXT_TURNS`, `AI_SUPPORT_MAX_OUTPUT_TOKENS`, `AI_SUPPORT_TEMPERATURE`, `AI_SUPPORT_OPENROUTER_FIRST`, `GEMINI_*`, `OPENROUTER_*`. Секрет eval: `SUPPORT_EVAL_SECRET`, база: `SUPPORT_EVAL_BASE_URL`.
+
+## Принципы качества
+
+- Источник правды по UI — клиент Joy Pick; чанки должны совпадать с реальными экранами и кнопками.
+- Таксономия `chunk_id` и префиксы — раздел «Таксономия чанков» в `support_ai_chat_rag_plan.md`.
+- Scope-guard: резать только явный оффтоп; спорное — fail-open в LLM+RAG.
+- Не раздувать промпт без нужды; сначала чанки и eval-кейсы.
+
+## Синхронный отладочный ответ
+
+`POST /api/support/eval-reply` с заголовком `X-Support-Eval-Secret` — без записи в БД; эндпоинт отсутствует, если секрет не задан (404).

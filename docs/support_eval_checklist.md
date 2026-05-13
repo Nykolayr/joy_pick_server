@@ -6,12 +6,61 @@
 
 ## Как гонять
 
-- **Прод:** в `.env` локально задать `SUPPORT_EVAL_SECRET` (как на сервере) и `SUPPORT_EVAL_BASE_URL=https://joypick.world/api`, затем `npm run support:eval`.
+- **Прод, один произвольный вопрос (рекомендуется агенту на Windows):** после настройки `.env` (ниже) — **`npm run support:eval:once -- "Ваш вопрос"`** или `node scripts/support_eval_once.js "Ваш вопрос" ru`. Скрипт сам шлёт JSON на прод; не нужен ручной `curl` с кавычками в PowerShell.
+- **Прод, все эталонные кейсы:** в `.env` задать `SUPPORT_EVAL_SECRET` (как на сервере) и `SUPPORT_EVAL_BASE_URL=https://joypick.world/api`, затем **`npm run support:eval`**.
 - **Только RAG (без LLM):** `npm run support:eval:rag` — проверка, что нужные чанки попадают в top‑K.
 - **Stress RAG (много формулировок):** `npm run support:eval:rag:stress` или `node scripts/run_support_rag_stress.js --locale=ru --per-chunk=6 --limit=2000 --seed=1` — вопросы собираются из `title`/`tags` чанков, для каждого проверяется, что **свой** `chunk_id` в top‑K. Отчёт: `tmp/rag_stress_last.json` (падения с `message`, `top`, `effectiveQuestion`). При падениях exit code 1.
-- **Без HTTP:** `npm run support:eval:direct` (нужны ключи AI в `.env`).
+- **Без HTTP и без `SUPPORT_EVAL_SECRET`:** `npm run support:eval:direct` — вызов `getSupportAiAnswer` в том же процессе Node; нужны **`GEMINI_API_KEY` и/или `OPENROUTER_API_KEY`**. На части регионов Gemini отвечает `User location is not supported` — тогда либо OpenRouter в `.env`, либо проверка через прод (`support:eval:once` / `support:eval`).
 
 Источник кейсов: **`scripts/support_eval_cases.json`** (поля `id`, `message`, `locale`, `sourcesMustIncludeAny`, `answerMustNotContain`).
+
+---
+
+## Инструкция для агента (чтобы не повторять типовые ошибки)
+
+### Маршрут и URL
+
+- В коде: `api/routes/support.js` — **`router.post('/eval-reply', ...)`**.
+- Сборка URL: в **`app.js`** API-приложение вешается на **`/api`**, в **`api/index.js`** роутер support на **`/support`** → итог **`POST /api/support/eval-reply`**.
+- Прод (типичная проверка): **`https://joypick.world/api/support/eval-reply`**.
+- Заголовок: **`X-Support-Eval-Secret`** (значение = `SUPPORT_EVAL_SECRET` с сервера, **не** подставлять в публичные репозитории и не процитировать в чате целиком).
+- Тело: JSON **`{ "message": "…", "locale": "ru" }`** (или `en`).
+
+### Если в локальном `.env` нет `SUPPORT_EVAL_SECRET`
+
+1. **Не выдумывать** секрет: на проде он уже задан, иначе эндпоинт был бы **404** для всех.
+2. Взять строку **`SUPPORT_EVAL_SECRET=…`** с сервера (SSH как в **`.cursor/docs/ssh-server.md`**, хост из той же доки), например однократно выполнить на машине разработчика команду вида `ssh … "grep '^SUPPORT_EVAL_SECRET=' /opt/joypick/.env"` и **вручную** дописать результат в корневой `.env` репозитория **отдельной строкой** — или скриптом, см. ниже про перевод строки.
+3. Добавить (отдельной строкой): **`SUPPORT_EVAL_BASE_URL=https://joypick.world/api`** — иначе `run_support_eval.js` по умолчанию бьёт в `http://127.0.0.1:300/api` (нужен локально поднятый сервер с тем же секретом).
+
+### Критично: `.env` и перевод строки
+
+Если дописать секрет в конец файла **без перевода строки после последней существующей строки**, получится склейка вида **`GEMINI_MODEL=…SUPPORT_EVAL_SECRET=…`** на одной строке. Тогда:
+
+- локально переменная `SUPPORT_EVAL_SECRET` **пустая или неверная**;
+- запросы к проду с «правильным» секретом дают **`403 Forbidden`**.
+
+**Правило:** перед добавлением новых ключей убедиться, что файл заканчивается символом новой строки; при дописывании через PowerShell сначала, например, пустая строка: `Add-Content .env ""`, затем строка с секретом.
+
+### PowerShell и `curl`
+
+- В PowerShell легко сломать JSON в inline-аргументах (`"`, кириллица, экранирование). **Не настаивать** на «одной строке `curl`» с телом в кавычках.
+- Надёжно: **`npm run support:eval:once`** или **`curl.exe`** с **`--data-binary "@путь\к\файлу.json"`**, файл в UTF-8.
+
+### Диагностика ответов `eval-reply`
+
+| Симптом | Вероятная причина |
+|--------|-------------------|
+| **404** на проде | На сервере не задан `SUPPORT_EVAL_SECRET` (роут отключён). |
+| **403** | Неверный секрет **или** битый `.env` (склейка строк, лишние пробелы, не та строка прочитана в скрипте). |
+| **400** / ошибка парсинга JSON | Тело запроса не валидный JSON (частая проблема PowerShell). |
+| **200**, `success: true`, но **`degraded: true`** | Проблема **LLM на сервере** (ключи, регион, квота OpenRouter и т.д.), не секрет и не `curl`. |
+
+### Что не путать
+
+- **`support:eval:direct`** — не использует HTTP и **не** использует `SUPPORT_EVAL_SECRET`; это не «тот же путь», что прод.
+- **`support:eval`** / **`support:eval:once`** — бьют в HTTP; секрет и база URL обязательны для прода.
+
+После правок по чанкам/сервису обычно: **`support:eval:rag`**, затем spot-check **`support:eval:once`**, перед релизом — полный **`support:eval`** (см. деплой в **`.cursor/docs/ssh-server.md`**).
 
 ## Чек-лист по `id` (обновляйте статус вручную при ревью)
 
