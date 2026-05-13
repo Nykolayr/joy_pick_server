@@ -14,6 +14,11 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
   2000,
   Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 11000)
 );
+/** Русский system prompt длиннее — жёстче потолок, иначе OpenRouter: prompt > ~11612. */
+const OPENROUTER_MAX_PROMPT_TOKENS_RU = Math.max(
+  2000,
+  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 9000)
+);
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
@@ -2390,7 +2395,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     answerLanguage: modelLanguage,
     roleHint,
     systemInstruction,
-    maxPromptTokens: OPENROUTER_MAX_PROMPT_TOKENS
+    maxPromptTokens: modelLanguage === 'ru' ? OPENROUTER_MAX_PROMPT_TOKENS_RU : OPENROUTER_MAX_PROMPT_TOKENS
   });
   const llmArgs = {
     userQuestion: questionForModel,
