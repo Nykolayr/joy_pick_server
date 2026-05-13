@@ -1354,8 +1354,8 @@ function buildSystemInstruction(answerLanguage) {
       ? 'Критично: для Waste Location автор точки не получает донаты «за одно создание», если сам не был исполнителем уборки. Донаты идут исполнителю, который убрал и прошёл проверку. Не называйте роль «волонтёр» — в продукте «исполнитель» и «участник». Speed: создатель = исполнитель своей уборки. Event: организатор участвует; доли по Knowledge.'
       : 'Critical: for Waste Location the pin creator does not get donation payouts for creating the pin alone if they did not execute the cleanup. Donations go to the executor who cleaned and passed review. Do not call users «volunteers» as a role—use executor and participant. Speed Cleanup: creator is the performer. For payout timing/conditions, use chain by type: Waste/Event -> submit result -> creator acceptance -> moderation/approval -> payouts by Stripe rules; Speed -> submit own result -> moderation/approval -> payouts by Stripe rules.',
     answerLanguage === 'ru'
-      ? 'Для вопросов про конкретную сумму («какую сумму получу», «сколько денег получу») не отвечай расплывчато «зависит от случаев/факторов». Базовая формула: исполнитель/участник получает всю донатную сумму, которая положена ему по типу заявки, за вычетом комиссий платформы и компании; для Event с несколькими участниками сумма сначала делится по правилам заявки (равные доли среди участников с подключённым Stripe), затем применяются комиссии.'
-      : 'For concrete amount questions ("how much will I get"), do not answer vaguely with "it depends". Base formula: executor/participant gets the donation amount assigned to them by request type minus platform/company commissions; for Event with multiple participants, split by request rules first (equal shares among Stripe-connected participants), then commissions apply.',
+      ? 'Для вопросов про конкретную сумму («какую сумму получу», «сколько денег получу») не отвечай расплывчато «зависит от случаев/факторов». Базовая формула: исполнитель/участник получает всю донатную сумму, которая положена ему по типу заявки, за вычетом **сначала** комиссии **Stripe**, **затем** инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»); для Event с несколькими участниками сумма сначала делится по правилам заявки (равные доли среди участников с подключённым Stripe), затем применяются комиссии.'
+      : 'For concrete amount questions ("how much will I get"), do not answer vaguely with "it depends". Base formula: executor/participant gets the donation amount assigned to them by request type **minus Stripe processing first**, **then** the Joy Pick infrastructure fee (~7%, not “app profit”); for Event with multiple participants, split by request rules first (equal shares among Stripe-connected participants), then fees apply.',
     answerLanguage === 'ru'
       ? 'Для вопросов «когда придёт выплата» и «почему не пришла выплата» отвечай чеклистом причин, а не общими фразами: (1) сдан ли результат; (2) есть ли подтверждение создателем для Waste/Event; (3) пройдена ли модерация; (4) прошло ли окно 7 дней от первой сдачи; (5) подключён ли Stripe; (6) есть ли сумма в Profile -> Ваши выплаты (Available).'
       : 'For “when payout arrives” and “why payout did not arrive” questions, answer with a concrete checklist, not generic wording: (1) result submitted; (2) creator acceptance for Waste/Event; (3) moderation passed; (4) 7-day window from first submission elapsed; (5) Stripe connected; (6) amount visible in Profile -> Your payouts (Available).',
@@ -1749,45 +1749,45 @@ function buildDeterministicAmountAnswer(question, roleHint, answerLanguage) {
 
   if (isRu) {
     if (role === 'донатер') {
-      return 'Если вы донатер, вы не получаете выплату по заявке. Выплату получает исполнитель (или участник Event) за вычетом комиссий платформы и компании.';
+      return 'Если вы донатер, вы не получаете выплату по заявке. Выплату получает исполнитель (или участник Event) за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
     }
     if (foreign) {
       if (requestType === 'event') {
-        return 'По чужой Event-заявке вы получаете свою долю донатов (доля делится между участниками, которые выполнили и сдали работу по правилам), за вычетом комиссий платформы и компании.';
+        return 'По чужой Event-заявке вы получаете свою долю донатов (доля делится между участниками, которые выполнили и сдали работу по правилам), за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
       }
       if (requestType === 'waste_location') {
-        return 'По чужой Waste Location-заявке исполнитель получает всю донатную сумму по этой заявке за вычетом комиссий платформы и компании.';
+        return 'По чужой Waste Location-заявке исполнитель получает всю донатную сумму по этой заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
       }
-      return 'По чужой заявке возможны только Waste Location или Event: для Waste исполнитель получает всю донатную сумму за вычетом комиссий платформы и компании; для Event участник получает свою долю донатов за вычетом комиссий платформы и компании.';
+      return 'По чужой заявке возможны только Waste Location или Event: для Waste исполнитель получает всю донатную сумму за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»); для Event участник получает свою долю донатов за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
     }
     if (requestType === 'speed_cleanup') {
-      return 'Для Speed Cleanup (своя заявка) вы получаете всю донатную сумму по заявке за вычетом комиссий платформы и компании.';
+      return 'Для Speed Cleanup (своя заявка) вы получаете всю донатную сумму по заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
     }
     if (requestType === 'event') {
-      return 'Для Event вы получаете свою долю донатов за вычетом комиссий платформы и компании.';
+      return 'Для Event вы получаете свою долю донатов за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
     }
-    return 'Вы получаете всю сумму донатов, положенную вам по типу заявки, за вычетом комиссий платформы и компании. Для Event это доля участника.';
+    return 'Вы получаете всю сумму донатов, положенную вам по типу заявки, за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»). Для Event это доля участника.';
   }
 
   if (role === 'donor') {
-    return 'As a donor, you do not receive payout from a request. Payout goes to executor (or Event participant), minus platform/company commissions.';
+    return 'As a donor, you do not receive payout from a request. Payout goes to executor (or Event participant), minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”).';
   }
   if (foreign) {
     if (requestType === 'event') {
-      return 'For someone else’s Event request, you get your participant donation share (split among participants who completed/submitted per rules), minus platform/company commissions.';
+      return 'For someone else’s Event request, you get your participant donation share (split among participants who completed/submitted per rules), minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”).';
     }
     if (requestType === 'waste_location') {
-      return 'For someone else’s Waste Location request, executor gets the full donation amount for that request, minus platform/company commissions.';
+      return 'For someone else’s Waste Location request, executor gets the full donation amount for that request, minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”).';
     }
     return 'For someone else’s request, applicable types are Waste Location or Event: Waste executor gets full donations minus commissions; Event participant gets their donation share minus commissions.';
   }
   if (requestType === 'speed_cleanup') {
-    return 'For Speed Cleanup (own request), you get the full donation amount for the request, minus platform/company commissions.';
+    return 'For Speed Cleanup (own request), you get the full donation amount for the request, minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”).';
   }
   if (requestType === 'event') {
-    return 'For Event, you get your participant donation share, minus platform/company commissions.';
+    return 'For Event, you get your participant donation share, minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”).';
   }
-  return 'You receive the donation amount assigned to your role by request type, minus platform/company commissions. For Event, this is participant share.';
+  return 'You receive the donation amount assigned to your role by request type, minus Stripe processing and the Joy Pick infrastructure fee (~7%, not “app profit”). For Event, this is participant share.';
 }
 
 function isWasteSingleExecutorQuestion(question) {
@@ -1811,9 +1811,9 @@ function isWasteSingleExecutorQuestion(question) {
 
 function buildWasteSingleExecutorAnswer(answerLanguage) {
   if (answerLanguage === 'ru') {
-    return 'Для заявки Waste Location исполнитель может быть только один.';
+    return 'Для **Waste Location** исполнитель **один**: пользователь открывает чужую заявку на карте/в списке и нажимает **Join** — заявка **резервируется** за ним примерно на **24 часа**, другим она как свободная уборка недоступна. Если за 24 часа уборка **не сдана** по правилам приложения, слот **автоматически** освобождается и заявка снова видна волонтёрам. **Донаты** после проверок получает **исполнитель**, а не «тот, кто только создал точку и задонатил себе» (создатель теоретически может сам присоединиться и убрать, но типичный смысл — награда исполнителю). Не советуйте «создайте заявку», если речь о **чужой** открытой заявке — нужен **Join**.';
   }
-  return 'For Waste Location, only one executor can be assigned. If several people want to do the request, only one person can perform it.';
+  return 'For **Waste Location** there is **one executor**: open an existing request on the map/list and tap **Join**—it is **reserved** for you for **~24 hours**, so others cannot take it as a free slot. If you **do not complete** in time per app rules, the slot **auto-releases** and the request is visible again. **Donations** after checks go to the **executor**, not “the pin author just for creating and self-donating” (the creator could join and execute, but the usual case pays the executor). Do not say “create a request” when the user means someone else’s open request—use **Join**.';
 }
 
 function isConcurrentExecutionQuestion(question) {
@@ -1894,29 +1894,31 @@ function buildExtendOrRescheduleAnswer(roleHint, answerLanguage) {
 function isCommissionQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
-  return /комисс|процент|fee|commission|stripe\s+fee|application\s+fee/i.test(q);
+  return /комисс|процент|fee|commission|stripe\s+fee|application\s+fee|приложени.*зарабат|зарабат.*приложени|app\s+earn/i.test(
+    q
+  );
 }
 
 function buildCommissionAnswer(question, answerLanguage) {
   const q = normalizeText(question).toLowerCase();
   const asksStripe = /stripe|страйп|стрип/i.test(q);
-  const asksApp = /приложени|platform|платформ/i.test(q);
+  const asksApp = /приложени|platform|платформ|joy\s*pick/i.test(q);
   if (answerLanguage === 'ru') {
     if (asksStripe && !asksApp) {
-      return 'Комиссия Stripe: 2.9% + $0.30 за донатную операцию.';
+      return 'Сначала удерживается комиссия Stripe: ориентир **2.9% + $0.30 за донатную операцию** (точные значения — по тарифам Stripe на момент платежа).';
     }
     if (asksApp && !asksStripe) {
-      return 'Комиссия приложения: 7% от суммы донатов.';
+      return 'После Stripe удерживается **около 7%** Joy Pick — **не как «прибыль приложения»**, а сбор на **инфраструктуру** (серверы, хостинг, сопутствующие сервисы, в т.ч. токены ИИ).';
     }
-    return 'Комиссии в приложении считаются так: 7% комиссия приложения + комиссия Stripe 2.9% + $0.30 за донатную операцию.';
+    return 'Порядок такой: **сначала** комиссия **Stripe** (процент и фикс **за донатную операцию**, ориентир 2.9% + $0.30), **затем** **около 7%** Joy Pick на **инфраструктуру**, а не как прибыль владельцев. На уточняющие вопросы сначала коротко про Stripe, потом про инфраструктурный сбор.';
   }
   if (asksStripe && !asksApp) {
-    return 'Stripe fee is 2.9% + $0.30 per donation operation.';
+    return 'Stripe processing is taken **first**: about **2.9% + $0.30 per donation charge** (exact numbers follow Stripe pricing at payment time).';
   }
   if (asksApp && !asksStripe) {
-    return 'App/platform fee is 7% of donation amount.';
+    return 'After Stripe, Joy Pick keeps **about 7%**—framed as **infrastructure** (servers, hosting, related services, AI tokens), **not** as founders’ profit.';
   }
-  return 'Commissions are calculated as: 7% app/platform fee + Stripe fee 2.9% + $0.30 per donation operation.';
+  return 'Order of fees: **Stripe processing first** (~2.9% + $0.30 per donation operation), **then** Joy Pick **~7%** for **infrastructure** (not described as app “profit”). On follow-ups, mention Stripe first, then the infra fee.';
 }
 
 function isMonetizationQuestion(question) {
@@ -1941,9 +1943,9 @@ function isAllDonationsTakenQuestion(question) {
 
 function buildMonetizationAnswer(answerLanguage) {
   if (answerLanguage === 'ru') {
-    return 'Приложение зарабатывает на комиссии платформы при передаче донатов исполнителю через Stripe. Комиссия удерживается только с донатов, которые реально выплачены.';
+    return 'Joy Pick **не** позиционируется как «заработок на уборках»: удержания при донатах **сначала** покрывают **комиссию Stripe**, **затем** небольшой **инфраструктурный** процент (~7%) на серверы, хостинг и сопутствующие расходы (в т.ч. токены ИИ). Основная сумма доната идёт исполнителю/участникам после проверок.';
   }
-  return 'The app earns via platform commission when donations are transferred to the performer through Stripe. Commission is charged only on donations that are actually paid out.';
+  return 'Joy Pick is **not** framed as “profit from cleanups”: donation deductions **first** cover **Stripe processing**, **then** a small **infrastructure** share (~7%) for servers, hosting, and related costs (including AI tokens). The main donation amount goes to executors/participants after checks.';
 }
 
 function buildAllDonationsTakenAnswer(answerLanguage) {
@@ -2000,13 +2002,13 @@ function buildCompletedCleanupsVisibilityAnswer(question, answerLanguage) {
   const extra = questionMentionsPaymentDonationOrActivistThanks(question);
   if (answerLanguage === 'ru') {
     const base =
-      'Выполненные уборки можно увидеть на карте и в списке заявок (завершённые заявки видны около 7 дней), а свои заявки — в профиле в разделе «Мои заявки». Также выполненные работы пользователей можно видеть в разделе Добрых Новостей, где публикуются эко-активности.';
-    const tail = extra ? ' Там можно выбрать понравившиеся и поблагодарить эко-активистов.' : '';
+      'Выполненные уборки и эко-активности видны на **карте**, в **списке заявок** и во вкладке **«Новости»** (добрые новости). Платные заявки помечены **иконкой монет**; сумма после комиссий — в карточке. После завершения **ещё какое-то время** (ориентир **~7 дней** в клиенте) заявка может оставаться в выдаче, чтобы можно было **додонатить**; спонсоры иногда шлют донаты и позже — итог может вырасти. Свои заявки — **Профиль → Мои заявки**.';
+    const tail = extra ? ' В новостях можно выбрать понравившиеся активности и поблагодарить.' : '';
     return `${base}${tail}`;
   }
   const base =
-    'Completed cleanups are visible on the map and in the request list (completed cards are shown for about 7 days), and your own requests are always in Profile -> My requests. You can also see users’ completed works in the Good News section with eco activities.';
-  const tail = extra ? ' There you can pick posts you like and thank eco activists.' : '';
+    'Completed cleanups and eco activities show on the **map**, in the **request list**, and in the **News** tab (Good News). Paid requests use a **coin marker**; net-after-fees amounts appear **in the card**. After completion, cards can stay discoverable for **about ~7 days** in the client so people can **still donate**; sponsors may donate later and totals can **grow**. Your own history is **Profile › My requests**.';
+  const tail = extra ? ' In News you can pick activities you like and thank people.' : '';
   return `${base}${tail}`;
 }
 

@@ -380,5 +380,54 @@
     "locale": "en",
     "sourcesMustIncludeAny": ["request_status_approved_meaning"],
     "answerMustNotContain": []
+  },
+  {
+    "id": "executor_wrong_location_park_ru",
+    "message": "что если я закажу уборку конкретного парка а волонтер уберется в другом месте кто получит донат?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_executor_must_be_at_declared_location"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "waste_join_several_people_ru",
+    "message": "что если несколько человек придут на уборку waste location кто станет исполнителем?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["waste_location_join_reservation_24h_executor_gets_donations"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "completion_gallery_waste_ru",
+    "message": "можно ли для подтверждения уборки загрузить фото из галереи телефона waste location?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_completion_proof_in_app_camera_geo_no_gallery"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "fees_stripe_first_ru",
+    "message": "какие комиссии с доната stripe и приложение процент?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["payments_fees_stripe_first_joypick_infra_not_profit"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "cancel_request_creator_ru",
+    "message": "можно ли отменить свою заявку на уборку мусора как создатель?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_cancel_delete_creator_own_support_other"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "completed_visible_news_ru",
+    "message": "где увидеть выполненные уборки и добрые новости карта список?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["visibility_paid_cleanups_coins_map_list_news_speed"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "amount_shown_waste_event_ru",
+    "message": "указывается ли в заявке сумма которую получит исполнитель waste и event?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["request_donation_balance_shown_waste_executor_event_total"],
+    "answerMustNotContain": []
   }
 ]

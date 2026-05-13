@@ -325,7 +325,7 @@
   {
     "chunk_id": "waste_join_executor_deadline_creator_remove",
     "title": "Waste Location: joined but did not finish — executor slot clears (no money advice instead of work)",
-    "text": "For Waste Location (trash cleanup) requests, after someone joins as executor the platform expects work to finish on time. Server automation clears the executor if **24 hours** passed since `join_date` without completion: status goes back to **new**, `joined_user_id` is cleared, and the request becomes **available again** for other volunteers on the map/list; notifications go to executor and creator. A reminder is sent about **2 hours** before that deadline. The creator can also remove the executor (clear joined executor via request update) so the request is open again—same practical outcome. Separately, if a request stays **in progress** without completion for a long time from **creation**, another job warns the creator around **7 days** and may archive around **8 days** from `created_at`—that is a different long-stall path than the post-join 24h reset. If **nobody ever joined** while the request is **new**, `expires_at` drives extension/removal messaging; do not mix that up with the executor 24h rule. **Never recommend donating as a fix for forgetting to show up and clean**—donations do not replace an absent volunteer or complete the physical work.",
+    "text": "For Waste Location (trash cleanup) requests, after someone joins as executor the platform expects work to finish on time. Server automation clears the executor if **24 hours** passed since `join_date` without completion: status goes back to **new**, `joined_user_id` is cleared, and the request becomes **available again** for other volunteers on the map/list; notifications go to executor and creator. A reminder is sent about **2 hours** before that deadline. The **reliable** user-visible path that frees the slot for others is the **24-hour automation** if work is not completed after Join; **do not** promise everyone a universal “remove executor” button in details—edge cases go through **in-app operator support**. Separately, if a request stays **in progress** without completion for a long time from **creation**, another job warns the creator around **7 days** and may archive around **8 days** from `created_at`—that is a different long-stall path than the post-join 24h reset. If **nobody ever joined** while the request is **new**, `expires_at` drives extension/removal messaging; do not mix that up with the executor 24h rule. **Never recommend donating as a fix for forgetting to show up and clean**—donations do not replace an absent volunteer or complete the physical work. **If the executor is not at the declared request pin, the app blocks starting and finishing work via geo checks—this is separate from the joined-but-did-not-complete-on-time timeout.**",
     "tags": [
       "forgot to join cleanup",
       "joined waste forgot",
@@ -388,6 +388,118 @@
     ]
   },
   {
+    "chunk_id": "request_executor_must_be_at_declared_location",
+    "title": "Executor must be at the request pin to start and finish",
+    "text": "For requests tied to a map location, the app compares the executor device location to the request coordinates. When the executor taps Start work (or the equivalent action), if the position does not match the declared spot, **the app warns you**: it shows a notice that the location differs from the one in the request. In that state the executor cannot complete the cleanup through the app or submit work for verification from another place—the request stays unfinished from the app’s point of view. On paid requests with donations, the executor does not receive donated funds without a valid in-app completion and review path tied to the correct location. The app only allows starting work and submitting completion while the executor is at the location set on the request. Cleaning somewhere else in real life does not substitute for passing the in-app geo checks.",
+    "tags": [
+      "wrong location",
+      "different park",
+      "clean elsewhere",
+      "not at pin",
+      "start work blocked",
+      "location mismatch",
+      "declared pin coordinates",
+      "executor geolocation",
+      "cannot complete wrong spot",
+      "what if volunteer other place",
+      "ordered cleanup specific place",
+      "location differs from request",
+      "does app warn wrong location",
+      "clean in another place"
+    ]
+  },
+  {
+    "chunk_id": "waste_location_join_reservation_24h_executor_gets_donations",
+    "title": "Waste Location: Join reserves the executor for ~24h; donations go to the executor",
+    "text": "For **Waste Location**, the map/list shows one open request, and **only one** user can be the executor at a time. A user opens details and taps **Join**—the request is **reserved** for them for **about 24 hours**, so it is **not available** to others as a free slot. If work is **not completed** within that window with a valid in-app submission, the server **clears** the executor and the request becomes available again (see the 24h cron chunk). **Donations** after checks are meant for the **executor** who cleaned and submitted proof, **not** “the pin author just for creating the pin and donating”—the author could theoretically join and execute themselves, but the usual meaning of donations on someone else’s cleanup is paying the **executor**. Do not answer “create a request to become the executor” when the user means an **existing** map request: they need **Join** on that request.",
+    "tags": [
+      "several people came",
+      "who joins first",
+      "reserve request",
+      "24 hours join",
+      "single executor",
+      "creator donated who receives",
+      "become sole executor",
+      "everyone sees request",
+      "waste location join",
+      "executor reservation"
+    ]
+  },
+  {
+    "chunk_id": "request_completion_proof_in_app_camera_geo_no_gallery",
+    "title": "Waste completion: at the pin, GPS on, in-app camera only (no gallery uploads)",
+    "text": "To **finish** a **Waste Location** request and submit proof, the executor must be **at the location set on the request** with **device location enabled**. After photos of the cleaned area and collected trash must be taken **through the in-app camera flow** during completion; **you cannot upload proof photos from the gallery** for this verification—only in-app “live” captures. Without passing the location checks and those in-app photos, you **cannot** complete the request for donation payout per app rules. **Video** proof is **not supported yet** (planned later). **Creation** flows may allow different photo pickers—do not confuse that with **executor completion**.",
+    "tags": [
+      "what to submit for review",
+      "photo or video proof",
+      "gallery upload",
+      "live photo",
+      "in app camera",
+      "complete request geolocation",
+      "cleanup verification",
+      "trash can proof joke",
+      "cannot cheat gallery"
+    ]
+  },
+  {
+    "chunk_id": "payments_fees_stripe_first_joypick_infra_not_profit",
+    "title": "Fees: Stripe processing first, then Joy Pick infra share (not app “profit”)",
+    "text": "When donations are split, **Stripe’s processing fee is taken first** (percentage plus a **per-donation** fixed component per Stripe rules). **After that**, Joy Pick retains **about 7%**—this is **not described as founders’ profit**, but **infrastructure**: servers, hosting, related services, including **AI token** costs to run the product. Do **not** phrase this as “the app earns 7%” without that clarification; on follow-ups, mention **Stripe first**, then the Joy Pick infrastructure fee.",
+    "tags": [
+      "7 percent fee",
+      "stripe 2.9",
+      "does app earn",
+      "infrastructure fee",
+      "donation percentage",
+      "processing fee",
+      "platform commission",
+      "who keeps the fee"
+    ]
+  },
+  {
+    "chunk_id": "request_cancel_delete_creator_own_support_other",
+    "title": "Cancel/delete requests: your own vs support/admin for edge cases",
+    "text": "For **Waste Location**, **Speed Cleanup**, and **Event**: the creator can **delete/cancel their own request** in the app when status and the details screen allow it. **Manually removing a joined executor** is **not** something to promise as a universal self-serve button for every case: for Waste, the reliable mechanism is the **24-hour** auto-release after Join without completion (see the dedicated chunk); unusual cases go to **operator support chat** from Profile or **admin** actions on the service side.",
+    "tags": [
+      "cancel my request",
+      "delete my request",
+      "creator cancel request",
+      "waste location cancel",
+      "manually remove executor",
+      "admin only",
+      "remove performer",
+      "who can cancel",
+      "trash cleanup cancel"
+    ]
+  },
+  {
+    "chunk_id": "visibility_paid_cleanups_coins_map_list_news_speed",
+    "title": "Paid requests, completed work, News tab, Speed: coin markers, amounts, post-cleanup donations",
+    "text": "**Paid (donation) Waste Location and Event** requests with collected funds are marked with a **coin icon** on the **map and list** (see the in-app Help / UI guide; some Help strings mention a green **$** under the marker—same intent: monetary donations). The **net amount after payment fees** is shown **inside the request card**. After cleanup, **completed** work stays visible on the **map** and in the **list** (including the ~7-day window where people can still donate—see the completed/map chunk) and appears in **News / Good News** eco-activity posts; **sponsors may donate later**, so totals can **grow**. **Speed Cleanup** completed runs are also visible on the map and in **News**; others may **donate** to the volunteer per app rules.",
+    "tags": [
+      "where are completed cleanups",
+      "good news section",
+      "coin icon map",
+      "donate after cleanup",
+      "speed cleanup news",
+      "how much can i earn",
+      "paid request marker",
+      "completed cleanups news"
+    ]
+  },
+  {
+    "chunk_id": "request_donation_balance_shown_waste_executor_event_total",
+    "title": "Amount in the card: Waste executor net; Event total for participants",
+    "text": "If a **Waste Location** already has donations, the card shows the **amount the executor will receive** (after fees—see the Stripe-then-infra fee chunk). For **Event**, the UI shows the **total** collected to be split among **participants** per Event rules (see share chunks)—not the same single-line “one executor” display as Waste.",
+    "tags": [
+      "is amount shown on request",
+      "how much volunteer gets",
+      "waste location amount",
+      "event total participants",
+      "payout amount displayed"
+    ]
+  },
+  {
     "chunk_id": "request_complete_participant_flow",
     "title": "How participant completion submission works",
     "text": "Participant completion flow requires submitting cleanup result data, including after-photo evidence in relevant screens. After submit, request moves to review-dependent state. If submission fails, app shows retry-oriented error feedback.",
@@ -405,7 +517,7 @@
   {
     "chunk_id": "request_complete_missing_after_photo",
     "title": "Cannot complete without after photo",
-    "text": "If after photo is required and missing, completion flow asks to add it first. Upload the after photo and submit completion again. This is a common reason for completion submit failure.",
+    "text": "If after photo is required and missing, completion asks you to capture it **in the in-app camera flow** (for **Waste Location** executor proof, **not from gallery**). Take the shot in the completion flow and submit again. This is a common completion submit failure reason.",
     "tags": [
       "after photo required",
       "cannot complete",
@@ -560,7 +672,10 @@
       "debit card",
       "payout eligibility",
       "donation money",
-      "profile payments"
+      "profile payments",
+      "executor connect stripe",
+      "need stripe for payouts",
+      "get paid cleanups"
     ]
   },
   {
@@ -1857,7 +1972,7 @@
   {
     "chunk_id": "donations_who_receives_waste_vs_speed_event",
     "title": "Who receives donation money: Waste Location vs Speed vs Event creator",
-    "text": "Waste Location: after review and moderation, cash donations go to the executor who joined, actually cleaned, passed checks, and has a fully connected Stripe Connect profile in the app. Speed Cleanup: creator and performer are the same person; donations can reach them after approval per app rules with Stripe set up in Profile. Event / subbotnik: the organizer participates; donations are split among **eligible participants** (see split/hold chunks). For questions like «how much will I get», answer with a clear formula: user gets the donation amount assigned to their role by request type (for Event, their participant share), **minus platform/company commissions**. Do not answer with vague «depends on cases» when the user asks for the base payout principle. **Do not use the word «volunteer» as a role**—use **executor** and **participant**.",
+    "text": "Waste Location: after review and moderation, cash donations go to the executor who joined, actually cleaned, passed checks, and has a fully connected Stripe Connect profile in the app. Speed Cleanup: creator and performer are the same person; donations can reach them after approval per app rules with Stripe set up in Profile. Event / subbotnik: the organizer participates; donations are split among **eligible participants** (see split/hold chunks). For questions like «how much will I get», answer with a clear formula: user gets the donation amount assigned to their role by request type (for Event, their participant share), **minus Stripe processing fees and the Joy Pick infrastructure fee**—see the «fees: Stripe first» chunk. Do not answer with vague «depends on cases» when the user asks for the base payout principle. **Do not use the word «volunteer» as a role**—use **executor** and **participant**.",
     "tags": [
       "waste location creator",
       "who gets donations",
@@ -1968,8 +2083,8 @@
   },
   {
     "chunk_id": "features_geo_photos_required_completion",
-    "title": "Photos: gallery vs in-app capture depends on the screen (create vs submit)",
-    "text": "Do **not** give one absolute rule like «always gallery» vs «never gallery». Some steps (e.g. parts of **creating** a request) may allow picking from the **gallery**; **submitting / closing** work often requires capture **inside the app flow** for verification. Separate **request creation** screens from **work completion** screens. Avoid contradicting yourself across messages.",
+    "title": "Photos: creation vs Waste executor completion (in-app camera for proof)",
+    "text": "**Creating** a request and **executor completion** are different steps. Creation flows may allow **gallery** photos on some screens. For **Waste Location executor completion**, rules are strict: **location on**, be **at the request pin**, after photos **only via the in-app camera**, **no gallery uploads** for proof—otherwise you cannot complete for payout per app rules (see dedicated chunk). Do not answer vaguely «you may need the camera»—for Waste submission this is **mandatory**. **Video** proof is not supported yet.",
     "tags": [
       "geolocation",
       "gps",
@@ -2030,7 +2145,7 @@
   {
     "chunk_id": "faq_cleanup_verification_geo_photos_moderator",
     "title": "How cleanup verification works: distance check, photos, moderator",
-    "text": "The **executor** arrives at the marked location and starts through the app. Geolocation is checked—if they are too far (on the order of tens of meters, e.g. about 50 meters), the app warns and blocks starting the task. After cleanup, proof follows the **photo/geo rules for that request type** (see the gallery vs in-app capture chunk). A moderator reviews the submission; after approval, held donations are distributed via Stripe (hold then direct distribution—not a Joy Pick cash pile).",
+    "text": "The **executor** must be **at the request pin** with location services on: on start, the app compares coordinates; if they differ, you get a warning and cannot legitimately finish from the wrong place (see wrong-location chunk). For **Waste Location** completion, proof photos are **in-app camera only**, **not gallery uploads** (see dedicated chunk). **Video** proof is **not supported yet**. After submission, a **moderator** still reviews; held donations are distributed via Stripe per rules—not a Joy Pick cash pile.",
     "tags": [
       "verification",
       "moderator",
@@ -2145,7 +2260,7 @@
   {
     "chunk_id": "request_donation_paid_map_list_badges",
     "title": "Donation (= paid) request: map icon and list total",
-    "text": "A request with money is a donation (paid) request. It can be paid at creation or become paid after the first donation. Important: to create/pay a donation request, the creator needs connected Stripe Connect. After completion and moderation, donations are paid to the work recipient (executor/participant by request type), and that recipient also needs connected Stripe. Paid requests show a dollar sign on the map and donation amount in the list.",
+    "text": "A request with money is a donation (paid) request. It can be paid at creation or become paid after the first donation. Important: to create/pay a donation request, the creator needs connected Stripe Connect. After completion and moderation, donations are paid to the work recipient (executor/participant by request type), and that recipient also needs connected Stripe. On the map and list, paid requests are marked with a **coin icon** (Help may also describe a green **$** under the marker—same meaning: monetary donations). The **net amount after fees** is visible **in the request card**.",
     "tags": [
       "donation request",
       "paid request",
@@ -2732,7 +2847,7 @@
   {
     "chunk_id": "map_list_completed_requests_7_days_profile_my_requests",
     "title": "Completed requests on map/list, archive, and Profile › My requests",
-    "text": "Do **not** say the map/list shows **only active** requests: after the **user closes** their work, **`completed`** requests can stay visible for **about 7 days** so others can still **donate** (client-side window). On the **server**, the donation/payout window is anchored to **user submission** (**donation_window_started_at**); after it elapses, **approved** requests get payouts, **unapproved** ones go to **archive** per rules. Users can **always** open **Profile › My requests** for **their** history. **How completed requests look on the map** (gray circle on the icon, card border colors, donation chips, etc.) is explained in the in-app **Help / UI Guide**—send users there for visual legend questions.",
+    "text": "Completed cleanups and users’ eco activities appear on the **map**, in the **request list**, and in the **News** tab (**Good News** style feed). Do **not** say the map/list shows **only active** requests: after the **user closes** their work, **`completed`** requests can stay visible for **about 7 days** so others can still **donate** (client-side window). On the **server**, the donation/payout window is anchored to **user submission** (**donation_window_started_at**); after it elapses, **approved** requests get payouts, **unapproved** ones go to **archive** per rules. Users can **always** open **Profile › My requests** for **their** history. **How completed requests look on the map** (gray circle on the icon, card border colors, donation chips, **coin icon** for paid, etc.) is explained in the in-app **Help / UI Guide**—send users there for visual legend questions.",
     "tags": [
       "completed requests",
       "archive",
