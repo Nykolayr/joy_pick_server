@@ -127,9 +127,6 @@ router.post('/create-account', authenticate, [
 
     if (existingAccounts.length > 0) {
       const existingAccount = existingAccounts[0];
-      // Страна Connected Account задаётся только при accounts.create и дальше не меняется
-      // через onboarding. Если в профиле уже другая страна (AM), а аккаунт создан как US —
-      // нельзя снова открывать ссылку на старый acct_*: в форме снова будет США.
       let remoteAccount;
       try {
         remoteAccount = await stripe.accounts.retrieve(existingAccount.account_id);
@@ -137,33 +134,45 @@ router.post('/create-account', authenticate, [
         return error(res, 'Cannot load existing Stripe account', 500, e);
       }
       const stripeCountry = String(remoteAccount.country || '').toUpperCase();
-      if (stripeCountry && stripeCountry !== country) {
+      if (stripeCountry === country) {
+        try {
+          const accountLink = await stripe.accountLinks.create({
+            account: existingAccount.account_id,
+            refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
+            return_url: process.env.STRIPE_RETURN_URL || defaultStripeReturnUrl(),
+            type: 'account_onboarding'
+          });
+
+          return success(res, {
+            account_id: existingAccount.account_id,
+            account_link_url: accountLink.url,
+            message: 'Account already exists, onboarding link created'
+          }, 'Account link created');
+        } catch (err) {
+          return error(res, 'Error creating Account Link', 500, err);
+        }
+      }
+
+      // Страна в приложении другая, чем у уже созданного acct_*: пересоздаём Connect с нужной страной
+      // (страну нельзя сменить в onboarding — только новый accounts.create).
+      try {
+        await stripe.accounts.del(existingAccount.account_id);
+      } catch (delErr) {
         return error(
           res,
-          'Existing Stripe Connect account was created for another country and cannot be switched from the app. '
-            + `Stripe account country: ${stripeCountry}, requested: ${country}. `
-            + 'Contact support to reset Connect or use a new platform account.',
+          delErr.message || 'Could not remove previous Stripe account for new country',
           409,
-          { code: 'STRIPE_ACCOUNT_COUNTRY_MISMATCH', stripeCountry, requestedCountry: country }
+          { code: 'STRIPE_ACCOUNT_COUNTRY_RESET_FAILED', stripeCountry, requestedCountry: country }
         );
       }
-      // Если аккаунт уже существует, создаем новый Account Link для доонбординга
       try {
-        const accountLink = await stripe.accountLinks.create({
-          account: existingAccount.account_id,
-          refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
-          return_url: process.env.STRIPE_RETURN_URL || defaultStripeReturnUrl(),
-          type: 'account_onboarding'
-        });
-
-        return success(res, {
-          account_id: existingAccount.account_id,
-          account_link_url: accountLink.url,
-          message: 'Account already exists, onboarding link created'
-        }, 'Account link created');
-      } catch (err) {
-        return error(res, 'Error creating Account Link', 500, err);
+        await pool.execute('DELETE FROM stripe_accounts WHERE user_id = ?', [user_id]);
+        await pool.execute('UPDATE users SET stripe_id = NULL WHERE id = ?', [user_id]);
+      } catch (dbErr) {
+        return error(res, 'Failed to unlink Stripe account after delete', 500, dbErr);
       }
+      await updateUserStripeStatusCache(user_id, null);
+      // не return — ниже создаём новый accounts.create с [country]
     }
 
     let account;

@@ -7125,13 +7125,13 @@ title[|||]short_description[|||]text
 }
 ```
 
-**Ошибка (409) — страна в запросе не совпадает со страной уже созданного Connected Account (нельзя сменить страну аккаунта через onboarding):**
+**Ошибка (409) — не удалось удалить старый Connect в Stripe при смене страны** (например уже были выплаты / баланс; редко для «только начал онбординг»):
 ```json
 {
   "success": false,
-  "message": "Existing Stripe Connect account was created for another country and cannot be switched from the app. ...",
+  "message": "...",
   "errorDetails": {
-    "code": "STRIPE_ACCOUNT_COUNTRY_MISMATCH",
+    "code": "STRIPE_ACCOUNT_COUNTRY_RESET_FAILED",
     "stripeCountry": "US",
     "requestedCountry": "AM"
   }
@@ -7157,10 +7157,11 @@ title[|||]short_description[|||]text
 ```
 
 **Важно:**
-- Страна Connected Account задаётся **только** при первом `accounts.create` и **не меняется** в hosted onboarding.
-- Если запись в `stripe_accounts` уже есть, сервер **сверяет** `country` из тела запроса со страной аккаунта в Stripe. При **несовпадении** возвращается **409** (`STRIPE_ACCOUNT_COUNTRY_MISMATCH`) — новая ссылка онбординга **не** выдаётся, чтобы не показывать форму под «чужую» страну.
-- Если страны совпадают, возвращается существующий `account_id` и новый `account_link_url` для доонбординга.
-- Автоматической подстановки `US` при ошибке страны **нет**.
+- Страна Connected Account задаётся при `accounts.create` и **не меняется** внутри hosted onboarding.
+- Если в `stripe_accounts` уже есть аккаунт и **страна в теле совпадает** со страной в Stripe — выдаётся новый `account_link_url` для доонбординга.
+- Если страна в теле **другая** — сервер вызывает **`accounts.del`** у старого `acct_*`, удаляет строку в `stripe_accounts`, обнуляет `users.stripe_id` и **создаёт новый** Connect с переданной страной (пользователь проходит Express уже под AM и т.д.).
+- Если Stripe **не даёт** удалить старый аккаунт — **409** с `STRIPE_ACCOUNT_COUNTRY_RESET_FAILED` (тогда только поддержка).
+- Автоподстановки `US` при ошибке страны **нет**.
 
 ---
 
