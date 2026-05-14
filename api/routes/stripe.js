@@ -123,6 +123,171 @@ const COUNTRY_DIAL_CODES = {
 };
 
 /**
+ * Полный E.164-заглушка, если клиент не прислал телефон: Stripe часто отклоняет только «+код»,
+ * а в hosted onboarding при отсутствии приемлемого номера снова показывается дефолт платформы (+1).
+ * Форматы — типичная длина/паттерн мобильного; пользователь заменяет на реальный номер в форме Stripe.
+ * @param {string} countryIso2
+ * @returns {string|null}
+ */
+function syntheticE164ForConnectPlaceholder(countryIso2) {
+  const cc = String(countryIso2 || '').toUpperCase();
+  const dial = COUNTRY_DIAL_CODES[cc];
+  if (!dial) return null;
+  if (dial === '1') {
+    if (cc === 'US') return '+12065550100';
+    if (cc === 'CA') return '+12065550101';
+    return '+12065550102';
+  }
+  if (dial === '7') {
+    if (cc === 'KZ') return '+77000000000';
+    if (cc === 'BY') return '+375291234567';
+    return '+79000000000';
+  }
+  switch (cc) {
+    case 'DE':
+      return '+4915123456789';
+    case 'GB':
+    case 'GG':
+    case 'JE':
+    case 'IM':
+      return '+447400000000';
+    case 'AT':
+      return '+436641234567';
+    case 'CH':
+      return '+41791234567';
+    case 'IT':
+      return '+393330000000';
+    case 'ES':
+      return '+34600123456';
+    case 'PT':
+      return '+351910123456';
+    case 'PL':
+      return '+48500123456';
+    case 'IE':
+      return '+353850123456';
+    case 'BE':
+      return '+32470123456';
+    case 'NL':
+      return '+31612345678';
+    case 'FR':
+      return '+33612345678';
+    case 'LU':
+      return '+352621234567';
+    case 'GR':
+      return '+306912345678';
+    case 'CZ':
+      return '+420601234567';
+    case 'SK':
+      return '+421912123456';
+    case 'HU':
+      return '+36301234567';
+    case 'RO':
+      return '+40722123456';
+    case 'BG':
+      return '+359888123456';
+    case 'HR':
+      return '+385911234567';
+    case 'SI':
+      return '+38640123456';
+    case 'EE':
+      return '+37251234567';
+    case 'LV':
+      return '+37121234567';
+    case 'LT':
+      return '+37061234567';
+    case 'FI':
+      return '+358401234567';
+    case 'SE':
+      return '+46701234567';
+    case 'NO':
+      return '+4790123456';
+    case 'DK':
+      return '+4520123456';
+    case 'IS':
+      return '+3546112345';
+    case 'MT':
+      return '+35699123456';
+    case 'CY':
+      return '+35796123456';
+    case 'AM':
+      return '+37493123456';
+    case 'UA':
+      return '+380501234567';
+    case 'MD':
+      return '+37369123456';
+    case 'GE':
+      return '+995555123456';
+    case 'AZ':
+      return '+994501234567';
+    case 'TR':
+      return '+905551234567';
+    case 'IL':
+      return '+972501234567';
+    case 'AE':
+      return '+971501234567';
+    case 'SA':
+      return '+966501234567';
+    case 'IN':
+      return '+919876543210';
+    case 'CN':
+      return '+8613800138000';
+    case 'JP':
+      return '+819012345678';
+    case 'KR':
+      return '+821012345678';
+    case 'AU':
+      return '+61412345678';
+    case 'NZ':
+      return '+64211234567';
+    case 'BR':
+      return '+5511987654321';
+    case 'MX':
+      return '+525551234567';
+    case 'AR':
+      return '+5491123456789';
+    case 'CL':
+      return '+56961234567';
+    case 'CO':
+      return '+573001234567';
+    case 'PE':
+      return '+51987654321';
+    case 'ZA':
+      return '+27821234567';
+    case 'EG':
+      return '+201001234567';
+    case 'NG':
+      return '+2348012345678';
+    case 'KE':
+      return '+254712345678';
+    case 'RS':
+      return '+381601234567';
+    case 'BA':
+      return '+38761123456';
+    case 'ME':
+      return '+38267123456';
+    case 'MK':
+      return '+38971234567';
+    case 'AL':
+      return '+355692012345';
+    default:
+      break;
+  }
+  if (/^\d{2}$/.test(dial)) {
+    return `+${dial}600000000`;
+  }
+  if (/^\d{3}$/.test(dial)) {
+    return `+${dial}60000000`;
+  }
+  return `+${dial}600000000`;
+}
+
+function isStripeConnectPhoneFieldError(e) {
+  const msg = String(e?.message || '');
+  const p = String(e?.param || '');
+  return /phone|invalid.*number|not a valid|support_phone/i.test(msg) || /phone|support_phone/i.test(p);
+}
+
+/**
  * @param {string} countryIso2
  * @param {unknown} rawPhone
  * @returns {string|undefined}
@@ -148,8 +313,8 @@ function normalizePhoneE164(countryIso2, rawPhone) {
 }
 
 /**
- * Телефон для Connect: полный E.164 или, если клиент не прислал номер, хотя бы «+код» по country
- * (чтобы в hosted onboarding не подставлялся +1 платформы). Если Stripe отклонит «только код» — см. retry в create-account.
+ * Телефон для Connect: полный E.164 или, если клиент не прислал номер, синтетический полный E.164 по стране
+ * (Stripe часто не принимает только «+код»; без приемлемого номера hosted onboarding снова показывает +1 платформы).
  * @returns {{ phoneE164: string|undefined, phoneDialOnlyPlaceholder: boolean }}
  */
 function phoneForStripeConnect(countryIso2, rawPhone) {
@@ -161,9 +326,14 @@ function phoneForStripeConnect(countryIso2, rawPhone) {
   if (rawTrim) {
     return { phoneE164: undefined, phoneDialOnlyPlaceholder: false };
   }
-  const dial = COUNTRY_DIAL_CODES[String(countryIso2 || '').toUpperCase()];
+  const cc = String(countryIso2 || '').toUpperCase();
+  const dial = COUNTRY_DIAL_CODES[cc];
   if (!dial) {
     return { phoneE164: undefined, phoneDialOnlyPlaceholder: false };
+  }
+  const synthetic = syntheticE164ForConnectPlaceholder(cc);
+  if (synthetic) {
+    return { phoneE164: synthetic, phoneDialOnlyPlaceholder: true };
   }
   return { phoneE164: `+${dial}`, phoneDialOnlyPlaceholder: true };
 }
@@ -179,22 +349,35 @@ async function syncConnectPhoneToExistingStripeAccount(accountId, countryIso2, r
   if (!phoneE164) {
     return { phoneOmittedAfterStripeReject };
   }
-  const payloadWithPhone = {
-    individual: { phone: phoneE164 },
-    business_profile: { support_phone: phoneE164 }
-  };
-  try {
-    await stripe.accounts.update(accountId, payloadWithPhone);
-  } catch (e) {
-    const msg = String(e.message || '');
-    const phoneReject =
-      phoneDialOnlyPlaceholder &&
-      (/phone/i.test(msg) || /phone/i.test(String(e.param || '')));
-    if (phoneReject) {
-      phoneOmittedAfterStripeReject = true;
-    } else {
-      // Не блокируем выдачу ссылки онбординга из‑за второстепенного update
-      console.error('[stripe/create-account] accounts.update (phone) failed:', e?.message || e);
+  const dial = COUNTRY_DIAL_CODES[String(countryIso2 || '').toUpperCase()];
+  const dialOnly = dial ? `+${dial}` : null;
+  const attempts = [phoneE164];
+  if (phoneDialOnlyPlaceholder && dialOnly && dialOnly !== phoneE164) {
+    attempts.push(dialOnly);
+  }
+  for (let i = 0; i < attempts.length; i += 1) {
+    const candidate = attempts[i];
+    const last = i === attempts.length - 1;
+    try {
+      await stripe.accounts.update(accountId, {
+        individual: { phone: candidate },
+        business_profile: { support_phone: candidate }
+      });
+      return { phoneOmittedAfterStripeReject };
+    } catch (e) {
+      if (!last) {
+        if (phoneDialOnlyPlaceholder && isStripeConnectPhoneFieldError(e)) {
+          continue;
+        }
+        console.error('[stripe/create-account] accounts.update (phone) failed:', candidate, e?.message || e);
+        return { phoneOmittedAfterStripeReject: false };
+      }
+      if (phoneDialOnlyPlaceholder && isStripeConnectPhoneFieldError(e)) {
+        phoneOmittedAfterStripeReject = true;
+      } else {
+        console.error('[stripe/create-account] accounts.update (phone) failed:', e?.message || e);
+      }
+      return { phoneOmittedAfterStripeReject };
     }
   }
   return { phoneOmittedAfterStripeReject };
@@ -360,8 +543,9 @@ router.post('/create-account', authenticate, [
       // не return — ниже создаём новый accounts.create с [country]
     }
 
-    const buildAccountCreateParams = (recipientMode, includePhoneFields = true) => {
-      const withPhone = !!(includePhoneFields && phoneE164);
+    const buildAccountCreateParams = (recipientMode, phoneValue) => {
+      const pv = phoneValue != null && String(phoneValue).trim() ? String(phoneValue).trim() : '';
+      const withPhone = !!pv;
       return {
         country,
         business_type: 'individual',
@@ -389,7 +573,7 @@ router.post('/create-account', authenticate, [
           first_name: first_name,
           last_name: last_name,
           email: email,
-          ...(withPhone ? { phone: phoneE164 } : {}),
+          ...(withPhone ? { phone: pv } : {}),
           address: {
             city: city || undefined,
             country
@@ -400,7 +584,7 @@ router.post('/create-account', authenticate, [
           product_description: 'Environmental cleanup volunteer on JoyPick platform',
           mcc: '8398', // Charitable organizations
           support_email: email,
-          ...(withPhone ? { support_phone: phoneE164 } : {})
+          ...(withPhone ? { support_phone: pv } : {})
         },
         metadata: {
           platform: 'joypick',
@@ -413,19 +597,39 @@ router.post('/create-account', authenticate, [
     let account;
     let phoneOmittedAfterStripeReject = false;
     const createAccountWithOptionalPhoneRetry = async (recipientMode) => {
-      try {
-        return await stripe.accounts.create(buildAccountCreateParams(recipientMode, true));
-      } catch (e) {
-        const msg = String(e.message || '');
-        const phoneReject =
-          phoneDialOnlyPlaceholder
-          && (/phone/i.test(msg) || /phone/i.test(String(e.param || '')));
-        if (phoneReject) {
-          phoneOmittedAfterStripeReject = true;
-          return await stripe.accounts.create(buildAccountCreateParams(recipientMode, false));
-        }
-        throw e;
+      const dial = COUNTRY_DIAL_CODES[country];
+      const dialOnly = dial ? `+${dial}` : null;
+      const phoneCandidates = [];
+      const seen = new Set();
+      const pushPhone = (p) => {
+        if (!p || seen.has(p)) return;
+        seen.add(p);
+        phoneCandidates.push(p);
+      };
+      pushPhone(phoneE164);
+      if (phoneDialOnlyPlaceholder && dialOnly) {
+        pushPhone(dialOnly);
       }
+      if (phoneCandidates.length === 0) {
+        return stripe.accounts.create(buildAccountCreateParams(recipientMode, undefined));
+      }
+      for (let i = 0; i < phoneCandidates.length; i += 1) {
+        const candidate = phoneCandidates[i];
+        const last = i === phoneCandidates.length - 1;
+        try {
+          return await stripe.accounts.create(buildAccountCreateParams(recipientMode, candidate));
+        } catch (e) {
+          if (!last && phoneDialOnlyPlaceholder && isStripeConnectPhoneFieldError(e)) {
+            continue;
+          }
+          if (last && phoneDialOnlyPlaceholder && isStripeConnectPhoneFieldError(e)) {
+            phoneOmittedAfterStripeReject = true;
+            return await stripe.accounts.create(buildAccountCreateParams(recipientMode, undefined));
+          }
+          throw e;
+        }
+      }
+      return stripe.accounts.create(buildAccountCreateParams(recipientMode, undefined));
     };
 
     try {
