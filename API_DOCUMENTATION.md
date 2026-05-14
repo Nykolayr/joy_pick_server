@@ -7125,6 +7125,19 @@ title[|||]short_description[|||]text
 }
 ```
 
+**Ошибка (409) — страна в запросе не совпадает со страной уже созданного Connected Account (нельзя сменить страну аккаунта через onboarding):**
+```json
+{
+  "success": false,
+  "message": "Existing Stripe Connect account was created for another country and cannot be switched from the app. ...",
+  "errorDetails": {
+    "code": "STRIPE_ACCOUNT_COUNTRY_MISMATCH",
+    "stripeCountry": "US",
+    "requestedCountry": "AM"
+  }
+}
+```
+
 **Ошибка (400) — валидация express-validator:**
 ```json
 {
@@ -7144,7 +7157,9 @@ title[|||]short_description[|||]text
 ```
 
 **Важно:**
-- Если запись в `stripe_accounts` уже есть, возвращается существующий `account_id` и новый `account_link_url` для доонбординга (**поле `country` в теле не меняет** уже созданный аккаунт).
+- Страна Connected Account задаётся **только** при первом `accounts.create` и **не меняется** в hosted onboarding.
+- Если запись в `stripe_accounts` уже есть, сервер **сверяет** `country` из тела запроса со страной аккаунта в Stripe. При **несовпадении** возвращается **409** (`STRIPE_ACCOUNT_COUNTRY_MISMATCH`) — новая ссылка онбординга **не** выдаётся, чтобы не показывать форму под «чужую» страну.
+- Если страны совпадают, возвращается существующий `account_id` и новый `account_link_url` для доонбординга.
 - Автоматической подстановки `US` при ошибке страны **нет**.
 
 ---

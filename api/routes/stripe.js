@@ -127,6 +127,26 @@ router.post('/create-account', authenticate, [
 
     if (existingAccounts.length > 0) {
       const existingAccount = existingAccounts[0];
+      // Страна Connected Account задаётся только при accounts.create и дальше не меняется
+      // через onboarding. Если в профиле уже другая страна (AM), а аккаунт создан как US —
+      // нельзя снова открывать ссылку на старый acct_*: в форме снова будет США.
+      let remoteAccount;
+      try {
+        remoteAccount = await stripe.accounts.retrieve(existingAccount.account_id);
+      } catch (e) {
+        return error(res, 'Cannot load existing Stripe account', 500, e);
+      }
+      const stripeCountry = String(remoteAccount.country || '').toUpperCase();
+      if (stripeCountry && stripeCountry !== country) {
+        return error(
+          res,
+          'Existing Stripe Connect account was created for another country and cannot be switched from the app. '
+            + `Stripe account country: ${stripeCountry}, requested: ${country}. `
+            + 'Contact support to reset Connect or use a new platform account.',
+          409,
+          { code: 'STRIPE_ACCOUNT_COUNTRY_MISMATCH', stripeCountry, requestedCountry: country }
+        );
+      }
       // Если аккаунт уже существует, создаем новый Account Link для доонбординга
       try {
         const accountLink = await stripe.accountLinks.create({
