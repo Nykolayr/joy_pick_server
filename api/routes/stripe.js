@@ -189,15 +189,27 @@ router.post('/create-account', authenticate, [
 
     let account;
     try {
+      // Рекомендуемая схема Express без устаревшего type=express — см. Stripe API create account + controller.
+      const capabilities = crossBorderRecipient
+        ? {
+            // Кроссбордер (recipient): только transfers; card_payments на acct в этих странах Stripe не даёт.
+            transfers: { requested: true }
+          }
+        : {
+            // В стране платформы: пара card_payments + transfers (иначе Stripe часто требует отдельное одобрение «только transfers»).
+            card_payments: { requested: true },
+            transfers: { requested: true }
+          };
+
       account = await stripe.accounts.create({
-        type: 'express',
         country,
         business_type: 'individual',
-        // Донаты/платежи создаются PaymentIntent на аккаунте платформы; исполнителю нужны выплаты (transfers).
-        // Для многих стран (в т.ч. AM) Stripe не разрешает requested card_payments на Connected Account — см. cross-border / global.
-        capabilities: {
-          transfers: { requested: true }
+        controller: {
+          fees: { payer: 'application' },
+          losses: { payments: 'application' },
+          stripe_dashboard: { type: 'express' }
         },
+        capabilities,
         ...(crossBorderRecipient
           ? { tos_acceptance: { service_agreement: 'recipient' } }
           : {}),
@@ -242,6 +254,20 @@ router.post('/create-account', authenticate, [
         });
       }
       if (stripeErr?.param === 'requested_capabilities') {
+        const msg = String(stripeErr.message || '');
+        if (/needs approval/i.test(msg) && /transfers/i.test(msg) && /card_payments/i.test(msg)) {
+          return error(
+            res,
+            msg || 'Stripe: для выплат без card_payments на connected нужна настройка платформы',
+            403,
+            {
+              code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL',
+              param: stripeErr.param,
+              hint:
+                'В Live Dashboard: Settings → Connect → Express accounts — по умолчанию должны быть запрошены только Transfers (не Card payments), либо напишите в Stripe Support с ссылкой из сообщения.'
+            }
+          );
+        }
         return error(res, stripeErr.message || 'Stripe rejected requested capabilities for this country', 400, {
           code: 'STRIPE_CONNECT_CAPABILITIES',
           stripeCode: stripeErr.code,
