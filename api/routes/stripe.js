@@ -50,6 +50,104 @@ function connectCountryLabelRu(iso2) {
 }
 
 /**
+ * ITU-коды (без +) для сборки E.164, если клиент прислал национальный номер без префикса.
+ * Нет в карте и нет «+» в номере — телефон в Stripe не передаём (онбординг сам не подставляет страну под телефон).
+ */
+const COUNTRY_DIAL_CODES = {
+  US: '1',
+  CA: '1',
+  GB: '44',
+  IE: '353',
+  DE: '49',
+  FR: '33',
+  BE: '32',
+  NL: '31',
+  LU: '352',
+  AT: '43',
+  CH: '41',
+  IT: '39',
+  ES: '34',
+  PT: '351',
+  GR: '30',
+  PL: '48',
+  CZ: '420',
+  SK: '421',
+  HU: '36',
+  RO: '40',
+  BG: '359',
+  HR: '385',
+  SI: '386',
+  EE: '372',
+  LV: '371',
+  LT: '370',
+  FI: '358',
+  SE: '46',
+  NO: '47',
+  DK: '45',
+  IS: '354',
+  MT: '356',
+  CY: '357',
+  AM: '374',
+  UA: '380',
+  MD: '373',
+  GE: '995',
+  AZ: '994',
+  TR: '90',
+  RU: '7',
+  BY: '375',
+  RS: '381',
+  BA: '387',
+  ME: '382',
+  MK: '389',
+  AL: '355',
+  IL: '972',
+  AE: '971',
+  SA: '966',
+  IN: '91',
+  CN: '86',
+  JP: '81',
+  KR: '82',
+  AU: '61',
+  NZ: '64',
+  BR: '55',
+  MX: '52',
+  AR: '54',
+  CL: '56',
+  CO: '57',
+  PE: '51',
+  ZA: '27',
+  EG: '20',
+  NG: '234',
+  KE: '254',
+  KZ: '7'
+};
+
+/**
+ * @param {string} countryIso2
+ * @param {unknown} rawPhone
+ * @returns {string|undefined}
+ */
+function normalizePhoneE164(countryIso2, rawPhone) {
+  if (rawPhone == null) return undefined;
+  const raw = String(rawPhone).trim();
+  if (!raw) return undefined;
+  if (raw.startsWith('+')) {
+    const digits = raw.slice(1).replace(/\D/g, '');
+    return digits ? `+${digits}` : undefined;
+  }
+  const cc = String(countryIso2 || '').toUpperCase();
+  const dial = COUNTRY_DIAL_CODES[cc];
+  if (!dial) return undefined;
+  let digits = raw.replace(/\D/g, '');
+  if (!digits) return undefined;
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('0')) digits = digits.replace(/^0+/, '') || '';
+  if (!digits) return undefined;
+  if (digits.startsWith(dial)) return `+${digits}`;
+  return `+${dial}${digits}`;
+}
+
+/**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
  * @param {string} userId - ID пользователя
@@ -129,6 +227,7 @@ router.post('/create-account', authenticate, [
       return error(res, message, 400, { code });
     }
     const country = countryNorm.country;
+    const phoneE164 = normalizePhoneE164(country, phone);
 
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
@@ -216,7 +315,7 @@ router.post('/create-account', authenticate, [
         first_name: first_name,
         last_name: last_name,
         email: email,
-        phone: phone || undefined,
+        phone: phoneE164 || undefined,
         address: {
           city: city || undefined,
           country
@@ -227,7 +326,7 @@ router.post('/create-account', authenticate, [
         product_description: 'Environmental cleanup volunteer on JoyPick platform',
         mcc: '8398', // Charitable organizations
         support_email: email,
-        support_phone: phone || undefined
+        support_phone: phoneE164 || undefined
       },
       metadata: {
         platform: 'joypick',
@@ -309,7 +408,12 @@ router.post('/create-account', authenticate, [
     return success(res, {
       account_id: account.id,
       account_link_url: accountLink.url,
-      message: 'Account created successfully'
+      ...(!phoneE164
+        ? {
+            stripe_onboarding_phone_hint:
+              'В Stripe в поле телефона часто по умолчанию стоит +1 (страна платформы). Откройте список стран и выберите свой код (например +32 для Бельгии) — Stripe не привязывает его к стране счёта. Чтобы номер подставился в форму, пришлите телефон в create-account в формате +32… или национальный — сервер добавит код по country.'
+          }
+        : {})
     }, 'Account created successfully');
 
   } catch (err) {
