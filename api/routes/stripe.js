@@ -169,6 +169,38 @@ function phoneForStripeConnect(countryIso2, rawPhone) {
 }
 
 /**
+ * Подтягивает телефон (E.164 или «+код») в уже существующий connected account перед Account Link,
+ * чтобы hosted onboarding не оставлял дефолт платформы (+1).
+ * @returns {Promise<{ phoneOmittedAfterStripeReject: boolean }>}
+ */
+async function syncConnectPhoneToExistingStripeAccount(accountId, countryIso2, rawPhone) {
+  const { phoneE164, phoneDialOnlyPlaceholder } = phoneForStripeConnect(countryIso2, rawPhone);
+  let phoneOmittedAfterStripeReject = false;
+  if (!phoneE164) {
+    return { phoneOmittedAfterStripeReject };
+  }
+  const payloadWithPhone = {
+    individual: { phone: phoneE164 },
+    business_profile: { support_phone: phoneE164 }
+  };
+  try {
+    await stripe.accounts.update(accountId, payloadWithPhone);
+  } catch (e) {
+    const msg = String(e.message || '');
+    const phoneReject =
+      phoneDialOnlyPlaceholder &&
+      (/phone/i.test(msg) || /phone/i.test(String(e.param || '')));
+    if (phoneReject) {
+      phoneOmittedAfterStripeReject = true;
+    } else {
+      // Не блокируем выдачу ссылки онбординга из‑за второстепенного update
+      console.error('[stripe/create-account] accounts.update (phone) failed:', e?.message || e);
+    }
+  }
+  return { phoneOmittedAfterStripeReject };
+}
+
+/**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
  * @param {string} userId - ID пользователя
@@ -270,6 +302,12 @@ router.post('/create-account', authenticate, [
       const stripeCountry = String(remoteAccount.country || '').toUpperCase();
       if (stripeCountry === country) {
         try {
+          const { phoneOmittedAfterStripeReject } = await syncConnectPhoneToExistingStripeAccount(
+            existingAccount.account_id,
+            country,
+            phone
+          );
+
           const accountLink = await stripe.accountLinks.create({
             account: existingAccount.account_id,
             refresh_url: process.env.STRIPE_REFRESH_URL || defaultStripeRefreshUrl(),
@@ -277,10 +315,23 @@ router.post('/create-account', authenticate, [
             type: 'account_onboarding'
           });
 
+          const extraExisting = {};
+          if (phoneOmittedAfterStripeReject) {
+            extraExisting.stripe_onboarding_phone_hint =
+              'Платёжная система не приняла номер только с кодом страны — в форме Stripe выберите код страны и введите полный номер.';
+          } else if (phoneDialOnlyPlaceholder) {
+            extraExisting.stripe_onboarding_phone_hint =
+              'Передан код страны для телефона — в форме Stripe допишите остальные цифры номера.';
+          } else if (!phoneE164) {
+            extraExisting.stripe_onboarding_phone_hint =
+              'Для выбранной страны нет кода в справочнике сервера — в Stripe вручную выберите код страны в поле телефона.';
+          }
+
           return success(res, {
             account_id: existingAccount.account_id,
             account_link_url: accountLink.url,
-            message: 'Account already exists, onboarding link created'
+            message: 'Account already exists, onboarding link created',
+            ...extraExisting
           }, 'Account link created');
         } catch (err) {
           return error(res, 'Error creating Account Link', 500, err);
