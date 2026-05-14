@@ -263,8 +263,9 @@ router.post('/create-account', authenticate, [
             {
               code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL',
               param: stripeErr.param,
+              supportUrl: 'https://support.stripe.com/contact',
               hint:
-                'В Live Dashboard: Settings → Connect → Express accounts — по умолчанию должны быть запрошены только Transfers (не Card payments), либо напишите в Stripe Support с ссылкой из сообщения.'
+                'Это ограничение аккаунта платформы в Stripe, не бэкенда JoyPick. Для Армении на connected нельзя запросить card_payments — только transfers + recipient; Stripe требует явного одобрения платформы на такой сценарий. Напишите в Stripe Support (ссылка в supportUrl) с этим текстом ошибки и опишите модель: платежи PaymentIntent на платформе, выплаты исполнителям в AM через Connect transfers. Параллельно в Live Dashboard проверьте Connect → настройки Express/Onboarding: не должно навязываться «Card payments», если платформа ещё не одобрена для transfers-only.'
             }
           );
         }
