@@ -148,6 +148,27 @@ function normalizePhoneE164(countryIso2, rawPhone) {
 }
 
 /**
+ * Телефон для Connect: полный E.164 или, если клиент не прислал номер, хотя бы «+код» по country
+ * (чтобы в hosted onboarding не подставлялся +1 платформы). Если Stripe отклонит «только код» — см. retry в create-account.
+ * @returns {{ phoneE164: string|undefined, phoneDialOnlyPlaceholder: boolean }}
+ */
+function phoneForStripeConnect(countryIso2, rawPhone) {
+  const rawTrim = String(rawPhone ?? '').trim();
+  const normalized = normalizePhoneE164(countryIso2, rawPhone);
+  if (normalized) {
+    return { phoneE164: normalized, phoneDialOnlyPlaceholder: false };
+  }
+  if (rawTrim) {
+    return { phoneE164: undefined, phoneDialOnlyPlaceholder: false };
+  }
+  const dial = COUNTRY_DIAL_CODES[String(countryIso2 || '').toUpperCase()];
+  if (!dial) {
+    return { phoneE164: undefined, phoneDialOnlyPlaceholder: false };
+  }
+  return { phoneE164: `+${dial}`, phoneDialOnlyPlaceholder: true };
+}
+
+/**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
  * @param {string} userId - ID пользователя
@@ -227,7 +248,7 @@ router.post('/create-account', authenticate, [
       return error(res, message, 400, { code });
     }
     const country = countryNorm.country;
-    const phoneE164 = normalizePhoneE164(country, phone);
+    const { phoneE164, phoneDialOnlyPlaceholder } = phoneForStripeConnect(country, phone);
 
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
@@ -288,59 +309,79 @@ router.post('/create-account', authenticate, [
       // не return — ниже создаём новый accounts.create с [country]
     }
 
-    const buildAccountCreateParams = (recipientMode) => ({
-      country,
-      business_type: 'individual',
-      controller: {
-        fees: { payer: 'application' },
-        losses: { payments: 'application' },
-        stripe_dashboard: { type: 'express' }
-      },
-      capabilities: recipientMode
-        ? { transfers: { requested: true } }
-        : {
-            card_payments: { requested: true },
-            transfers: { requested: true }
-          },
-      ...(recipientMode ? { tos_acceptance: { service_agreement: 'recipient' } } : {}),
-      settings: {
-        payouts: {
-          schedule: {
-            interval: 'daily' // Ежедневные выплаты по умолчанию
+    const buildAccountCreateParams = (recipientMode, includePhoneFields = true) => {
+      const withPhone = !!(includePhoneFields && phoneE164);
+      return {
+        country,
+        business_type: 'individual',
+        controller: {
+          fees: { payer: 'application' },
+          losses: { payments: 'application' },
+          stripe_dashboard: { type: 'express' }
+        },
+        capabilities: recipientMode
+          ? { transfers: { requested: true } }
+          : {
+              card_payments: { requested: true },
+              transfers: { requested: true }
+            },
+        ...(recipientMode ? { tos_acceptance: { service_agreement: 'recipient' } } : {}),
+        settings: {
+          payouts: {
+            schedule: {
+              interval: 'daily' // Ежедневные выплаты по умолчанию
+            }
           }
-        }
-      },
-      email: email,
-      individual: {
-        first_name: first_name,
-        last_name: last_name,
+        },
         email: email,
-        phone: phoneE164 || undefined,
-        address: {
-          city: city || undefined,
-          country
+        individual: {
+          first_name: first_name,
+          last_name: last_name,
+          email: email,
+          ...(withPhone ? { phone: phoneE164 } : {}),
+          address: {
+            city: city || undefined,
+            country
+          }
+        },
+        business_profile: {
+          url: `${publicSiteOrigin()}/profile/${user_id}`,
+          product_description: 'Environmental cleanup volunteer on JoyPick platform',
+          mcc: '8398', // Charitable organizations
+          support_email: email,
+          ...(withPhone ? { support_phone: phoneE164 } : {})
+        },
+        metadata: {
+          platform: 'joypick',
+          account_type: 'volunteer',
+          user_id: user_id
         }
-      },
-      business_profile: {
-        url: `${publicSiteOrigin()}/profile/${user_id}`,
-        product_description: 'Environmental cleanup volunteer on JoyPick platform',
-        mcc: '8398', // Charitable organizations
-        support_email: email,
-        support_phone: phoneE164 || undefined
-      },
-      metadata: {
-        platform: 'joypick',
-        account_type: 'volunteer',
-        user_id: user_id
-      }
-    });
+      };
+    };
 
     let account;
+    let phoneOmittedAfterStripeReject = false;
+    const createAccountWithOptionalPhoneRetry = async (recipientMode) => {
+      try {
+        return await stripe.accounts.create(buildAccountCreateParams(recipientMode, true));
+      } catch (e) {
+        const msg = String(e.message || '');
+        const phoneReject =
+          phoneDialOnlyPlaceholder
+          && (/phone/i.test(msg) || /phone/i.test(String(e.param || '')));
+        if (phoneReject) {
+          phoneOmittedAfterStripeReject = true;
+          return await stripe.accounts.create(buildAccountCreateParams(recipientMode, false));
+        }
+        throw e;
+      }
+    };
+
     try {
       // Сначала обычный Express: card_payments + transfers (так для BE, EU и большинства стран).
       // Только если Stripe запрещает card_payments для этой страны (как AM) — второй вызов: transfers + recipient.
       try {
-        account = await stripe.accounts.create(buildAccountCreateParams(false));
+        account = await createAccountWithOptionalPhoneRetry(false);
       } catch (firstErr) {
         const msg0 = String(firstErr.message || '');
         const cardPaymentsBlocked =
@@ -348,7 +389,7 @@ router.post('/create-account', authenticate, [
           && /card_payments/i.test(msg0)
           && (/cannot request/i.test(msg0) || /You cannot request/i.test(msg0));
         if (!cardPaymentsBlocked) throw firstErr;
-        account = await stripe.accounts.create(buildAccountCreateParams(true));
+        account = await createAccountWithOptionalPhoneRetry(true);
       }
     } catch (stripeErr) {
       const isCountry = stripeErr?.code === 'account_country_invalid'
@@ -405,15 +446,21 @@ router.post('/create-account', authenticate, [
       type: 'account_onboarding'
     });
 
+    const extra = {};
+    if (phoneOmittedAfterStripeReject) {
+      extra.stripe_onboarding_phone_hint =
+        'Платёжная система не приняла номер только с кодом страны — в форме Stripe выберите код страны и введите полный номер.';
+    } else if (phoneDialOnlyPlaceholder) {
+      extra.stripe_onboarding_phone_hint =
+        'Передан код страны для телефона — в форме Stripe допишите остальные цифры номера.';
+    } else if (!phoneE164) {
+      extra.stripe_onboarding_phone_hint =
+        'Для выбранной страны нет кода в справочнике сервера — в Stripe вручную выберите код страны в поле телефона.';
+    }
     return success(res, {
       account_id: account.id,
       account_link_url: accountLink.url,
-      ...(!phoneE164
-        ? {
-            stripe_onboarding_phone_hint:
-              'В Stripe в поле телефона часто по умолчанию стоит +1 (страна платформы). Откройте список стран и выберите свой код (например +32 для Бельгии) — Stripe не привязывает его к стране счёта. Чтобы номер подставился в форму, пришлите телефон в create-account в формате +32… или национальный — сервер добавит код по country.'
-          }
-        : {})
+      ...extra
     }, 'Account created successfully');
 
   } catch (err) {
