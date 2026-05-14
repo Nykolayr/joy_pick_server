@@ -181,8 +181,9 @@ router.post('/create-account', authenticate, [
         type: 'express',
         country,
         business_type: 'individual',
+        // Донаты/платежи создаются PaymentIntent на аккаунте платформы; исполнителю нужны выплаты (transfers).
+        // Для многих стран (в т.ч. AM) Stripe не разрешает requested card_payments на Connected Account — см. cross-border / global.
         capabilities: {
-          card_payments: { requested: true },
           transfers: { requested: true }
         },
         settings: {
@@ -223,6 +224,13 @@ router.post('/create-account', authenticate, [
         return error(res, stripeErr.message || 'Stripe rejected this country for Connect', 400, {
           code: 'STRIPE_COUNTRY_NOT_SUPPORTED',
           stripeCode: stripeErr.code
+        });
+      }
+      if (stripeErr?.param === 'requested_capabilities') {
+        return error(res, stripeErr.message || 'Stripe rejected requested capabilities for this country', 400, {
+          code: 'STRIPE_CONNECT_CAPABILITIES',
+          stripeCode: stripeErr.code,
+          param: stripeErr.param
         });
       }
       return error(res, 'Error creating Stripe account', 500, stripeErr);
