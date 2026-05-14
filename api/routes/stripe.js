@@ -258,14 +258,10 @@ router.post('/create-account', authenticate, [
         if (/needs approval/i.test(msg) && /transfers/i.test(msg) && /card_payments/i.test(msg)) {
           return error(
             res,
-            msg || 'Stripe: для выплат без card_payments на connected нужна настройка платформы',
+            'Подключение счёта для выплат в вашем регионе сейчас недоступно. Напишите в поддержку приложения — подскажем, что делать дальше.',
             403,
             {
-              code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL',
-              param: stripeErr.param,
-              supportUrl: 'https://support.stripe.com/contact',
-              hint:
-                'Это ограничение аккаунта платформы в Stripe, не бэкенда JoyPick. Для Армении на connected нельзя запросить card_payments — только transfers + recipient; Stripe требует явного одобрения платформы на такой сценарий. Напишите в Stripe Support (ссылка в supportUrl) с этим текстом ошибки и опишите модель: платежи PaymentIntent на платформе, выплаты исполнителям в AM через Connect transfers. Параллельно в Live Dashboard проверьте Connect → настройки Express/Onboarding: не должно навязываться «Card payments», если платформа ещё не одобрена для transfers-only.'
+              code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL'
             }
           );
         }
