@@ -35,14 +35,18 @@ function normalizeConnectCountry(raw) {
   return { ok: true, country: s };
 }
 
-/**
- * Страна аккаунта платформы в Stripe (для кого идут PI на платформе).
- * Если connected.country !== platform — нужен recipient service agreement (cross-border transfers).
- * @see https://stripe.com/docs/connect/service-agreement-types#choosing-type-with-api
- */
-function stripeConnectPlatformCountry() {
-  const raw = (process.env.STRIPE_CONNECT_PLATFORM_COUNTRY || 'US').trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(raw) ? raw : 'US';
+/** Человекочитаемое название страны (ISO2) для сообщений в UI, напр. «Бельгия (BE)». */
+function connectCountryLabelRu(iso2) {
+  const code = String(iso2 || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return code || '—';
+  try {
+    const dn = new Intl.DisplayNames(['ru'], { type: 'region' });
+    const name = dn.of(code);
+    if (name && name !== code) return `${name} (${code})`;
+  } catch {
+    // ignore
+  }
+  return code;
 }
 
 /**
@@ -125,8 +129,6 @@ router.post('/create-account', authenticate, [
       return error(res, message, 400, { code });
     }
     const country = countryNorm.country;
-    const platformCountry = stripeConnectPlatformCountry();
-    const crossBorderRecipient = country !== platformCountry;
 
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
@@ -187,63 +189,68 @@ router.post('/create-account', authenticate, [
       // не return — ниже создаём новый accounts.create с [country]
     }
 
-    let account;
-    try {
-      // Рекомендуемая схема Express без устаревшего type=express — см. Stripe API create account + controller.
-      const capabilities = crossBorderRecipient
-        ? {
-            // Кроссбордер (recipient): только transfers; card_payments на acct в этих странах Stripe не даёт.
-            transfers: { requested: true }
-          }
+    const buildAccountCreateParams = (recipientMode) => ({
+      country,
+      business_type: 'individual',
+      controller: {
+        fees: { payer: 'application' },
+        losses: { payments: 'application' },
+        stripe_dashboard: { type: 'express' }
+      },
+      capabilities: recipientMode
+        ? { transfers: { requested: true } }
         : {
-            // В стране платформы: пара card_payments + transfers (иначе Stripe часто требует отдельное одобрение «только transfers»).
             card_payments: { requested: true },
             transfers: { requested: true }
-          };
-
-      account = await stripe.accounts.create({
-        country,
-        business_type: 'individual',
-        controller: {
-          fees: { payer: 'application' },
-          losses: { payments: 'application' },
-          stripe_dashboard: { type: 'express' }
-        },
-        capabilities,
-        ...(crossBorderRecipient
-          ? { tos_acceptance: { service_agreement: 'recipient' } }
-          : {}),
-        settings: {
-          payouts: {
-            schedule: {
-              interval: 'daily' // Ежедневные выплаты по умолчанию
-            }
+          },
+      ...(recipientMode ? { tos_acceptance: { service_agreement: 'recipient' } } : {}),
+      settings: {
+        payouts: {
+          schedule: {
+            interval: 'daily' // Ежедневные выплаты по умолчанию
           }
-        },
-        email: email,
-        individual: {
-          first_name: first_name,
-          last_name: last_name,
-          email: email,
-          phone: phone || undefined,
-          address: {
-            city: city || undefined,
-            country
-          }
-        },
-        business_profile: {
-          url: `${publicSiteOrigin()}/profile/${user_id}`,
-          product_description: 'Environmental cleanup volunteer on JoyPick platform',
-          mcc: '8398', // Charitable organizations
-          support_email: email,
-          support_phone: phone || undefined
-        },
-        metadata: {
-          platform: 'joypick',
-          account_type: 'volunteer',
-          user_id: user_id
         }
-      });
+      },
+      email: email,
+      individual: {
+        first_name: first_name,
+        last_name: last_name,
+        email: email,
+        phone: phone || undefined,
+        address: {
+          city: city || undefined,
+          country
+        }
+      },
+      business_profile: {
+        url: `${publicSiteOrigin()}/profile/${user_id}`,
+        product_description: 'Environmental cleanup volunteer on JoyPick platform',
+        mcc: '8398', // Charitable organizations
+        support_email: email,
+        support_phone: phone || undefined
+      },
+      metadata: {
+        platform: 'joypick',
+        account_type: 'volunteer',
+        user_id: user_id
+      }
+    });
+
+    let account;
+    try {
+      // Сначала обычный Express: card_payments + transfers (так для BE, EU и большинства стран).
+      // Только если Stripe запрещает card_payments для этой страны (как AM) — второй вызов: transfers + recipient.
+      try {
+        account = await stripe.accounts.create(buildAccountCreateParams(false));
+      } catch (firstErr) {
+        const msg0 = String(firstErr.message || '');
+        const cardPaymentsBlocked =
+          firstErr?.param === 'requested_capabilities'
+          && /card_payments/i.test(msg0)
+          && (/cannot request/i.test(msg0) || /You cannot request/i.test(msg0));
+        if (!cardPaymentsBlocked) throw firstErr;
+        account = await stripe.accounts.create(buildAccountCreateParams(true));
+      }
     } catch (stripeErr) {
       const isCountry = stripeErr?.code === 'account_country_invalid'
         || String(stripeErr?.message || '').toLowerCase().includes('country');
@@ -256,12 +263,14 @@ router.post('/create-account', authenticate, [
       if (stripeErr?.param === 'requested_capabilities') {
         const msg = String(stripeErr.message || '');
         if (/needs approval/i.test(msg) && /transfers/i.test(msg) && /card_payments/i.test(msg)) {
+          const label = connectCountryLabelRu(country);
           return error(
             res,
-            'Подключение счёта для выплат в вашем регионе сейчас недоступно. Напишите в поддержку приложения — подскажем, что делать дальше.',
+            `Подключение счёта для выплат (${label}) сейчас недоступно. Напишите в поддержку приложения — подскажем, что делать дальше.`,
             403,
             {
-              code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL'
+              code: 'STRIPE_PLATFORM_TRANSFERS_ONLY_APPROVAL',
+              country
             }
           );
         }
