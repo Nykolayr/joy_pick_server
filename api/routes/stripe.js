@@ -36,6 +36,16 @@ function normalizeConnectCountry(raw) {
 }
 
 /**
+ * Страна аккаунта платформы в Stripe (для кого идут PI на платформе).
+ * Если connected.country !== platform — нужен recipient service agreement (cross-border transfers).
+ * @see https://stripe.com/docs/connect/service-agreement-types#choosing-type-with-api
+ */
+function stripeConnectPlatformCountry() {
+  const raw = (process.env.STRIPE_CONNECT_PLATFORM_COUNTRY || 'US').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(raw) ? raw : 'US';
+}
+
+/**
  * Обновляет кэш статуса Stripe в таблице users.
  * Вызывать при GET account-status и по вебхуку account.updated.
  * @param {string} userId - ID пользователя
@@ -115,6 +125,8 @@ router.post('/create-account', authenticate, [
       return error(res, message, 400, { code });
     }
     const country = countryNorm.country;
+    const platformCountry = stripeConnectPlatformCountry();
+    const crossBorderRecipient = country !== platformCountry;
 
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
@@ -186,6 +198,9 @@ router.post('/create-account', authenticate, [
         capabilities: {
           transfers: { requested: true }
         },
+        ...(crossBorderRecipient
+          ? { tos_acceptance: { service_agreement: 'recipient' } }
+          : {}),
         settings: {
           payouts: {
             schedule: {
