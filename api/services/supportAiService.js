@@ -1753,6 +1753,37 @@ function buildExistingRequestActionsAnswer(roleHint, answerLanguage) {
   return 'For an existing request, actions are done in that request details screen (buttons depend on type and role). If you specify type (Waste Location / Speed Cleanup / Event), I will give exact actions for the current request without creation flow.';
 }
 
+/** «Нужен кто-то убрать парк/двор» — частый in-app сценарий; без LLM, чтобы не упираться в лимиты контекста при тяжёлом RU prompt. */
+function isPublicTerritoryCleanupOrderQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const wantsHelp =
+    /хочу\s+чтобы|нуж(ен|на|но|ны)\s+(кто|люди|человек)|кто[-\s]?нибудь|кое[-\s]?кто|приглас(ить|и)|ищу\s+(кто|людей|помощ|волонт)/i.test(
+      q
+    );
+  const place = /парк|двор|территор|участок|сквер|лесопарк|набережн/i.test(q);
+  const cleanup = /убрал|убрать|уборк|прибрал|прибрать|посорти|навести\s+чистот|почистил/i.test(q);
+  return wantsHelp && place && cleanup;
+}
+
+function buildPublicTerritoryCleanupOrderAnswer(modelLanguage) {
+  if (modelLanguage === 'ru') {
+    return (
+      'Чтобы кто-то пришёл убрать территорию (например парк) через Joy Pick, создайте заявку на главной карте. ' +
+      'Обычно это Waste Location (уборка с точкой на карте) — другие пользователи увидят её в списке и на карте и смогут присоединиться как исполнители. ' +
+      'Если нужна уборка к определённому времени и координация людей — подойдёт тип Event (субботник). ' +
+      'При создании Waste Location можно включить донат или опцию вывоза мусора, если это ваш случай. ' +
+      'Подробные шаги — в разделе «Справка» в приложении.'
+    );
+  }
+  return (
+    'To have someone clean a territory (for example a park) via Joy Pick, create a request on the home map. ' +
+    'Usually use Waste Location (cleanup with a map pin) so others can see it on the map/list and join as executors. ' +
+    'For time-based coordination, use an Event (subbotnik). When creating Waste Location you can enable donations or trash haul-away if needed. ' +
+    'See in-app Help for step-by-step details.'
+  );
+}
+
 function isConcreteAmountQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
@@ -2114,12 +2145,18 @@ function buildUserPrompt(question, chunks, conversationContext, answerLanguage, 
   return body;
 }
 
-function roughPromptTokenEstimate(text) {
+function roughPromptTokenEstimate(text, answerLanguage = 'en') {
   const s = String(text || '');
   if (!s.length) return 0;
-  const base = Math.ceil(s.length / PROMPT_CHARS_PER_TOKEN_EST);
-  /** Запас к реальному счёту OpenRouter (часто выше chars/токен для RU system). */
-  return Math.ceil(base * 1.28);
+  const cyrCount = (s.match(/[\u0400-\u04FF]/g) || []).length;
+  const cyrRatio = cyrCount / Math.max(s.length, 1);
+  let charsPerTok = PROMPT_CHARS_PER_TOKEN_EST;
+  if (answerLanguage === 'ru' || cyrRatio > 0.12) {
+    charsPerTok = Math.max(1.12, PROMPT_CHARS_PER_TOKEN_EST * 0.58);
+  }
+  const base = Math.ceil(s.length / charsPerTok);
+  const safety = answerLanguage === 'ru' || cyrRatio > 0.12 ? 1.42 : 1.28;
+  return Math.ceil(base * safety);
 }
 
 function truncateChunkTextForBudget(text, maxChars) {
@@ -2144,7 +2181,7 @@ function fitChunksForOpenRouterPromptBudget({
     1000,
     maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS - 420
   );
-  const sysTok = roughPromptTokenEstimate(systemInstruction);
+  const sysTok = roughPromptTokenEstimate(systemInstruction, 'en');
   if (sysTok >= cap) {
     return [];
   }
@@ -2153,7 +2190,8 @@ function fitChunksForOpenRouterPromptBudget({
   const userTok = () =>
     sysTok +
     roughPromptTokenEstimate(
-      buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint)
+      buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint),
+      answerLanguage
     );
 
   while (list.length > 1 && userTok() > cap) {
@@ -2434,6 +2472,9 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     !/как\s+создать|create\s+(a\s+)?new\s+request/i.test(normalizeText(questionForModel).toLowerCase())
       ? buildExistingRequestActionsAnswer(roleHintForDeterministic, modelLanguage)
       : null;
+  const deterministicTerritoryCleanupOrderAnswer = isPublicTerritoryCleanupOrderQuestion(questionForModel)
+    ? buildPublicTerritoryCleanupOrderAnswer(modelLanguage)
+    : null;
   const deterministicAnswer =
     deterministicCompletedCleanupsAnswer ||
     deterministicNewsSectionAnswer ||
@@ -2448,6 +2489,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     deterministicWasteSingleExecutorAnswer ||
     deterministicAmountAnswer ||
     deterministicExistingRequestActionsAnswer ||
+    deterministicTerritoryCleanupOrderAnswer ||
     deterministicStageAnswer;
   if (deterministicAnswer) {
     const plainDeterministic = stripSupportAnswerMarkdown(deterministicAnswer);
@@ -2481,61 +2523,90 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
           ? 'deterministic_amount_router'
           : deterministicExistingRequestActionsAnswer
             ? 'deterministic_existing_request_router'
-            : 'deterministic_stage_router',
+            : deterministicTerritoryCleanupOrderAnswer
+              ? 'deterministic_territory_cleanup_order_router'
+              : deterministicStageAnswer
+                ? 'deterministic_stage_router'
+                : 'deterministic_router',
       translation_fallback: false,
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   }
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
-  const fittedChunks = fitChunksForOpenRouterPromptBudget({
-    userQuestion: questionForModel,
-    chunks,
-    conversationContext,
-    answerLanguage: modelLanguage,
-    roleHint,
-    systemInstruction,
-    maxPromptTokens: modelLanguage === 'ru' ? OPENROUTER_MAX_PROMPT_TOKENS_RU : OPENROUTER_MAX_PROMPT_TOKENS
-  });
+  const maxPromptForFit = modelLanguage === 'ru' ? OPENROUTER_MAX_PROMPT_TOKENS_RU : OPENROUTER_MAX_PROMPT_TOKENS;
+  const overflowRe =
+    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long/i;
+
   const llmArgs = {
     userQuestion: questionForModel,
-    chunks: fittedChunks,
+    chunks: [],
     answerLanguage: modelLanguage,
     conversationContext,
     roleHint,
     systemInstruction
   };
 
-  try {
-    const aiResult = await callOpenRouterAnswer(llmArgs);
+  let fittedChunks = fitChunksForOpenRouterPromptBudget({
+    userQuestion: questionForModel,
+    chunks,
+    conversationContext,
+    answerLanguage: modelLanguage,
+    roleHint,
+    systemInstruction,
+    maxPromptTokens: maxPromptForFit
+  });
+  llmArgs.chunks = fittedChunks;
 
-    const { answer, model } = aiResult;
-    const plainEn = stripSupportAnswerMarkdown(answer);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt === 1) {
+      fittedChunks = fitChunksForOpenRouterPromptBudget({
+        userQuestion: questionForModel,
+        chunks,
+        conversationContext,
+        answerLanguage: modelLanguage,
+        roleHint,
+        systemInstruction,
+        maxPromptTokens: Math.max(2500, Math.floor(maxPromptForFit * 0.62))
+      });
+      llmArgs.chunks = fittedChunks;
+    }
+    try {
+      const aiResult = await callOpenRouterAnswer(llmArgs);
 
-    if (answerLocale === 'ru') {
+      const { answer, model } = aiResult;
+      const plainEn = stripSupportAnswerMarkdown(answer);
+
+      if (answerLocale === 'ru') {
+        return {
+          answer: stripSupportAnswerMarkdown(answer),
+          answer_en: null,
+          locale: 'ru',
+          model,
+          translation_fallback: false,
+          sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
+        };
+      }
+
+      const localized = await localizeAnswer(answer, answerLocale);
+
       return {
-        answer: stripSupportAnswerMarkdown(answer),
-        answer_en: null,
-        locale: 'ru',
+        answer: stripSupportAnswerMarkdown(localized.answer),
+        answer_en: plainEn,
+        locale: localized.locale,
         model,
-        translation_fallback: false,
+        translation_fallback: localized.translationFallback,
         sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
       };
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (attempt === 0 && overflowRe.test(msg)) {
+        continue;
+      }
+      const reason = msg ? `openrouter: ${msg}` : 'ai_unavailable';
+      return buildUnavailableAnswer(answerLocale, reason);
     }
-
-    const localized = await localizeAnswer(answer, answerLocale);
-
-    return {
-      answer: stripSupportAnswerMarkdown(localized.answer),
-      answer_en: plainEn,
-      locale: localized.locale,
-      model,
-      translation_fallback: localized.translationFallback,
-      sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
-    };
-  } catch (err) {
-    const reason = err?.message ? `openrouter: ${err.message}` : 'ai_unavailable';
-    return buildUnavailableAnswer(answerLocale, reason);
   }
+  return buildUnavailableAnswer(answerLocale, 'openrouter: prompt_overflow_retry_exhausted');
 }
 
 module.exports = {
