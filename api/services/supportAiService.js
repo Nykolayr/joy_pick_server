@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { encodeChat } = require('gpt-tokenizer');
 const { SUPPORTED_LOCALES, translateOne } = require('./translateNews');
 
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
@@ -15,13 +16,20 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
   Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 11000)
 );
 /**
- * Дефолт для RU держим заметно ниже жёсткого лимита «prompt tokens» на ключе OpenRouter (часто ~3516 на бесплатном/низком тарифе),
- * иначе запрос отклоняется уже на 3700+ токенов при нашем оценочном укладывании. На платном ключе поднимите AI_SUPPORT_MAX_PROMPT_TOKENS_RU.
+ * Жёсткий потолок **prompt** (system+user в формате чата), подсчитанный через `encodeChat` (gpt-tokenizer).
+ * Лимит ключа OpenRouter часто ~3516 — держим дефолт с запасом; на платном ключе поднимите AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS.
+ * Устаревший AI_SUPPORT_MAX_PROMPT_TOKENS_RU читается как fallback, если новый env не задан.
  */
-const OPENROUTER_MAX_PROMPT_TOKENS_RU = Math.max(
-  2000,
-  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 3000)
+const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.max(
+  1200,
+  Number(
+    process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
+      || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
+      || 3100
+  )
 );
+/** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
+const OPENROUTER_TOKENIZER_MODEL = String(process.env.AI_SUPPORT_TOKENIZER_MODEL || 'gpt-4o-mini').trim();
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 /** В LLM-пrompt только последние N реплик и укороченный текст — иначе гостевой чат раздувает prompt выше лимита OpenRouter. */
 const CONTEXT_PROMPT_MAX_TURNS = Math.min(12, Math.max(1, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS || 3)));
@@ -2138,9 +2146,30 @@ function truncateChunkTextForBudget(text, maxChars) {
 }
 
 /**
- * Укладываем system+user в лимит OpenRouter: сначала уменьшаем число чанков, затем обрезаем text у оставшихся.
+ * Реальное число токенов prompt (system + user) в формате чата — под лимит ключа OpenRouter.
  */
-function fitChunksForOpenRouterPromptBudget({
+function countOpenRouterChatPromptTokens(systemText, userText) {
+  try {
+    return encodeChat(
+      [
+        { role: 'system', content: String(systemText || '') },
+        { role: 'user', content: String(userText || '') }
+      ],
+      OPENROUTER_TOKENIZER_MODEL
+    ).length;
+  } catch {
+    return (
+      roughPromptTokenEstimate(systemText, 'en') +
+      roughPromptTokenEstimate(userText, 'ru') +
+      24
+    );
+  }
+}
+
+/**
+ * Укладываем system + user (с чанками) в жёсткий потолок токенов; порядок: меньше чанков → короче текст чанков → короче system.
+ */
+function fitOpenRouterPromptParts({
   userQuestion,
   chunks,
   conversationContext,
@@ -2149,51 +2178,48 @@ function fitChunksForOpenRouterPromptBudget({
   systemInstruction,
   maxPromptTokens
 }) {
-  const cap = Math.max(
-    1000,
-    maxPromptTokens - OPENROUTER_PROMPT_TOKEN_BUFFER - DEFAULT_MAX_OUTPUT_TOKENS - 420
-  );
-  const sysTok = roughPromptTokenEstimate(systemInstruction, 'en');
-  if (sysTok >= cap) {
-    return [];
-  }
-
+  const budget = Math.max(800, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
+  let sys = String(systemInstruction || '');
   let list = Array.isArray(chunks) && chunks.length ? chunks.map((c) => ({ ...c })) : [];
-  const userTok = () =>
-    sysTok +
-    roughPromptTokenEstimate(
-      buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint),
-      answerLanguage
-    );
 
-  while (list.length > 1 && userTok() > cap) {
-    list.pop();
-  }
+  const userBody = () =>
+    buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint);
+  const total = () => countOpenRouterChatPromptTokens(sys, userBody());
 
-  let maxChunkChars = 24000;
   let guard = 0;
-  while (list.length && userTok() > cap && guard++ < 48) {
-    maxChunkChars = Math.max(400, Math.floor(maxChunkChars * 0.82));
-    list = list.map((c) => ({
-      ...c,
-      text: truncateChunkTextForBudget(c.text || '', maxChunkChars)
-    }));
-  }
-
-  guard = 0;
-  while (list.length && userTok() > cap && guard++ < 24) {
+  while (total() > budget && guard++ < 220) {
     if (list.length > 1) {
       list.pop();
       continue;
     }
-    maxChunkChars = Math.max(200, Math.floor(maxChunkChars * 0.7));
-    list = list.map((c) => ({
-      ...c,
-      text: truncateChunkTextForBudget(c.text || '', maxChunkChars)
-    }));
+    if (list.length === 1) {
+      const t = String(list[0].text || '');
+      if (t.length > 350) {
+        list = [
+          {
+            ...list[0],
+            text: truncateChunkTextForBudget(t, Math.max(280, Math.floor(t.length * 0.86)))
+          }
+        ];
+        continue;
+      }
+      list = [];
+      continue;
+    }
+    if (sys.length > 2400) {
+      sys = sys.slice(0, Math.floor(sys.length * 0.9));
+      continue;
+    }
+    if (sys.length > 1200) {
+      sys = sys.slice(0, Math.max(1000, sys.length - 350));
+      continue;
+    }
+    break;
   }
-
-  return list;
+  while (total() > budget && sys.length > 900) {
+    sys = sys.slice(0, Math.floor(sys.length * 0.88));
+  }
+  return { systemInstruction: sys, chunks: list };
 }
 
 async function callOpenRouterAnswer({
@@ -2213,66 +2239,46 @@ async function callOpenRouterAnswer({
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  const systemFull =
+  const systemInstruction =
     prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
-  const systemMaxCharsRu = Math.max(
-    3200,
-    Number(process.env.AI_SUPPORT_OPENROUTER_SYSTEM_MAX_CHARS_RU || 4800)
-  );
-  const shrinkSystemForRu = (text, factor) => {
-    if (answerLanguage !== 'ru') return text;
-    const cap = Math.max(2800, Math.floor(systemMaxCharsRu * factor));
-    return String(text || '').length <= cap ? String(text || '') : String(text || '').slice(0, cap);
-  };
-
-  const promptLimitRe = /prompt\s+tokens\s+limit\s+exceeded/i;
-  let systemInstruction = shrinkSystemForRu(systemFull, 1);
+  const userContent = buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint);
 
   try {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (attempt > 0 && answerLanguage === 'ru') {
-        systemInstruction = shrinkSystemForRu(systemFull, attempt === 1 ? 0.82 : 0.66);
-      }
-      const payload = {
-        model,
-        messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }
-        ],
-        temperature: DEFAULT_TEMPERATURE,
-        max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
-      };
+    const payload = {
+      model,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: userContent }
+      ],
+      temperature: DEFAULT_TEMPERATURE,
+      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
+    };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
 
-      const json = await response.json();
-      if (!response.ok) {
-        const msg = json?.error?.message || `OpenRouter error ${response.status}`;
-        if (answerLanguage === 'ru' && promptLimitRe.test(msg) && attempt < 2) {
-          continue;
-        }
-        throw new Error(msg);
-      }
-
-      const answer = json?.choices?.[0]?.message?.content || '';
-      if (!answer) {
-        throw new Error('OpenRouter returned empty response');
-      }
-
-      return {
-        answer: String(answer).trim(),
-        model
-      };
+    const json = await response.json();
+    if (!response.ok) {
+      const msg = json?.error?.message || `OpenRouter error ${response.status}`;
+      throw new Error(msg);
     }
-    throw new Error('OpenRouter prompt limit retries exhausted');
+
+    const answer = json?.choices?.[0]?.message?.content || '';
+    if (!answer) {
+      throw new Error('OpenRouter returned empty response');
+    }
+
+    return {
+      answer: String(answer).trim(),
+      model
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -2518,42 +2524,37 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     };
   }
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
-  const maxPromptForFit = modelLanguage === 'ru' ? OPENROUTER_MAX_PROMPT_TOKENS_RU : OPENROUTER_MAX_PROMPT_TOKENS;
   const overflowRe =
     /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded/i;
 
+  const refitOpenRouterPrompt = (budget) =>
+    fitOpenRouterPromptParts({
+      userQuestion: questionForModel,
+      chunks,
+      conversationContext,
+      answerLanguage: modelLanguage,
+      roleHint,
+      systemInstruction,
+      maxPromptTokens: budget
+    });
+
+  let promptBudget = OPENROUTER_KEY_MAX_PROMPT_TOKENS;
+  let fittedChunks = refitOpenRouterPrompt(promptBudget);
   const llmArgs = {
     userQuestion: questionForModel,
-    chunks: [],
+    chunks: fittedChunks.chunks,
     answerLanguage: modelLanguage,
     conversationContext,
     roleHint,
-    systemInstruction
+    systemInstruction: fittedChunks.systemInstruction
   };
-
-  let fittedChunks = fitChunksForOpenRouterPromptBudget({
-    userQuestion: questionForModel,
-    chunks,
-    conversationContext,
-    answerLanguage: modelLanguage,
-    roleHint,
-    systemInstruction,
-    maxPromptTokens: maxPromptForFit
-  });
-  llmArgs.chunks = fittedChunks;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (attempt === 1) {
-      fittedChunks = fitChunksForOpenRouterPromptBudget({
-        userQuestion: questionForModel,
-        chunks,
-        conversationContext,
-        answerLanguage: modelLanguage,
-        roleHint,
-        systemInstruction,
-        maxPromptTokens: Math.max(2500, Math.floor(maxPromptForFit * 0.62))
-      });
-      llmArgs.chunks = fittedChunks;
+      promptBudget = Math.max(1400, Math.floor(promptBudget * 0.88));
+      fittedChunks = refitOpenRouterPrompt(promptBudget);
+      llmArgs.chunks = fittedChunks.chunks;
+      llmArgs.systemInstruction = fittedChunks.systemInstruction;
     }
     try {
       const aiResult = await callOpenRouterAnswer(llmArgs);
@@ -2568,7 +2569,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
           locale: 'ru',
           model,
           translation_fallback: false,
-          sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
+          sources: llmArgs.chunks.map((x) => x.chunk_id || null).filter(Boolean)
         };
       }
 
@@ -2580,7 +2581,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
         locale: localized.locale,
         model,
         translation_fallback: localized.translationFallback,
-        sources: fittedChunks.map((x) => x.chunk_id || null).filter(Boolean)
+        sources: llmArgs.chunks.map((x) => x.chunk_id || null).filter(Boolean)
       };
     } catch (err) {
       const msg = String(err?.message || '');
