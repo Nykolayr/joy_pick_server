@@ -1753,37 +1753,6 @@ function buildExistingRequestActionsAnswer(roleHint, answerLanguage) {
   return 'For an existing request, actions are done in that request details screen (buttons depend on type and role). If you specify type (Waste Location / Speed Cleanup / Event), I will give exact actions for the current request without creation flow.';
 }
 
-/** «Нужен кто-то убрать парк/двор» — частый in-app сценарий; без LLM, чтобы не упираться в лимиты контекста при тяжёлом RU prompt. */
-function isPublicTerritoryCleanupOrderQuestion(question) {
-  const q = normalizeText(question).toLowerCase();
-  if (!q) return false;
-  const wantsHelp =
-    /хочу\s+чтобы|нуж(ен|на|но|ны)\s+(кто|люди|человек)|кто[-\s]?нибудь|кое[-\s]?кто|приглас(ить|и)|ищу\s+(кто|людей|помощ|волонт)/i.test(
-      q
-    );
-  const place = /парк|двор|территор|участок|сквер|лесопарк|набережн/i.test(q);
-  const cleanup = /убрал|убрать|уборк|прибрал|прибрать|посорти|навести\s+чистот|почистил/i.test(q);
-  return wantsHelp && place && cleanup;
-}
-
-function buildPublicTerritoryCleanupOrderAnswer(modelLanguage) {
-  if (modelLanguage === 'ru') {
-    return (
-      'Чтобы кто-то пришёл убрать территорию (например парк) через Joy Pick, создайте заявку на главной карте. ' +
-      'Обычно это Waste Location (уборка с точкой на карте) — другие пользователи увидят её в списке и на карте и смогут присоединиться как исполнители. ' +
-      'Если нужна уборка к определённому времени и координация людей — подойдёт тип Event (субботник). ' +
-      'При создании Waste Location можно включить донат или опцию вывоза мусора, если это ваш случай. ' +
-      'Подробные шаги — в разделе «Справка» в приложении.'
-    );
-  }
-  return (
-    'To have someone clean a territory (for example a park) via Joy Pick, create a request on the home map. ' +
-    'Usually use Waste Location (cleanup with a map pin) so others can see it on the map/list and join as executors. ' +
-    'For time-based coordination, use an Event (subbotnik). When creating Waste Location you can enable donations or trash haul-away if needed. ' +
-    'See in-app Help for step-by-step details.'
-  );
-}
-
 function isConcreteAmountQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
@@ -2472,9 +2441,6 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     !/как\s+создать|create\s+(a\s+)?new\s+request/i.test(normalizeText(questionForModel).toLowerCase())
       ? buildExistingRequestActionsAnswer(roleHintForDeterministic, modelLanguage)
       : null;
-  const deterministicTerritoryCleanupOrderAnswer = isPublicTerritoryCleanupOrderQuestion(questionForModel)
-    ? buildPublicTerritoryCleanupOrderAnswer(modelLanguage)
-    : null;
   const deterministicAnswer =
     deterministicCompletedCleanupsAnswer ||
     deterministicNewsSectionAnswer ||
@@ -2489,7 +2455,6 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     deterministicWasteSingleExecutorAnswer ||
     deterministicAmountAnswer ||
     deterministicExistingRequestActionsAnswer ||
-    deterministicTerritoryCleanupOrderAnswer ||
     deterministicStageAnswer;
   if (deterministicAnswer) {
     const plainDeterministic = stripSupportAnswerMarkdown(deterministicAnswer);
@@ -2523,11 +2488,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
           ? 'deterministic_amount_router'
           : deterministicExistingRequestActionsAnswer
             ? 'deterministic_existing_request_router'
-            : deterministicTerritoryCleanupOrderAnswer
-              ? 'deterministic_territory_cleanup_order_router'
-              : deterministicStageAnswer
-                ? 'deterministic_stage_router'
-                : 'deterministic_router',
+            : 'deterministic_stage_router',
       translation_fallback: false,
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
