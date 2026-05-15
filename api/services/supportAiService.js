@@ -2213,45 +2213,66 @@ async function callOpenRouterAnswer({
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  const systemInstruction =
+  const systemFull =
     prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
+  const systemMaxCharsRu = Math.max(
+    3200,
+    Number(process.env.AI_SUPPORT_OPENROUTER_SYSTEM_MAX_CHARS_RU || 4800)
+  );
+  const shrinkSystemForRu = (text, factor) => {
+    if (answerLanguage !== 'ru') return text;
+    const cap = Math.max(2800, Math.floor(systemMaxCharsRu * factor));
+    return String(text || '').length <= cap ? String(text || '') : String(text || '').slice(0, cap);
+  };
+
+  const promptLimitRe = /prompt\s+tokens\s+limit\s+exceeded/i;
+  let systemInstruction = shrinkSystemForRu(systemFull, 1);
 
   try {
-    const payload = {
-      model,
-      messages: [
-        { role: 'system', content: systemInstruction },
-        { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }
-      ],
-      temperature: DEFAULT_TEMPERATURE,
-      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
-    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0 && answerLanguage === 'ru') {
+        systemInstruction = shrinkSystemForRu(systemFull, attempt === 1 ? 0.82 : 0.66);
+      }
+      const payload = {
+        model,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint) }
+        ],
+        temperature: DEFAULT_TEMPERATURE,
+        max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
+      };
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
 
-    const json = await response.json();
-    if (!response.ok) {
-      const msg = json?.error?.message || `OpenRouter error ${response.status}`;
-      throw new Error(msg);
+      const json = await response.json();
+      if (!response.ok) {
+        const msg = json?.error?.message || `OpenRouter error ${response.status}`;
+        if (answerLanguage === 'ru' && promptLimitRe.test(msg) && attempt < 2) {
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const answer = json?.choices?.[0]?.message?.content || '';
+      if (!answer) {
+        throw new Error('OpenRouter returned empty response');
+      }
+
+      return {
+        answer: String(answer).trim(),
+        model
+      };
     }
-
-    const answer = json?.choices?.[0]?.message?.content || '';
-    if (!answer) {
-      throw new Error('OpenRouter returned empty response');
-    }
-
-    return {
-      answer: String(answer).trim(),
-      model
-    };
+    throw new Error('OpenRouter prompt limit retries exhausted');
   } finally {
     clearTimeout(timeout);
   }
