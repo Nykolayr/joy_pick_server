@@ -21,16 +21,27 @@ function defaultStripeReturnUrl() {
   return `${publicSiteOrigin()}/stripeCallback?stripe=success`;
 }
 
+/** Дефолт для старых клиентов, которые не присылают country в POST /stripe/create-account. */
+const CONNECT_COUNTRY_LEGACY_DEFAULT = 'US';
+
 /**
- * Страна для Stripe Connect: только ISO 3166-1 alpha-2, без дефолта US.
- * Пустая строка из клиента считается как «не передано».
+ * Страна для Stripe Connect: ISO 3166-1 alpha-2.
+ * Пустое / отсутствующее поле → legacyDefault (US), чтобы не ломать старые версии приложения.
  * @param {unknown} raw
- * @returns {{ ok: true, country: string } | { ok: false, reason: 'missing' | 'invalid' }}
+ * @param {{ legacyDefault?: string }} [opts]
+ * @returns {{ ok: true, country: string, usedLegacyDefault?: boolean } | { ok: false, reason: 'invalid' }}
  */
-function normalizeConnectCountry(raw) {
-  if (raw == null) return { ok: false, reason: 'missing' };
-  const s = String(raw).trim().toUpperCase();
-  if (s.length === 0) return { ok: false, reason: 'missing' };
+function normalizeConnectCountry(raw, opts = {}) {
+  const legacyDefault = String(opts.legacyDefault || CONNECT_COUNTRY_LEGACY_DEFAULT)
+    .trim()
+    .toUpperCase();
+  const s = raw == null ? '' : String(raw).trim().toUpperCase();
+  if (s.length === 0) {
+    if (/^[A-Z]{2}$/.test(legacyDefault)) {
+      return { ok: true, country: legacyDefault, usedLegacyDefault: true };
+    }
+    return { ok: false, reason: 'invalid' };
+  }
   if (!/^[A-Z]{2}$/.test(s)) return { ok: false, reason: 'invalid' };
   return { ok: true, country: s };
 }
@@ -541,13 +552,13 @@ router.post('/create-account', authenticate, [
 
     const { email, first_name, last_name, phone, city } = req.body;
 
-    const countryNorm = normalizeConnectCountry(req.body.country);
+    const countryNorm = normalizeConnectCountry(req.body.country, {
+      legacyDefault: CONNECT_COUNTRY_LEGACY_DEFAULT
+    });
     if (!countryNorm.ok) {
-      const code = countryNorm.reason === 'missing' ? 'STRIPE_COUNTRY_REQUIRED' : 'STRIPE_COUNTRY_INVALID';
-      const message = countryNorm.reason === 'missing'
-        ? 'country is required (ISO 3166-1 alpha-2, e.g. BR, US)'
-        : 'country must be exactly 2 letters (ISO 3166-1 alpha-2)';
-      return error(res, message, 400, { code });
+      return error(res, 'country must be exactly 2 letters (ISO 3166-1 alpha-2)', 400, {
+        code: 'STRIPE_COUNTRY_INVALID'
+      });
     }
     const country = countryNorm.country;
     const { phoneE164, phoneDialOnlyPlaceholder } = phoneForStripeConnect(country, phone);
