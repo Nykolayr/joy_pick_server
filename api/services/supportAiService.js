@@ -14,10 +14,13 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
   2000,
   Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS || 11000)
 );
-/** Русский system prompt длиннее — жёстче потолок, иначе OpenRouter: prompt > ~11612. */
+/**
+ * Дефолт для RU держим заметно ниже жёсткого лимита «prompt tokens» на ключе OpenRouter (часто ~3516 на бесплатном/низком тарифе),
+ * иначе запрос отклоняется уже на 3700+ токенов при нашем оценочном укладывании. На платном ключе поднимите AI_SUPPORT_MAX_PROMPT_TOKENS_RU.
+ */
 const OPENROUTER_MAX_PROMPT_TOKENS_RU = Math.max(
   2000,
-  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 8000)
+  Number(process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU || 3000)
 );
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 /** В LLM-пrompt только последние N реплик и укороченный текст — иначе гостевой чат раздувает prompt выше лимита OpenRouter. */
@@ -2496,7 +2499,7 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
   const maxPromptForFit = modelLanguage === 'ru' ? OPENROUTER_MAX_PROMPT_TOKENS_RU : OPENROUTER_MAX_PROMPT_TOKENS;
   const overflowRe =
-    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long/i;
+    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded/i;
 
   const llmArgs = {
     userQuestion: questionForModel,
