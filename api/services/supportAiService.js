@@ -19,18 +19,15 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
 );
 /**
  * Жёсткий потолок **prompt** (system+user в формате чата), подсчитанный через `encodeChat` (gpt-tokenizer).
- * Дефолт 1400 — часть ключей OpenRouter отклоняет prompt ~>1500 даже при более высоком env; для длинного RAG задайте AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS (до 32k).
+ * Лимит ключа OpenRouter часто ~3516 — держим дефолт с запасом; на платном ключе поднимите AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS.
  * Устаревший AI_SUPPORT_MAX_PROMPT_TOKENS_RU читается как fallback, если новый env не задан.
  */
-const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.min(
-  32000,
-  Math.max(
-    800,
-    Number(
-      process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
-        || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
-        || 1400
-    ) || 1400
+const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.max(
+  1200,
+  Number(
+    process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
+      || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
+      || 3100
   )
 );
 /** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
@@ -2233,8 +2230,7 @@ async function callOpenRouterAnswer({
   answerLanguage,
   conversationContext,
   roleHint,
-  systemInstruction: prebuiltSystem,
-  maxOutputTokens
+  systemInstruction: prebuiltSystem
 }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -2248,10 +2244,6 @@ async function callOpenRouterAnswer({
   const systemInstruction =
     prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
   const userContent = buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint);
-  const maxOut = Math.max(
-    32,
-    Math.min(1024, Number(maxOutputTokens) || DEFAULT_MAX_OUTPUT_TOKENS)
-  );
 
   try {
     const payload = {
@@ -2261,7 +2253,7 @@ async function callOpenRouterAnswer({
         { role: 'user', content: userContent }
       ],
       temperature: DEFAULT_TEMPERATURE,
-      max_tokens: maxOut
+      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
     };
 
     const response = await fetch(endpoint, {
@@ -2534,8 +2526,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     };
   }
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
-const overflowRe =
-    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded|can\s+only\s+afford|requires\s+more\s+credits/i;
+  const overflowRe =
+    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded/i;
 
   const refitOpenRouterPrompt = (budget) =>
     fitOpenRouterPromptParts({
@@ -2556,12 +2548,12 @@ const overflowRe =
     answerLanguage: modelLanguage,
     conversationContext,
     roleHint,
-    systemInstruction: fittedChunks.systemInstruction,
-    maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS
+    systemInstruction: fittedChunks.systemInstruction
   };
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt === 1) {
+      promptBudget = Math.max(1400, Math.floor(promptBudget * 0.88));
       fittedChunks = refitOpenRouterPrompt(promptBudget);
       llmArgs.chunks = fittedChunks.chunks;
       llmArgs.systemInstruction = fittedChunks.systemInstruction;
@@ -2595,28 +2587,7 @@ const overflowRe =
       };
     } catch (err) {
       const msg = String(err?.message || '');
-      if (attempt < 2 && overflowRe.test(msg)) {
-        if (/can\s+only\s+afford|requires\s+more\s+credits/i.test(msg)) {
-          const affM = msg.match(/can\s+only\s+afford\s+(\d+)/i);
-          if (affM) {
-            llmArgs.maxOutputTokens = Math.max(48, Number(affM[1]) - 32);
-          } else {
-            llmArgs.maxOutputTokens = Math.max(48, Math.floor((llmArgs.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS) * 0.8));
-          }
-        } else {
-          const capM = msg.match(/prompt\s+tokens?\s+limit\s+exceeded:\s*\d+\s*>\s*(\d+)/i);
-          if (capM) {
-            const orMax = Number(capM[1]);
-            if (Number.isFinite(orMax) && orMax > 0) {
-              const headroom = Math.ceil((llmArgs.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS) * 1.15) + 120;
-              promptBudget = Math.min(promptBudget, Math.max(650, orMax - headroom));
-            } else {
-              promptBudget = Math.max(650, Math.floor(promptBudget * 0.72));
-            }
-          } else {
-            promptBudget = Math.max(650, Math.floor(promptBudget * 0.72));
-          }
-        }
+      if (attempt === 0 && overflowRe.test(msg)) {
         continue;
       }
       const reason = msg ? `openrouter: ${msg}` : 'ai_unavailable';
