@@ -7,9 +7,7 @@ const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-
 const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 // Держим таймаут заметно ниже клиентского (обычно 30s), чтобы вернуть fallback до обрыва запроса в приложении.
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
-// OpenRouter иногда отклоняет запрос, если max_tokens больше внутреннего «afford» по ключу (ошибка «can only afford N tokens») — это не то же самое, что месячный лимит $ на ключе.
-const _maxOutCfg = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 300);
-const DEFAULT_MAX_OUTPUT_TOKENS = Math.min(320, Math.max(64, Number.isFinite(_maxOutCfg) ? _maxOutCfg : 300));
+const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 400);
 const DEFAULT_TEMPERATURE = Number(process.env.AI_SUPPORT_TEMPERATURE || 0.2);
 /** Оценка размера prompt (system + user) для OpenRouter; меньше chars/token = выше оценка (ближе к реальному счёту OR). */
 const PROMPT_CHARS_PER_TOKEN_EST = Math.max(1.8, Number(process.env.AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST || 2.25));
