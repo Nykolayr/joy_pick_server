@@ -7,7 +7,8 @@ const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-
 const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 // Держим таймаут заметно ниже клиентского (обычно 30s), чтобы вернуть fallback до обрыва запроса в приложении.
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
-const DEFAULT_MAX_OUTPUT_TOKENS = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 400);
+const _maxOutCfg = Number(process.env.AI_SUPPORT_MAX_OUTPUT_TOKENS || 180);
+const DEFAULT_MAX_OUTPUT_TOKENS = Math.min(320, Math.max(48, Number.isFinite(_maxOutCfg) ? _maxOutCfg : 180));
 const DEFAULT_TEMPERATURE = Number(process.env.AI_SUPPORT_TEMPERATURE || 0.2);
 /** Оценка размера prompt (system + user) для OpenRouter; меньше chars/token = выше оценка (ближе к реальному счёту OR). */
 const PROMPT_CHARS_PER_TOKEN_EST = Math.max(1.8, Number(process.env.AI_SUPPORT_PROMPT_CHARS_PER_TOKEN_EST || 2.25));
@@ -2271,6 +2272,13 @@ function fitOpenRouterPromptParts({
   return { systemInstruction: sys, chunks: list };
 }
 
+function parseOpenRouterAffordMaxTokens(errorMessage) {
+  const m = String(errorMessage || '').match(/can\s+only\s+afford\s+(\d+)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 async function callOpenRouterAnswer({
   userQuestion,
   chunks,
@@ -2287,59 +2295,81 @@ async function callOpenRouterAnswer({
 
   const model = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const systemInstruction =
     prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
   const userContent = buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint);
+  const sid = sanitizeOpenRouterSessionId(sessionId);
+  const providerPrefs = buildOpenRouterProviderPreferencesFromEnv();
 
-  try {
-    const payload = {
-      model,
-      messages: [
-        { role: 'system', content: systemInstruction },
-        { role: 'user', content: userContent }
-      ],
-      temperature: DEFAULT_TEMPERATURE,
-      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
-    };
-    const sid = sanitizeOpenRouterSessionId(sessionId);
-    if (sid) {
-      payload.session_id = sid;
+  let maxTokens = DEFAULT_MAX_OUTPUT_TOKENS;
+  let lastMsg = 'ai_unavailable';
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    try {
+      const payload = {
+        model,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userContent }
+        ],
+        temperature: DEFAULT_TEMPERATURE,
+        max_tokens: maxTokens
+      };
+      if (sid) {
+        payload.session_id = sid;
+      }
+      if (providerPrefs) {
+        payload.provider = providerPrefs;
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        const msg = json?.error?.message || `OpenRouter error ${response.status}`;
+        lastMsg = msg;
+        const afford = parseOpenRouterAffordMaxTokens(msg);
+        if (afford != null && attempt < 3) {
+          maxTokens = Math.max(48, afford - 24);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const answer = json?.choices?.[0]?.message?.content || '';
+      if (!answer) {
+        throw new Error('OpenRouter returned empty response');
+      }
+
+      return {
+        answer: String(answer).trim(),
+        model
+      };
+    } catch (err) {
+      const msg = String(err?.message || '');
+      const afford = parseOpenRouterAffordMaxTokens(msg);
+      if (afford != null && attempt < 3) {
+        maxTokens = Math.max(48, afford - 24);
+        lastMsg = msg;
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-    const providerPrefs = buildOpenRouterProviderPreferencesFromEnv();
-    if (providerPrefs) {
-      payload.provider = providerPrefs;
-    }
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    const json = await response.json();
-    if (!response.ok) {
-      const msg = json?.error?.message || `OpenRouter error ${response.status}`;
-      throw new Error(msg);
-    }
-
-    const answer = json?.choices?.[0]?.message?.content || '';
-    if (!answer) {
-      throw new Error('OpenRouter returned empty response');
-    }
-
-    return {
-      answer: String(answer).trim(),
-      model
-    };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new Error(lastMsg);
 }
 
 async function localizeAnswer(answerEn, locale) {
@@ -2589,7 +2619,7 @@ async function getSupportAiAnswer({
   }
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
   const overflowRe =
-    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded/i;
+    /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded|can\s+only\s+afford|requires\s+more\s+credits/i;
 
   const refitOpenRouterPrompt = (budget) =>
     fitOpenRouterPromptParts({
