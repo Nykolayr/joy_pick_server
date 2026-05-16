@@ -20,12 +20,15 @@ const OPENROUTER_MAX_PROMPT_TOKENS = Math.max(
  * Лимит ключа OpenRouter часто ~3516 — держим дефолт с запасом; на платном ключе поднимите AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS.
  * Устаревший AI_SUPPORT_MAX_PROMPT_TOKENS_RU читается как fallback, если новый env не задан.
  */
-const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.max(
-  1200,
-  Number(
-    process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
-      || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
-      || 3100
+const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.min(
+  32000,
+  Math.max(
+    400,
+    Number(
+      process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
+        || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
+        || 850
+    ) || 850
   )
 );
 /** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
@@ -2224,7 +2227,7 @@ function fitOpenRouterPromptParts({
   systemInstruction,
   maxPromptTokens
 }) {
-  const budget = Math.max(800, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
+  const budget = Math.max(400, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
   let sys = String(systemInstruction || '');
   let list = Array.isArray(chunks) && chunks.length ? chunks.map((c) => ({ ...c })) : [];
 
@@ -2611,9 +2614,8 @@ async function getSupportAiAnswer({
     sessionId: orSessionId
   };
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (attempt === 1) {
-      promptBudget = Math.max(1400, Math.floor(promptBudget * 0.88));
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
       fittedChunks = refitOpenRouterPrompt(promptBudget);
       llmArgs.chunks = fittedChunks.chunks;
       llmArgs.systemInstruction = fittedChunks.systemInstruction;
@@ -2647,7 +2649,22 @@ async function getSupportAiAnswer({
       };
     } catch (err) {
       const msg = String(err?.message || '');
-      if (attempt === 0 && overflowRe.test(msg)) {
+      if (attempt < 2 && overflowRe.test(msg)) {
+        const capM = msg.match(/prompt\s+tokens?\s+limit\s+exceeded:\s*\d+\s*>\s*(\d+)/i);
+        if (capM) {
+          const orMax = Number(capM[1]);
+          if (Number.isFinite(orMax) && orMax > 0) {
+            const headroom = Math.ceil(DEFAULT_MAX_OUTPUT_TOKENS * 1.15) + 100;
+            promptBudget = Math.min(
+              promptBudget,
+              Math.max(400, Math.floor((orMax - headroom) * 0.82))
+            );
+          } else {
+            promptBudget = Math.max(400, Math.floor(promptBudget * 0.72));
+          }
+        } else {
+          promptBudget = Math.max(400, Math.floor(promptBudget * 0.72));
+        }
         continue;
       }
       const reason = msg ? `openrouter: ${msg}` : 'ai_unavailable';
