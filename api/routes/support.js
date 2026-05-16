@@ -26,6 +26,12 @@ const {
   countGuestSupportMessages,
   clearGuestSupportMessages
 } = require('../services/supportAiGuestHistory');
+const {
+  getOrCreateOpenRouterSessionIdForUser,
+  getOrCreateOpenRouterSessionIdForGuest,
+  clearOpenRouterSessionForUser,
+  clearOpenRouterSessionForGuest
+} = require('../services/supportAiOpenRouterSession');
 
 const router = express.Router();
 
@@ -40,10 +46,12 @@ function timingSafeEvalSecret(provided, expected) {
 
 function processSupportMessageAsync(ctx) {
   const { messageId, message, locale, mode, userId, guestKey } = ctx;
-  const openRouterSessionId =
-    mode === 'guest' ? `support-guest-${guestKey}` : `support-user-${userId}`;
   Promise.resolve()
     .then(async () => {
+      const openRouterSessionId =
+        mode === 'guest'
+          ? await getOrCreateOpenRouterSessionIdForGuest(guestKey)
+          : await getOrCreateOpenRouterSessionIdForUser(userId);
       const conversationContext =
         mode === 'guest'
           ? await listRecentGuestConversationContext(guestKey, {
@@ -320,11 +328,13 @@ router.delete(
 
       if (req.user && req.user.userId) {
         const deleted = await clearSupportMessages(req.user.userId);
+        await clearOpenRouterSessionForUser(req.user.userId);
         return success(res, { deleted }, 'Support AI history cleared');
       }
 
       if (guestKey) {
         const deleted = await clearGuestSupportMessages(guestKey);
+        await clearOpenRouterSessionForGuest(guestKey);
         return success(res, { deleted }, 'Support AI history cleared');
       }
 
