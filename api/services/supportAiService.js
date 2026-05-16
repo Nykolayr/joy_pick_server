@@ -292,6 +292,52 @@ function stripSupportAnswerMarkdown(text) {
   return s.trim();
 }
 
+/** OpenRouter: session_id ≤256, для вкладки Logs → Sessions. */
+function sanitizeOpenRouterSessionId(raw) {
+  const s = String(raw || '')
+    .trim()
+    .replace(/[^\w\-:.]/g, '_')
+    .slice(0, 256);
+  return s.length >= 4 ? s : null;
+}
+
+/**
+ * Опциональный routing провайдеров (см. OpenAPI OpenRouter → ProviderPreferences).
+ * Примеры: OPENROUTER_PROVIDER_ONLY=OpenAI, OPENROUTER_PROVIDER_IGNORE=Azure,
+ * OPENROUTER_PROVIDER_ORDER=OpenAI|Azure, OPENROUTER_PROVIDER_ALLOW_FALLBACKS=false
+ */
+function buildOpenRouterProviderPreferencesFromEnv() {
+  const onlyRaw = String(process.env.OPENROUTER_PROVIDER_ONLY || '').trim();
+  const ignoreRaw = String(process.env.OPENROUTER_PROVIDER_IGNORE || '').trim();
+  const orderRaw = String(process.env.OPENROUTER_PROVIDER_ORDER || '').trim();
+  const fbRaw = String(process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS || '').trim().toLowerCase();
+
+  const splitList = (s) =>
+    s
+      .split(/[,|]/g)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  const out = {};
+  if (onlyRaw) {
+    out.only = splitList(onlyRaw);
+  } else if (orderRaw) {
+    out.order = splitList(orderRaw);
+  }
+  if (ignoreRaw) {
+    out.ignore = splitList(ignoreRaw);
+  }
+  if (fbRaw === '0' || fbRaw === 'false' || fbRaw === 'no' || fbRaw === 'off') {
+    out.allow_fallbacks = false;
+  } else if (fbRaw === '1' || fbRaw === 'true' || fbRaw === 'yes' || fbRaw === 'on') {
+    out.allow_fallbacks = true;
+  } else if (onlyRaw && !fbRaw) {
+    out.allow_fallbacks = false;
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
 function tokenize(value) {
   return normalizeText(value)
     .toLowerCase()
@@ -2228,7 +2274,8 @@ async function callOpenRouterAnswer({
   answerLanguage,
   conversationContext,
   roleHint,
-  systemInstruction: prebuiltSystem
+  systemInstruction: prebuiltSystem,
+  sessionId
 }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -2253,6 +2300,14 @@ async function callOpenRouterAnswer({
       temperature: DEFAULT_TEMPERATURE,
       max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
     };
+    const sid = sanitizeOpenRouterSessionId(sessionId);
+    if (sid) {
+      payload.session_id = sid;
+    }
+    const providerPrefs = buildOpenRouterProviderPreferencesFromEnv();
+    if (providerPrefs) {
+      payload.provider = providerPrefs;
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -2383,9 +2438,15 @@ async function previewSupportRetrieval({ message, locale, topK, conversationCont
   };
 }
 
-async function getSupportAiAnswer({ message, locale, conversationContext = [] }) {
+async function getSupportAiAnswer({
+  message,
+  locale,
+  conversationContext = [],
+  openRouterSessionId
+}) {
   const safeLocale = SUPPORTED_LOCALES.includes(locale) ? locale : 'en';
   const answerLocale = inferAnswerLocale(message, safeLocale);
+  const orSessionId = sanitizeOpenRouterSessionId(openRouterSessionId);
   if (!isAiEnabled()) {
     return buildUnavailableAnswer(answerLocale, 'ai_disabled');
   }
@@ -2546,7 +2607,8 @@ async function getSupportAiAnswer({ message, locale, conversationContext = [] })
     answerLanguage: modelLanguage,
     conversationContext,
     roleHint,
-    systemInstruction: fittedChunks.systemInstruction
+    systemInstruction: fittedChunks.systemInstruction,
+    sessionId: orSessionId
   };
 
   for (let attempt = 0; attempt < 2; attempt += 1) {

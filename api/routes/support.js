@@ -40,6 +40,8 @@ function timingSafeEvalSecret(provided, expected) {
 
 function processSupportMessageAsync(ctx) {
   const { messageId, message, locale, mode, userId, guestKey } = ctx;
+  const openRouterSessionId =
+    mode === 'guest' ? `support-guest-${guestKey}` : `support-user-${userId}`;
   Promise.resolve()
     .then(async () => {
       const conversationContext =
@@ -52,7 +54,12 @@ function processSupportMessageAsync(ctx) {
               limit: Number(process.env.AI_SUPPORT_CONTEXT_TURNS || 8),
               excludeMessageId: messageId
             });
-      const data = await getSupportAiAnswer({ message, locale, conversationContext });
+      const data = await getSupportAiAnswer({
+        message,
+        locale,
+        conversationContext,
+        openRouterSessionId
+      });
       if (mode === 'guest') {
         await completePendingGuestSupportMessage(messageId, guestKey, {
           answer: data.answer,
@@ -125,7 +132,12 @@ router.post(
 
       const message = String(req.body.message || '').trim();
       const locale = String(req.body.locale || 'en').trim();
-      const data = await getSupportAiAnswer({ message, locale, conversationContext: [] });
+      const data = await getSupportAiAnswer({
+        message,
+        locale,
+        conversationContext: [],
+        openRouterSessionId: 'support-eval'
+      });
       return success(res, data, 'Support AI eval reply');
     } catch (err) {
       return error(res, 'Support AI eval failed', 500, err);

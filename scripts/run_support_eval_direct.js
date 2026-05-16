@@ -31,7 +31,8 @@ async function main() {
     const data = await getSupportAiAnswer({
       message: c.message,
       locale,
-      conversationContext: []
+      conversationContext: [],
+      openRouterSessionId: 'support-eval-direct'
     });
 
     if (data.degraded) {

@@ -22,7 +22,8 @@ async function main() {
     const data = await getSupportAiAnswer({
       message: c.message,
       locale: 'ru',
-      conversationContext: []
+      conversationContext: [],
+      openRouterSessionId: 'support-six-qa'
     });
     const head = data.degraded ? `[degraded ${data.ai_error_code || ''}]` : `[model ${data.model || ''}]`;
     process.stdout.write(`\n--- ${c.id}. ${head} ---\n`);
