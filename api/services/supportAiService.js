@@ -45,7 +45,7 @@ const OPENROUTER_COMPLETION_TOKEN_RESERVE = Math.max(
 /** Стартовый max_tokens на ключе с низким credit limit (OR часто даёт afford ~40–80). */
 const OPENROUTER_TIGHT_MAX_OUTPUT_START = Math.min(
   DEFAULT_MAX_OUTPUT_TOKENS,
-  Math.max(32, Number(process.env.AI_SUPPORT_TIGHT_MAX_OUTPUT_TOKENS || 64) || 64)
+  Math.max(24, Number(process.env.AI_SUPPORT_TIGHT_MAX_OUTPUT_TOKENS || 40) || 40)
 );
 /** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
 const OPENROUTER_TOKENIZER_MODEL = String(process.env.AI_SUPPORT_TOKENIZER_MODEL || 'gpt-4o-mini').trim();
@@ -77,7 +77,11 @@ let cachedOpenRouterPromptCap = null;
 
 function rememberOpenRouterPromptCap(cap) {
   if (!Number.isFinite(cap) || cap <= 0) return;
-  const capped = Math.max(120, Math.floor(cap) - OPENROUTER_PROMPT_CAP_SAFETY);
+  const raw = Math.floor(cap);
+  const capped =
+    raw <= 120
+      ? Math.max(48, raw - 12)
+      : Math.max(120, raw - OPENROUTER_PROMPT_CAP_SAFETY);
   cachedOpenRouterPromptCap =
     cachedOpenRouterPromptCap == null ? capped : Math.min(cachedOpenRouterPromptCap, capped);
 }
@@ -2698,7 +2702,7 @@ async function callOpenRouterAnswer({
         }
         const afford = parseOpenRouterAffordMaxTokens(msg);
         if (afford != null && attempt < 3) {
-          maxTokens = Math.max(24, afford - 4);
+          maxTokens = Math.max(8, afford - 2);
           continue;
         }
         throw new Error(msg);
@@ -2717,7 +2721,7 @@ async function callOpenRouterAnswer({
       const msg = String(err?.message || '');
       const afford = parseOpenRouterAffordMaxTokens(msg);
       if (afford != null && attempt < 3) {
-        maxTokens = Math.max(24, afford - 4);
+        maxTokens = Math.max(8, afford - 2);
         lastMsg = msg;
         continue;
       }
