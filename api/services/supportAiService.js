@@ -45,7 +45,7 @@ const OPENROUTER_COMPLETION_TOKEN_RESERVE = Math.max(
 /** Стартовый max_tokens на ключе с низким credit limit (OR часто даёт afford ~40–80). */
 const OPENROUTER_TIGHT_MAX_OUTPUT_START = Math.min(
   DEFAULT_MAX_OUTPUT_TOKENS,
-  Math.max(24, Number(process.env.AI_SUPPORT_TIGHT_MAX_OUTPUT_TOKENS || 40) || 40)
+  Math.max(48, Number(process.env.AI_SUPPORT_TIGHT_MAX_OUTPUT_TOKENS || 96) || 96)
 );
 /** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
 const OPENROUTER_TOKENIZER_MODEL = String(process.env.AI_SUPPORT_TOKENIZER_MODEL || 'gpt-4o-mini').trim();
@@ -75,13 +75,67 @@ const OPENROUTER_PROMPT_CAP_SAFETY = 40;
 /** Последний известный потолок prompt с OpenRouter (из ошибки «470 > 382»). */
 let cachedOpenRouterPromptCap = null;
 
+/** Снимок GET /api/v1/key — limit/limit_remaining (не путать с «потрачено $0.20»). */
+let openRouterKeySnapshot = null;
+let openRouterKeySnapshotAt = 0;
+const OPENROUTER_KEY_SNAPSHOT_TTL_MS = 5 * 60 * 1000;
+
+async function refreshOpenRouterKeySnapshot(force = false) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  const now = Date.now();
+  if (
+    !force &&
+    openRouterKeySnapshot &&
+    now - openRouterKeySnapshotAt < OPENROUTER_KEY_SNAPSHOT_TTL_MS
+  ) {
+    return openRouterKeySnapshot;
+  }
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/key', {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    const json = await res.json();
+    const d = json?.data;
+    if (!d) return openRouterKeySnapshot;
+    openRouterKeySnapshot = {
+      limit: d.limit,
+      limit_remaining: d.limit_remaining,
+      limit_reset: d.limit_reset,
+      usage_monthly: d.usage_monthly
+    };
+    openRouterKeySnapshotAt = now;
+    if (
+      cachedOpenRouterPromptCap != null &&
+      cachedOpenRouterPromptCap < 200 &&
+      Number(d.limit_remaining) > 0.5
+    ) {
+      cachedOpenRouterPromptCap = null;
+    }
+  } catch {
+    // ignore
+  }
+  return openRouterKeySnapshot;
+}
+
+/** Потолок prompt по настройке Credit limit ключа ($5→~342, $10→~684), не по usage. */
+function getAssumedPromptCapFromKeyLimit() {
+  const base = OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP - OPENROUTER_PROMPT_CAP_SAFETY;
+  const snap = openRouterKeySnapshot;
+  if (!snap || !Number.isFinite(snap.limit) || snap.limit <= 0) {
+    return base;
+  }
+  const scaled = Math.floor(base * (snap.limit / 5));
+  return Math.min(OPENROUTER_KEY_MAX_PROMPT_TOKENS, Math.max(base, scaled));
+}
+
 function rememberOpenRouterPromptCap(cap) {
   if (!Number.isFinite(cap) || cap <= 0) return;
   const raw = Math.floor(cap);
-  const capped =
-    raw <= 120
-      ? Math.max(48, raw - 12)
-      : Math.max(120, raw - OPENROUTER_PROMPT_CAP_SAFETY);
+  if (raw < 150) {
+    return;
+  }
+  const capped = Math.max(120, raw - OPENROUTER_PROMPT_CAP_SAFETY);
   cachedOpenRouterPromptCap =
     cachedOpenRouterPromptCap == null ? capped : Math.min(cachedOpenRouterPromptCap, capped);
 }
@@ -99,10 +153,11 @@ function openRouterKeyIsTight() {
 
 function getEffectiveOpenRouterPromptBudget() {
   let cap = OPENROUTER_KEY_MAX_PROMPT_TOKENS;
+  const assumed = getAssumedPromptCapFromKeyLimit();
   if (cachedOpenRouterPromptCap != null) {
     cap = Math.min(cap, cachedOpenRouterPromptCap);
   } else if (openRouterKeyIsTight()) {
-    cap = Math.min(cap, OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP - OPENROUTER_PROMPT_CAP_SAFETY);
+    cap = Math.min(cap, assumed);
   }
   return cap;
 }
@@ -145,12 +200,36 @@ function computeSafeMaxOutputTokens(promptEstimate) {
   const promptCeiling =
     cachedOpenRouterPromptCap != null
       ? cachedOpenRouterPromptCap + OPENROUTER_PROMPT_CAP_SAFETY
-      : OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP;
+      : getAssumedPromptCapFromKeyLimit() + OPENROUTER_PROMPT_CAP_SAFETY;
   const room = promptCeiling - promptEstimate - 20;
   return Math.max(
-    32,
+    48,
     Math.min(OPENROUTER_TIGHT_MAX_OUTPUT_START, DEFAULT_MAX_OUTPUT_TOKENS, room)
   );
+}
+
+function humanizeOpenRouterError(rawMessage, locale) {
+  const msg = String(rawMessage || '');
+  const capExceeded = parseOpenRouterPromptCapExceeded(msg);
+  if (capExceeded) {
+    return locale === 'ru'
+      ? `openrouter: слишком длинный запрос для лимита ключа (${capExceeded.sent || '?'} > ${capExceeded.cap} prompt-токенов). Это не «кончились $5» — укоротите prompt или поднимите Credit limit в настройках ключа.`
+      : `openrouter: prompt too long for key limit (${capExceeded.sent || '?'} > ${capExceeded.cap} prompt tokens)`;
+  }
+  const afford = parseOpenRouterAffordMaxTokens(msg);
+  if (afford != null) {
+    const snap = openRouterKeySnapshot;
+    const rem = snap?.limit_remaining;
+    return locale === 'ru'
+      ? `openrouter: на ответ осталось ~${afford} токенов (prompt съел бюджет запроса). Остаток ключа: ${rem != null ? `$${rem}` : 'н/д'} — это не то же самое, что «потратили весь лимит».`
+      : `openrouter: only ~${afford} completion tokens affordable`;
+  }
+  if (/requires more credits/i.test(msg)) {
+    return locale === 'ru'
+      ? 'openrouter: не хватает зарезервированных кредитов на этот запрос (часто из‑за большого max_tokens). Попробуйте позже.'
+      : msg;
+  }
+  return msg ? `openrouter: ${msg}` : 'ai_unavailable';
 }
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
 const KNOWLEDGE_PATH_RU = path.join(KNOWLEDGE_ROOT, 'support_ru', 'chunks.json');
@@ -2642,8 +2721,9 @@ function refitUntilUnderPromptBudget(refitForAttempt, startBudget) {
   let fitted = refitForAttempt(budget);
   let estimate = conservativeOpenRouterPromptEstimate(fitted.openRouterMessages);
   let guard = 0;
+  const budgetFloor = Math.min(120, Math.max(32, Math.floor(startBudget * 0.35)));
   while (estimate > budget && guard < 20) {
-    budget = Math.max(120, Math.floor(budget * 0.82));
+    budget = Math.max(budgetFloor, Math.floor(budget * 0.82));
     fitted = refitForAttempt(budget);
     estimate = conservativeOpenRouterPromptEstimate(fitted.openRouterMessages);
     guard += 1;
@@ -2699,7 +2779,8 @@ async function callOpenRouterAnswer({
         model,
         messages,
         temperature: DEFAULT_TEMPERATURE,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        plugins: [{ id: 'context-compression' }]
       };
       if (sid) {
         payload.session_id = sid;
@@ -2727,8 +2808,11 @@ async function callOpenRouterAnswer({
           rememberOpenRouterPromptCap(capExceeded.cap);
         }
         const afford = parseOpenRouterAffordMaxTokens(msg);
+        if (afford != null && afford < 28) {
+          throw new Error(msg);
+        }
         if (afford != null && attempt < 3) {
-          maxTokens = Math.max(8, afford - 2);
+          maxTokens = Math.max(16, afford - 2);
           continue;
         }
         throw new Error(msg);
@@ -2746,8 +2830,11 @@ async function callOpenRouterAnswer({
     } catch (err) {
       const msg = String(err?.message || '');
       const afford = parseOpenRouterAffordMaxTokens(msg);
+      if (afford != null && afford < 28) {
+        throw err;
+      }
       if (afford != null && attempt < 3) {
-        maxTokens = Math.max(8, afford - 2);
+        maxTokens = Math.max(16, afford - 2);
         lastMsg = msg;
         continue;
       }
@@ -3023,6 +3110,9 @@ async function getSupportAiAnswer({
       sources: chunks.map((x) => x.chunk_id || null).filter(Boolean)
     };
   }
+  await refreshOpenRouterKeySnapshot(true);
+  cachedOpenRouterPromptCap = null;
+
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
   const overflowRe =
     /context|maximum\s+token|too\s+many\s+tokens|length\s+exceed|string\s+too\s+long|reduce\s+the\s+length|token\s+limit|too\s+long|prompt\s+tokens\s+limit\s+exceeded|can\s+only\s+afford|requires\s+more\s+credits/i;
@@ -3159,7 +3249,7 @@ async function getSupportAiAnswer({
       if (attempt < 4 && overflowRe.test(msg)) {
         const affordHit = parseOpenRouterAffordMaxTokens(msg);
         if (affordHit != null) {
-          promptBudget = Math.max(120, Math.floor(promptBudget * 0.72));
+          promptBudget = Math.max(48, Math.floor(promptBudget * 0.68));
           useCompactPrompt = true;
           continue;
         }
@@ -3175,11 +3265,16 @@ async function getSupportAiAnswer({
         }
         continue;
       }
-      const reason = msg ? `openrouter: ${msg}` : 'ai_unavailable';
+      const reason = humanizeOpenRouterError(msg, answerLocale);
       return buildUnavailableAnswer(answerLocale, reason);
     }
   }
-  return buildUnavailableAnswer(answerLocale, 'openrouter: prompt_overflow_retry_exhausted');
+  return buildUnavailableAnswer(
+    answerLocale,
+    answerLocale === 'ru'
+      ? 'openrouter: не удалось уложить запрос в лимит ключа после нескольких попыток'
+      : 'openrouter: prompt_overflow_retry_exhausted'
+  );
 }
 
 module.exports = {

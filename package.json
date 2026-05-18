@@ -15,7 +15,8 @@
     "support:eval:rag:stress": "node scripts/run_support_rag_stress.js --locale=ru --per-chunk=6 --limit=2000 --seed=1",
     "support:qa:six": "node scripts/run_support_six_qa.js",
     "support:review:pull": "node scripts/support_review_pull.js",
-    "support:review:verify": "node scripts/support_review_verify.js"
+    "support:review:verify": "node scripts/support_review_verify.js",
+    "support:openrouter:key-status": "node scripts/openrouter_key_status.js"
   },
   "keywords": [
     "joy-pick",
