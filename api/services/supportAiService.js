@@ -145,7 +145,7 @@ async function probeOpenRouterAffordableMaxTokens(sampleMessages) {
       body: JSON.stringify({
         model,
         messages,
-        max_tokens: 64,
+        max_tokens: 1,
         temperature: 0.2
       })
     });
