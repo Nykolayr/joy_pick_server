@@ -36,8 +36,21 @@ const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.min(
 const OPENROUTER_TOKENIZER_MODEL = String(process.env.AI_SUPPORT_TOKENIZER_MODEL || 'gpt-4o-mini').trim();
 const OPENROUTER_PROMPT_TOKEN_BUFFER = Math.max(0, Number(process.env.AI_SUPPORT_PROMPT_TOKEN_BUFFER || 600));
 /** В LLM-пrompt только последние N реплик и укороченный текст — иначе гостевой чат раздувает prompt выше лимита OpenRouter. */
-const CONTEXT_PROMPT_MAX_TURNS = Math.min(12, Math.max(1, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS || 3)));
-const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(800, Math.max(80, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_FIELD_CHARS || 200)));
+const CONTEXT_PROMPT_MAX_TURNS = Math.min(
+  12,
+  Math.max(
+    1,
+    Number(
+      process.env.AI_SUPPORT_CONTEXT_PROMPT_TURNS ||
+        process.env.AI_SUPPORT_CONTEXT_TURNS ||
+        6
+    ) || 6
+  )
+);
+const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(
+  800,
+  Math.max(80, Number(process.env.AI_SUPPORT_CONTEXT_PROMPT_FIELD_CHARS || 360))
+);
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
@@ -1521,6 +1534,21 @@ function buildOpenRouterSystemInstruction(modelLanguage) {
   );
 }
 
+/** Укороченный system после prompt overflow у OpenRouter (их счётчик строже encodeChat). */
+function buildCompactOpenRouterSystemInstruction(modelLanguage) {
+  if (modelLanguage === 'ru') {
+    return 'Поддержка Joy Pick. Ответ по-русски, без markdown, кратко. Только факты приложения.';
+  }
+  return 'Joy Pick support. English, plain text, brief.';
+}
+
+/** Минимальный prompt под жёсткий лимит ключа OpenRouter (~382 токена). */
+function buildMicroOpenRouterSystemInstruction(modelLanguage) {
+  return modelLanguage === 'ru'
+    ? 'Joy Pick. Ответ по-русски, кратко.'
+    : 'Joy Pick. Brief English answer.';
+}
+
 function detectRequestTypeAlias(value, locale) {
   let text = normalizeText(value).toLowerCase();
   const isRu = locale === 'ru';
@@ -1900,6 +1928,83 @@ function buildWasteTrashParticipantCountAnswer(answerLanguage) {
   return 'In a regular trash cleanup, one person handles each request. A community cleanup (subbotnik) can have several participants.';
 }
 
+/** «Можно создать Waste Location для уборки в парке / вывоза мусора» — без LLM при жёстком лимите prompt. */
+function isWasteCreateCleanupOrHaulQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  if (/субботник|subbotnik|\bevent\b|мероприят|ивент/i.test(q) && !/waste/i.test(q)) return false;
+  const waste = /waste\s*location|waste|мусор|уборк.{0,16}мусор/i.test(q);
+  if (!waste) return false;
+  const createIntent =
+    /(можно|можно\s+ли|can\s+i|how\s+to).{0,40}(создат|create|сделать|добавить)/i.test(q) ||
+    /создат.{0,40}(заявк|waste)/i.test(q) ||
+    /create.{0,30}(request|waste)/i.test(q);
+  if (!createIntent) return false;
+  const cleanup = /убрал|уборк|парк|на\s+месте|clean\s*up|pick\s+up\s+trash/i.test(q);
+  const haul = /вывез|вывоз|haul|pickup\s+only|только\s+вывоз|грузовик|trash\s+pickup/i.test(q);
+  return cleanup || haul;
+}
+
+function buildWasteCreateCleanupOrHaulAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Да. Создайте заявку Waste Location: отметьте точку на карте (парк подходит) и опишите задачу. ' +
+      'Обычно это уборка на месте — к заявке может присоединиться один исполнитель. ' +
+      'Если нужен только вывоз без уборки, при создании включите «Только вывоз мусора» (индикатор грузовика).'
+    );
+  }
+  return (
+    'Yes. Create a Waste Location request: pin the spot on the map (a park is fine) and describe the task. ' +
+    'Usually someone joins and cleans on site (one executor per request). ' +
+    'For haul-away only, turn on Trash pickup only (truck indicator) when creating the request.'
+  );
+}
+
+function isWasteTrashPickupOnlyQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  return (
+    /только\s+вывоз|вывоз\s+без|без\s+уборк|лишь\s+вывоз|just\s+haul|haul\s*away\s+only|trash\s+pickup\s+only|pickup\s+only/i.test(
+      q
+    ) && /вывоз|haul|pickup|мусор|waste|грузовик|truck/i.test(q)
+  );
+}
+
+function isAppOverviewQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /о\s*ч[её]м\s+(приложен|это|joy)|что\s+это\s+за\s+приложен|зачем\s+(нужно\s+)?(это\s+)?приложен|what\s+is\s+(this\s+)?(app|joy\s*pick)|what\s+is\s+joy\s*pick\s+for|about\s+(the\s+)?app/i.test(
+      q
+    ) && !/stripe|донат|выплат|заработ/i.test(q)
+  );
+}
+
+function buildAppOverviewAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Joy Pick помогает находить и делать эко-инициативы рядом: на главной карта и список чужих заявок (уборка мусора Waste Location, быстрая уборка Speed Cleanup, субботники Event). ' +
+      'Есть вкладка переработки и партнёров, новости, профиль (Stripe, JoyCoins, учёт времени, свои заявки, уведомления), чаты и донат с карточки заявки. Support AI в приложении — отдельно от оператора.'
+    );
+  }
+  return (
+    'Joy Pick helps you find and join eco activities nearby: the home tab shows a map and list of requests (Waste Location, Speed Cleanup, Event cleanups). ' +
+    'There are recycling partners, news, profile (Stripe, JoyCoins, tracked time, My requests, notifications), chats, and donating from a request card. In-app Support AI is separate from a human operator.'
+  );
+}
+
+function buildWasteTrashPickupOnlyAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'При создании Waste Location включите «Только вывоз мусора» (индикатор грузовика на карте). ' +
+      'Тогда задача про вывоз без уборки на месте; к заявке по-прежнему может присоединиться один исполнитель.'
+    );
+  }
+  return (
+    'When creating a Waste Location, enable Trash pickup only (truck indicator on the map). ' +
+    'That means haul-away without on-site cleanup; still one executor per request.'
+  );
+}
+
 /** «Кто получит донат» про субботник/Event — не подменять сценарием одного исполнителя Waste. */
 function isSubbotnikEventDonationWhoReceivesQuestion(question) {
   const q = normalizeText(question).toLowerCase();
@@ -2148,31 +2253,100 @@ function buildCompletedCleanupsVisibilityAnswer(question, answerLanguage) {
   return `${base}${tail}`;
 }
 
-function buildUserPrompt(question, chunks, conversationContext, answerLanguage, roleHint) {
-  const blocks = chunks.map((chunk, index) => {
+function formatKnowledgeSnippets(chunks) {
+  return (Array.isArray(chunks) ? chunks : []).map((chunk, index) => {
     const id = chunk.chunk_id || `chunk_${index + 1}`;
     const title = normalizeText(chunk.title || `Knowledge ${index + 1}`);
     const text = normalizeText(chunk.text || '');
     return `[${id}] ${title}\n${text}`;
   });
-  const contextBlock = buildConversationContextBlock(conversationContext, answerLanguage);
+}
 
+/** Текущий ход: вопрос + RAG (без дублирования истории — она в messages[]). */
+function buildCurrentTurnUserContent(question, chunks, answerLanguage, roleHint, options = {}) {
+  const minimal = Boolean(options.minimal);
+  const q = normalizeText(question);
+  if (minimal) {
+    const list = Array.isArray(chunks) ? chunks : [];
+    if (list.length) {
+      const c = list[0];
+      const fact = truncateChunkTextForBudget(
+        `[${c.chunk_id || 'k1'}] ${normalizeText(c.title || '')} ${normalizeText(c.text || '')}`.trim(),
+        220
+      );
+      return answerLanguage === 'ru'
+        ? `Вопрос: ${q}\nСправка: ${fact}`
+        : `Question: ${q}\nKnowledge: ${fact}`;
+    }
+    return answerLanguage === 'ru' ? `Вопрос: ${q}` : `Question: ${q}`;
+  }
+  const blocks = formatKnowledgeSnippets(chunks);
   const parts = [
-    `User question: ${normalizeText(question)}`,
+    `User question: ${q}`,
     roleHint ? `Detected user role context: ${roleHint}` : '',
-    contextBlock,
-    'Knowledge snippets:',
+    blocks.length ? 'Knowledge snippets:' : '',
     blocks.join('\n\n---\n\n')
   ].filter(Boolean);
 
   let body = parts.join('\n\n');
-  if (!chunks.length) {
+  if (!blocks.length) {
     body +=
       answerLanguage === 'ru'
         ? '\n\nПодсказка: в справке нет подходящих фрагментов. Если вопрос про назначение приложения или что делать в Joy Pick — отвечай как о приложении (см. системные правила), не как об оффтопе. Оффтоп — только явный (погода и т.п.).'
         : '\n\nHint: no snippets matched. If the user asks what the app is for or how to use Joy Pick, answer in-app per system rules; use off-topic wording only for clearly unrelated topics.';
   }
   return body;
+}
+
+/** @deprecated Используйте buildOpenRouterChatMessages; оставлено для совместимости тестов. */
+function buildUserPrompt(question, chunks, conversationContext, answerLanguage, roleHint) {
+  const contextBlock = buildConversationContextBlock(conversationContext, answerLanguage);
+  const core = buildCurrentTurnUserContent(question, chunks, answerLanguage, roleHint);
+  return contextBlock ? `${core}\n\n${contextBlock}` : core;
+}
+
+function sliceConversationTurns(conversationContext, maxTurns, maxFieldChars) {
+  if (!Array.isArray(conversationContext) || !conversationContext.length) return [];
+  const n = Math.min(Math.max(0, maxTurns), conversationContext.length);
+  return conversationContext.slice(-n).map((turn) => ({
+    user_message: normalizeText(turn.user_message || '').slice(0, maxFieldChars),
+    answer: normalizeText(turn.answer || '').slice(0, maxFieldChars)
+  }));
+}
+
+/**
+ * OpenRouter Chat Completions: system + прошлые user/assistant + текущий user с Knowledge.
+ */
+function buildOpenRouterChatMessages({
+  systemInstruction,
+  userQuestion,
+  chunks,
+  conversationContext,
+  answerLanguage,
+  roleHint,
+  maxTurns = CONTEXT_PROMPT_MAX_TURNS,
+  maxFieldChars = CONTEXT_PROMPT_MAX_FIELD_CHARS,
+  minimalUserTurn = false
+}) {
+  const messages = [{ role: 'system', content: String(systemInstruction || '') }];
+  if (!minimalUserTurn) {
+    const history = sliceConversationTurns(conversationContext, maxTurns, maxFieldChars);
+    for (const turn of history) {
+      if (turn.user_message) {
+        messages.push({ role: 'user', content: turn.user_message });
+      }
+      if (turn.answer) {
+        messages.push({ role: 'assistant', content: turn.answer });
+      }
+    }
+  }
+  messages.push({
+    role: 'user',
+    content: buildCurrentTurnUserContent(userQuestion, chunks, answerLanguage, roleHint, {
+      minimal: minimalUserTurn
+    })
+  });
+  return messages;
 }
 
 function roughPromptTokenEstimate(text, answerLanguage = 'en') {
@@ -2195,29 +2369,42 @@ function truncateChunkTextForBudget(text, maxChars) {
   return `${t.slice(0, Math.max(0, maxChars - 1))}…`;
 }
 
-/**
- * Реальное число токенов prompt (system + user) в формате чата — под лимит ключа OpenRouter.
- */
-function countOpenRouterChatPromptTokens(systemText, userText) {
+function isTightOpenRouterPromptBudget(raw) {
+  return (Number(raw) || OPENROUTER_KEY_MAX_PROMPT_TOKENS) <= 650;
+}
+
+/** encodeChat занижает vs OpenRouter на коротких ключах — завышаем оценку при fit. */
+function estimateOpenRouterPromptTokens(messages, tight) {
+  const n = countOpenRouterMessagesTokens(messages);
+  if (tight && OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450) {
+    return Math.ceil(n * 1.62);
+  }
+  return tight ? Math.ceil(n * 1.5) : Math.ceil(n * 1.08);
+}
+
+function countOpenRouterMessagesTokens(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (!list.length) return 0;
   try {
     return encodeChat(
-      [
-        { role: 'system', content: String(systemText || '') },
-        { role: 'user', content: String(userText || '') }
-      ],
+      list.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
+        content: String(m.content || '')
+      })),
       OPENROUTER_TOKENIZER_MODEL
     ).length;
   } catch {
-    return (
-      roughPromptTokenEstimate(systemText, 'en') +
-      roughPromptTokenEstimate(userText, 'ru') +
-      24
-    );
+    let sum = 24;
+    for (const m of list) {
+      const lang = /[\u0400-\u04FF]/.test(String(m.content || '')) ? 'ru' : 'en';
+      sum += roughPromptTokenEstimate(m.content, lang);
+    }
+    return sum;
   }
 }
 
 /**
- * Укладываем system + user (с чанками) в жёсткий потолок токенов; порядок: меньше чанков → короче текст чанков → короче system.
+ * Укладываем prompt в лимит: меньше реплик истории → короче поля истории → меньше чанков → короче system.
  */
 function fitOpenRouterPromptParts({
   userQuestion,
@@ -2226,29 +2413,57 @@ function fitOpenRouterPromptParts({
   answerLanguage,
   roleHint,
   systemInstruction,
-  maxPromptTokens
+  maxPromptTokens,
+  minimalUserTurn = false
 }) {
-  const budget = Math.max(400, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
+  const rawBudget = Math.max(260, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
+  const tight = isTightOpenRouterPromptBudget(maxPromptTokens);
+  const budget = tight
+    ? Math.floor(rawBudget * (rawBudget <= 450 ? 0.82 : 0.9))
+    : rawBudget;
   let sys = String(systemInstruction || '');
   let list = Array.isArray(chunks) && chunks.length ? chunks.map((c) => ({ ...c })) : [];
+  const ctxFull = Array.isArray(conversationContext) ? conversationContext : [];
+  let historyTurns = Math.min(tight ? 1 : CONTEXT_PROMPT_MAX_TURNS, ctxFull.length);
+  let historyFieldChars = tight
+    ? Math.min(220, CONTEXT_PROMPT_MAX_FIELD_CHARS)
+    : CONTEXT_PROMPT_MAX_FIELD_CHARS;
 
-  const userBody = () =>
-    buildUserPrompt(userQuestion, list, conversationContext, answerLanguage, roleHint);
-  const total = () => countOpenRouterChatPromptTokens(sys, userBody());
+  const buildMessages = () =>
+    buildOpenRouterChatMessages({
+      systemInstruction: sys,
+      userQuestion,
+      chunks: list,
+      conversationContext: ctxFull,
+      answerLanguage,
+      roleHint,
+      maxTurns: historyTurns,
+      maxFieldChars: historyFieldChars,
+      minimalUserTurn
+    });
+  const total = () => estimateOpenRouterPromptTokens(buildMessages(), tight);
 
   let guard = 0;
-  while (total() > budget && guard++ < 220) {
+  while (total() > budget && guard++ < 280) {
+    if (historyTurns > 0) {
+      historyTurns -= 1;
+      continue;
+    }
+    if (historyFieldChars > 100) {
+      historyFieldChars = Math.max(100, Math.floor(historyFieldChars * 0.82));
+      continue;
+    }
     if (list.length > 1) {
       list.pop();
       continue;
     }
     if (list.length === 1) {
       const t = String(list[0].text || '');
-      if (t.length > 350) {
+      if (t.length > 280) {
         list = [
           {
             ...list[0],
-            text: truncateChunkTextForBudget(t, Math.max(280, Math.floor(t.length * 0.86)))
+            text: truncateChunkTextForBudget(t, Math.max(220, Math.floor(t.length * 0.86)))
           }
         ];
         continue;
@@ -2256,20 +2471,22 @@ function fitOpenRouterPromptParts({
       list = [];
       continue;
     }
-    if (sys.length > 2400) {
-      sys = sys.slice(0, Math.floor(sys.length * 0.9));
-      continue;
-    }
-    if (sys.length > 1200) {
-      sys = sys.slice(0, Math.max(1000, sys.length - 350));
+    if (sys.length > 900) {
+      sys = sys.slice(0, Math.max(700, Math.floor(sys.length * 0.88)));
       continue;
     }
     break;
   }
-  while (total() > budget && sys.length > 900) {
+  while (total() > budget && sys.length > 700) {
     sys = sys.slice(0, Math.floor(sys.length * 0.88));
   }
-  return { systemInstruction: sys, chunks: list };
+  return {
+    systemInstruction: sys,
+    chunks: list,
+    openRouterMessages: buildMessages(),
+    historyTurns,
+    historyFieldChars
+  };
 }
 
 function parseOpenRouterAffordMaxTokens(errorMessage) {
@@ -2279,6 +2496,29 @@ function parseOpenRouterAffordMaxTokens(errorMessage) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** OpenRouter: «Prompt tokens limit exceeded: 470 > 382» — лимит ключа на prompt, не max_tokens ответа. */
+function parseOpenRouterPromptCapExceeded(errorMessage) {
+  const m = String(errorMessage || '').match(/prompt\s+tokens?\s+limit\s+exceeded:\s*(\d+)\s*>\s*(\d+)/i);
+  if (!m) return null;
+  const sent = Number(m[1]);
+  const cap = Number(m[2]);
+  if (!Number.isFinite(cap) || cap <= 0) return null;
+  return {
+    sent: Number.isFinite(sent) && sent > 0 ? sent : null,
+    cap
+  };
+}
+
+function shrinkPromptBudgetAfterOpenRouterCap(promptBudget, capInfo) {
+  const cap = capInfo.cap;
+  const margin = 48;
+  let next = cap - margin;
+  if (capInfo.sent && capInfo.sent > cap) {
+    next = Math.min(next, Math.floor((promptBudget * cap) / capInfo.sent) - margin);
+  }
+  return Math.min(promptBudget, Math.max(120, next));
+}
+
 async function callOpenRouterAnswer({
   userQuestion,
   chunks,
@@ -2286,6 +2526,7 @@ async function callOpenRouterAnswer({
   conversationContext,
   roleHint,
   systemInstruction: prebuiltSystem,
+  openRouterMessages: prebuiltMessages,
   sessionId
 }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -2297,7 +2538,17 @@ async function callOpenRouterAnswer({
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   const systemInstruction =
     prebuiltSystem != null ? prebuiltSystem : buildSystemInstruction(answerLanguage);
-  const userContent = buildUserPrompt(userQuestion, chunks, conversationContext, answerLanguage, roleHint);
+  const messages =
+    Array.isArray(prebuiltMessages) && prebuiltMessages.length
+      ? prebuiltMessages
+      : buildOpenRouterChatMessages({
+          systemInstruction,
+          userQuestion,
+          chunks,
+          conversationContext,
+          answerLanguage,
+          roleHint
+        });
   const sid = sanitizeOpenRouterSessionId(sessionId);
   const providerPrefs = buildOpenRouterProviderPreferencesFromEnv();
 
@@ -2310,10 +2561,7 @@ async function callOpenRouterAnswer({
     try {
       const payload = {
         model,
-        messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: userContent }
-        ],
+        messages,
         temperature: DEFAULT_TEMPERATURE,
         max_tokens: maxTokens
       };
@@ -2540,6 +2788,15 @@ async function getSupportAiAnswer({
     isSubbotnikEventDonationWhoReceivesQuestion(questionForModel)
       ? buildSubbotnikEventDonationWhoReceivesAnswer(modelLanguage)
       : null;
+  const deterministicAppOverviewAnswer = isAppOverviewQuestion(questionForModel)
+    ? buildAppOverviewAnswer(modelLanguage)
+    : null;
+  const deterministicWasteCreateCleanupOrHaulAnswer = isWasteCreateCleanupOrHaulQuestion(questionForModel)
+    ? buildWasteCreateCleanupOrHaulAnswer(modelLanguage)
+    : null;
+  const deterministicWasteTrashPickupOnlyAnswer = isWasteTrashPickupOnlyQuestion(questionForModel)
+    ? buildWasteTrashPickupOnlyAnswer(modelLanguage)
+    : null;
   const deterministicWasteTrashParticipantCountAnswer = isWasteTrashParticipantCountQuestion(questionForModel)
     ? buildWasteTrashParticipantCountAnswer(modelLanguage)
     : null;
@@ -2567,6 +2824,7 @@ async function getSupportAiAnswer({
       : null;
   const deterministicAnswer =
     deterministicCompletedCleanupsAnswer ||
+    deterministicAppOverviewAnswer ||
     deterministicNewsSectionAnswer ||
     deterministicMonetizationAnswer ||
     deterministicAllDonationsTakenAnswer ||
@@ -2575,6 +2833,8 @@ async function getSupportAiAnswer({
     deterministicReservationAnswer ||
     deterministicConcurrentExecutionAnswer ||
     deterministicSubbotnikEventDonationWhoReceivesAnswer ||
+    deterministicWasteCreateCleanupOrHaulAnswer ||
+    deterministicWasteTrashPickupOnlyAnswer ||
     deterministicWasteTrashParticipantCountAnswer ||
     deterministicWasteSingleExecutorAnswer ||
     deterministicAmountAnswer ||
@@ -2588,7 +2848,9 @@ async function getSupportAiAnswer({
       locale: modelLanguage,
       model: deterministicCompletedCleanupsAnswer
         ? 'deterministic_completed_cleanups_router'
-        : deterministicNewsSectionAnswer
+        : deterministicAppOverviewAnswer
+          ? 'deterministic_app_overview_router'
+          : deterministicNewsSectionAnswer
           ? 'deterministic_news_section_router'
           : deterministicMonetizationAnswer
           ? 'deterministic_monetization_router'
@@ -2604,6 +2866,10 @@ async function getSupportAiAnswer({
           ? 'deterministic_concurrent_execution_router'
           : deterministicSubbotnikEventDonationWhoReceivesAnswer
             ? 'deterministic_event_donation_recipients_router'
+            : deterministicWasteCreateCleanupOrHaulAnswer
+              ? 'deterministic_waste_create_cleanup_haul_router'
+              : deterministicWasteTrashPickupOnlyAnswer
+                ? 'deterministic_waste_trash_pickup_only_router'
             : deterministicWasteTrashParticipantCountAnswer
             ? 'deterministic_waste_trash_participant_cap_router'
             : deterministicWasteSingleExecutorAnswer
@@ -2633,7 +2899,59 @@ async function getSupportAiAnswer({
     });
 
   let promptBudget = OPENROUTER_KEY_MAX_PROMPT_TOKENS;
-  let fittedChunks = refitOpenRouterPrompt(promptBudget);
+  let useCompactPrompt = OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450;
+  const refitForAttempt = (budget) => {
+    const ultraTight = budget <= 385;
+    const tightNow = isTightOpenRouterPromptBudget(budget);
+    const sys = ultraTight
+      ? buildMicroOpenRouterSystemInstruction(modelLanguage)
+      : useCompactPrompt || tightNow
+        ? buildCompactOpenRouterSystemInstruction(modelLanguage)
+        : systemInstruction;
+    let chunkSeed = chunks;
+    if (ultraTight) {
+      chunkSeed =
+        chunks.length > 0
+          ? [
+              {
+                ...chunks[0],
+                text: truncateChunkTextForBudget(String(chunks[0].text || ''), 200)
+              }
+            ]
+          : [];
+    } else if (useCompactPrompt) {
+      chunkSeed = [];
+    } else if (tightNow && chunks.length > 2) {
+      chunkSeed = chunks.slice(0, 2);
+    }
+    const ctxForFit = ultraTight ? [] : conversationContext;
+    const fitted = fitOpenRouterPromptParts({
+      userQuestion: questionForModel,
+      chunks: chunkSeed,
+      conversationContext: ctxForFit,
+      answerLanguage: modelLanguage,
+      roleHint: ultraTight ? '' : roleHint,
+      systemInstruction: sys,
+      maxPromptTokens: budget,
+      minimalUserTurn: ultraTight
+    });
+    if (!useCompactPrompt && !ultraTight && fitted.chunks.length > 3) {
+      fitted.chunks = fitted.chunks.slice(0, 3);
+      fitted.openRouterMessages = buildOpenRouterChatMessages({
+        systemInstruction: fitted.systemInstruction,
+        userQuestion: questionForModel,
+        chunks: fitted.chunks,
+        conversationContext: ctxForFit,
+        answerLanguage: modelLanguage,
+        roleHint: ultraTight ? '' : roleHint,
+        maxTurns: fitted.historyTurns,
+        maxFieldChars: fitted.historyFieldChars,
+        minimalUserTurn: ultraTight
+      });
+    }
+    return fitted;
+  };
+  let fittedChunks = refitForAttempt(promptBudget);
   const llmArgs = {
     userQuestion: questionForModel,
     chunks: fittedChunks.chunks,
@@ -2641,14 +2959,16 @@ async function getSupportAiAnswer({
     conversationContext,
     roleHint,
     systemInstruction: fittedChunks.systemInstruction,
+    openRouterMessages: fittedChunks.openRouterMessages,
     sessionId: orSessionId
   };
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     if (attempt > 0) {
-      fittedChunks = refitOpenRouterPrompt(promptBudget);
+      fittedChunks = refitForAttempt(promptBudget);
       llmArgs.chunks = fittedChunks.chunks;
       llmArgs.systemInstruction = fittedChunks.systemInstruction;
+      llmArgs.openRouterMessages = fittedChunks.openRouterMessages;
     }
     try {
       const aiResult = await callOpenRouterAnswer(llmArgs);
@@ -2679,21 +2999,16 @@ async function getSupportAiAnswer({
       };
     } catch (err) {
       const msg = String(err?.message || '');
-      if (attempt < 2 && overflowRe.test(msg)) {
-        const capM = msg.match(/prompt\s+tokens?\s+limit\s+exceeded:\s*\d+\s*>\s*(\d+)/i);
-        if (capM) {
-          const orMax = Number(capM[1]);
-          if (Number.isFinite(orMax) && orMax > 0) {
-            const headroom = Math.ceil(DEFAULT_MAX_OUTPUT_TOKENS * 1.15) + 100;
-            promptBudget = Math.min(
-              promptBudget,
-              Math.max(400, Math.floor((orMax - headroom) * 0.82))
-            );
-          } else {
-            promptBudget = Math.max(400, Math.floor(promptBudget * 0.72));
-          }
+      if (attempt < 4 && overflowRe.test(msg)) {
+        const capExceeded = parseOpenRouterPromptCapExceeded(msg);
+        if (capExceeded) {
+          promptBudget = shrinkPromptBudgetAfterOpenRouterCap(promptBudget, capExceeded);
+          useCompactPrompt = true;
         } else {
-          promptBudget = Math.max(400, Math.floor(promptBudget * 0.72));
+          const tightCap = OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450;
+          const floor = tightCap ? 140 : 280;
+          promptBudget = Math.max(floor, Math.floor(promptBudget * (tightCap ? 0.55 : 0.68)));
+          useCompactPrompt = true;
         }
         continue;
       }
