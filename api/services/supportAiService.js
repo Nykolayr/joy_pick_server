@@ -162,6 +162,10 @@ async function probeOpenRouterAffordableMaxTokens(sampleMessages) {
     }
     const afford = parseOpenRouterAffordMaxTokens(errMsg);
     if (afford != null) {
+      if (afford <= 2) {
+        openRouterKeyPerRequestBlocked = true;
+        openRouterKeyPerRequestBlockDetail = errMsg;
+      }
       openRouterAffordableMaxTokens = Math.max(1, afford - 1);
       return openRouterAffordableMaxTokens;
     }
