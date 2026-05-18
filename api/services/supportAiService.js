@@ -107,21 +107,34 @@ function getEffectiveOpenRouterPromptBudget() {
   return cap;
 }
 
+function getOpenRouterCompletionReserve(effectiveCap) {
+  if (effectiveCap <= 100) return 12;
+  if (openRouterKeyIsTight() || cachedOpenRouterPromptCap != null) {
+    return OPENROUTER_COMPLETION_TOKEN_RESERVE;
+  }
+  return 0;
+}
+
 /** Бюджет prompt для fit/preflight: не съедаем токены, нужные для ответа. */
 function getOpenRouterPromptBudgetForFit() {
   const effective = getEffectiveOpenRouterPromptBudget();
-  const reserve =
-    openRouterKeyIsTight() || cachedOpenRouterPromptCap != null
-      ? OPENROUTER_COMPLETION_TOKEN_RESERVE
-      : 0;
-  return Math.max(120, effective - reserve);
+  const reserve = getOpenRouterCompletionReserve(effective);
+  const floor = effective <= 100 ? 32 : 120;
+  return Math.max(floor, effective - reserve);
 }
 
 /** Консервативная оценка: OpenRouter почти всегда считает prompt больше, чем encodeChat. */
 function conservativeOpenRouterPromptEstimate(messages) {
   const n = countOpenRouterMessagesTokens(messages);
-  const mult =
-    openRouterKeyIsTight() || cachedOpenRouterPromptCap != null ? 1.35 : 1.24;
+  const list = Array.isArray(messages) ? messages : [];
+  const nano =
+    list.length <= 2 &&
+    list.every((m) => String(m.content || '').length <= 80);
+  const mult = nano
+    ? 1.15
+    : openRouterKeyIsTight() || cachedOpenRouterPromptCap != null
+      ? 1.35
+      : 1.24;
   return Math.ceil(n * mult);
 }
 
@@ -1635,6 +1648,18 @@ function buildMicroOpenRouterSystemInstruction(modelLanguage) {
     : 'Joy Pick. Brief English answer.';
 }
 
+/** Аварийный prompt при cap OR < ~80 (ключ почти без кредитов). */
+function buildNanoOpenRouterMessages(userQuestion, modelLanguage) {
+  const q = String(userQuestion || '').trim().slice(0, 72);
+  return [
+    {
+      role: 'system',
+      content: modelLanguage === 'ru' ? 'Кратко.' : 'Brief.'
+    },
+    { role: 'user', content: q }
+  ];
+}
+
 function detectRequestTypeAlias(value, locale) {
   let text = normalizeText(value).toLowerCase();
   const isRu = locale === 'ru';
@@ -2602,12 +2627,13 @@ function parseOpenRouterPromptCapExceeded(errorMessage) {
 function shrinkPromptBudgetAfterOpenRouterCap(promptBudget, capInfo) {
   rememberOpenRouterPromptCap(capInfo.cap);
   const cap = capInfo.cap;
-  const margin = OPENROUTER_PROMPT_CAP_SAFETY;
+  const margin = cap <= 100 ? 12 : OPENROUTER_PROMPT_CAP_SAFETY;
   let next = cap - margin;
   if (capInfo.sent && capInfo.sent > cap) {
     next = Math.min(next, Math.floor((promptBudget * cap) / capInfo.sent) - margin);
   }
-  return Math.min(promptBudget, Math.max(120, next));
+  const floor = cap <= 100 ? 32 : 120;
+  return Math.min(promptBudget, Math.max(floor, next));
 }
 
 /** Не вызывать OpenRouter, пока консервативная оценка prompt > budget. */
@@ -3015,8 +3041,19 @@ async function getSupportAiAnswer({
   let promptBudget = getOpenRouterPromptBudgetForFit();
   let useCompactPrompt = promptBudget <= 450;
   const refitForAttempt = (budget) => {
+    const nanoTight = budget <= 70;
     const ultraTight = budget <= 385;
     const tightNow = isTightOpenRouterPromptBudget(budget);
+    if (nanoTight) {
+      const nanoMessages = buildNanoOpenRouterMessages(questionForModel, modelLanguage);
+      return {
+        systemInstruction: nanoMessages[0].content,
+        chunks: [],
+        openRouterMessages: nanoMessages,
+        historyTurns: 0,
+        historyFieldChars: 0
+      };
+    }
     const sys = ultraTight
       ? buildMicroOpenRouterSystemInstruction(modelLanguage)
       : useCompactPrompt || tightNow
