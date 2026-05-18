@@ -36,6 +36,7 @@ const earthdayCleanupsAdminRoutes = require('./routes/earthdayCleanupsAdmin');
 const requestGalleryRoutes = require('./routes/requestGallery');
 const landingRoutes = require('./routes/landing');
 const supportRoutes = require('./routes/support');
+const supportAiReviewAdminRoutes = require('./routes/supportAiReviewAdmin');
 
 const app = express();
 
@@ -55,7 +56,13 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'X-Support-Eval-Secret'],
+  allowedHeaders: [
+    'Authorization',
+    'Content-Type',
+    'Accept',
+    'X-Support-Eval-Secret',
+    'X-Support-Review-Agent-Secret'
+  ],
   optionsSuccessStatus: 204
 };
 
@@ -119,6 +126,7 @@ app.use('/earthday-cleanups-admin', earthdayCleanupsAdminRoutes);
 app.use('/request-gallery', requestGalleryRoutes);
 app.use('/landing', landingRoutes);
 app.use('/support', supportRoutes);
+app.use('/admin/support-ai-reviews', supportAiReviewAdminRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {

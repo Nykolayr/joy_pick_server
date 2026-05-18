@@ -19,6 +19,7 @@ alwaysApply: false
 | Словарь scope (оффтоп / in-app) без правки кода | `docs/knowledge/support_scope_dictionary.v1.json` (опционально; есть дефолт в коде) |
 | Факты и формулировки под UX приложения | `docs/knowledge/support_ru/chunks.json`, `docs/knowledge/support_en/chunks.json` (одинаковые `chunk_id`, синхронно RU+EN) |
 | HTTP: async чат, eval, гость | `api/routes/support.js` |
+| Очередь ревью (админ → агент) | `api/routes/supportAiReviewAdmin.js`, `api/services/supportAiReviewService.js` |
 | История / pending | `api/services/supportAiHistory.js`, `supportAiGuestHistory.js` |
 
 ## Контракт для клиента (не ломать без согласования)
@@ -50,3 +51,13 @@ alwaysApply: false
 ## Синхронный отладочный ответ
 
 `POST /api/support/eval-reply` с заголовком `X-Support-Eval-Secret` — без записи в БД; эндпоинт отсутствует, если секрет не задан (404).
+
+## Review queue (замечания админа)
+
+**Полный автоматический сценарий:** подключи правило **`support-ai-review-agent.mdc`** (триггеры: «проверь support review», «проверь очередь ревью» и т.д.) — там пошаговый алгоритм без скринов.
+
+Кратко: `support:review:pull` → правки чанков/RAG → деплой → `support:review:verify -- --pull-first`.
+
+- API для админки: `joy_pick_admin/API_DOCUMENTATION.md` (раздел **Support AI — очередь ревью**).
+- Контракт бэкенда: `docs/support_ai_chat_rag_plan.md` (раздел «Очередь ревью»).
+- **ENV:** `SUPPORT_REVIEW_AGENT_SECRET`, `SUPPORT_EVAL_SECRET`, `SUPPORT_EVAL_BASE_URL=https://joypick.world/api`.

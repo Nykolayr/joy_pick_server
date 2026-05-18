@@ -1,0 +1,37 @@
+---
+description: Команда «проверь очередь ревью» — автоматический workflow Support AI review
+alwaysApply: false
+---
+
+Подключай, когда пользователь просит проверить/обработать очередь ревью Support AI (без скринов).
+
+## Триггеры (достаточно одной фразы)
+
+- «Проверь support review»
+- «Проверь очередь ревью»
+- «Обработай pending review Support AI»
+- «Проверь замечания по чату ИИ»
+
+## Алгоритм (выполняй сам, без уточнений)
+
+1. `cd` в `joy_pick_server`, **`npm run support:review:pull`** → читай `tmp/support_review_queue.json`.
+2. Если `count === 0` — сообщи, что очередь пуста, и выйди.
+3. Сгруппируй все `admin_remark` из последних раундов; **пакетно** правь `docs/knowledge/support_ru/chunks.json` + `support_en/chunks.json` (одинаковые `chunk_id`) и при необходимости `api/services/supportAiService.js`.
+4. `npm run support:eval:rag`; при необходимости кейсы в `scripts/support_eval_cases.json`.
+5. **Деплой** на прод: `.cursor/docs/ssh-server.md` (чанки + сервис).
+6. **`npm run support:review:verify -- --pull-first`** — eval-reply на проде + `agent-complete` для каждого тикета.
+7. Краткий отчёт: сколько тикетов, какие темы правили, OK/FAIL по verify.
+
+## ENV (локальный `.env`, не коммитить, не цитировать секреты)
+
+- `SUPPORT_REVIEW_AGENT_SECRET`
+- `SUPPORT_EVAL_SECRET`
+- `SUPPORT_EVAL_BASE_URL=https://joypick.world/api`
+
+Если 403/404 на pull — см. `docs/support_eval_checklist.md` (склейка строк в `.env`).
+
+## Ссылки
+
+- API админки: `joy_pick_admin/API_DOCUMENTATION.md` (раздел Support AI — очередь ревью)
+- Контракт бэкенда: `docs/support_ai_chat_rag_plan.md`
+- Общая карта Support AI: `support-ai-chat.mdc`

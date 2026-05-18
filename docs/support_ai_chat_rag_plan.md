@@ -30,6 +30,50 @@
 - **`npm run support:eval:rag`** — только ретривал чанков (`previewSupportRetrieval`), без LLM; проверяет, что ожидаемые `chunk_id` попадают в top‑K.
 - Подробный чеклист, типовые ошибки агента (`.env`, PowerShell, 403/404): **`docs/support_eval_checklist.md`** (раздел «Инструкция для агента»).
 
+### Очередь ревью Support AI (админ → агент)
+
+Отдельно от пользовательского `support_ai_messages`. UI — **`joy_pick_admin`**; бэкенд — **`/api/admin/support-ai-reviews`**.
+
+**Таблица:** `support_ai_review_tickets` (миграция `041_support_ai_review_tickets.sql`).
+
+**Статусы:** `draft` | `pending_review` | `fixed`.
+
+**История:** поле `history_json` — массив раундов. Для агента при `pending_review` смотреть **последний** элемент: `question`, `ai_answer`, `ai_sources`, `admin_remark`. После исправления в том же раунде: `answer_after_fix`, `sources_after_fix`, `fix_notes`, `verified_at`.
+
+#### Admin API (JWT + `requireAdmin`)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/admin/support-ai-reviews` | Список (`?status=`, `?limit=`, `?offset=`) |
+| GET | `/api/admin/support-ai-reviews/:id` | Деталь + полная `history` |
+| POST | `/api/admin/support-ai-reviews` | Создать `draft`: `question`, `ai_answer`, `ai_sources?`, `locale?`, `model?` |
+| PATCH | `/api/admin/support-ai-reviews/:id` | Обновить только `draft` |
+| POST | `/api/admin/support-ai-reviews/:id/submit` | `{ "admin_remark" }` → `pending_review` |
+| POST | `/api/admin/support-ai-reviews/:id/reopen` | `{ "admin_remark", "question"? }` → новый раунд, `pending_review` |
+| DELETE | `/api/admin/support-ai-reviews/:id` | Только `draft` |
+
+#### Agent API (без JWT; секрет в `.env` на сервере)
+
+Если **`SUPPORT_REVIEW_AGENT_SECRET`** не задан — маршруты отвечают **404**. Заголовок: **`X-Support-Review-Agent-Secret`**.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/admin/support-ai-reviews/agent-queue` | Все `pending_review` (плоский last round) |
+| PATCH | `/api/admin/support-ai-reviews/:id/agent-complete` | `{ "answer_after_fix", "sources_after_fix?", "fix_notes?", "model?" }` → `fixed` |
+
+#### npm (агент в Cursor)
+
+- **`npm run support:review:pull`** — GET agent-queue → `tmp/support_review_queue.json`
+- **`npm run support:review:verify`** — для каждого тикета: `POST .../eval-reply` + PATCH agent-complete
+- **`npm run support:review:verify -- --pull-first`** — свежая очередь перед verify
+- **`node scripts/support_review_verify.js --id=<uuid>`** — один тикет
+
+**Локальный `.env`:** `SUPPORT_REVIEW_AGENT_SECRET`, `SUPPORT_EVAL_SECRET`, `SUPPORT_EVAL_BASE_URL=https://joypick.world/api` (секреты с сервера, не коммитить).
+
+**Документация для админки (Flutter):** `joy_pick_admin/API_DOCUMENTATION.md` — раздел **«Support AI — очередь ревью (админка)»**.
+
+**Агент в Cursor:** правило `.cursor/rules/support-ai-review-agent.mdc` — достаточно написать «проверь очередь ревью».
+
 ---
 
 ## API-контракт (текущий)
