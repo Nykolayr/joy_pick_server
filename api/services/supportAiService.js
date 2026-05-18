@@ -28,9 +28,24 @@ const OPENROUTER_KEY_MAX_PROMPT_TOKENS = Math.min(
     Number(
       process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS
         || process.env.AI_SUPPORT_MAX_PROMPT_TOKENS_RU
-        || 850
-    ) || 850
+        || 340
+    ) || 340
   )
+);
+/** Типичный потолок prompt на ключе OpenRouter с Credit limit $5 (из ошибки OR «470 > 382»). */
+const OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP = Math.max(
+  200,
+  Number(process.env.AI_SUPPORT_OPENROUTER_ASSUMED_PROMPT_CAP || 382) || 382
+);
+/** Запас под completion (max_tokens), иначе prompt влезает, а ответ — «can only afford 42». */
+const OPENROUTER_COMPLETION_TOKEN_RESERVE = Math.max(
+  80,
+  Number(process.env.AI_SUPPORT_OPENROUTER_COMPLETION_RESERVE || 130) || 130
+);
+/** Стартовый max_tokens на ключе с низким credit limit (OR часто даёт afford ~40–80). */
+const OPENROUTER_TIGHT_MAX_OUTPUT_START = Math.min(
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  Math.max(32, Number(process.env.AI_SUPPORT_TIGHT_MAX_OUTPUT_TOKENS || 64) || 64)
 );
 /** Модель для токенайзера (не обязательно совпадает с OR-моделью; для o/mini семейства достаточно). */
 const OPENROUTER_TOKENIZER_MODEL = String(process.env.AI_SUPPORT_TOKENIZER_MODEL || 'gpt-4o-mini').trim();
@@ -53,6 +68,73 @@ const CONTEXT_PROMPT_MAX_FIELD_CHARS = Math.min(
 );
 
 const KNOWLEDGE_ROOT = path.join(__dirname, '..', '..', 'docs', 'knowledge');
+
+/** Запас под расхождение encodeChat vs счётчик OpenRouter (ключ $5 → cap ~382). */
+const OPENROUTER_PROMPT_CAP_SAFETY = 40;
+
+/** Последний известный потолок prompt с OpenRouter (из ошибки «470 > 382»). */
+let cachedOpenRouterPromptCap = null;
+
+function rememberOpenRouterPromptCap(cap) {
+  if (!Number.isFinite(cap) || cap <= 0) return;
+  const capped = Math.max(120, Math.floor(cap) - OPENROUTER_PROMPT_CAP_SAFETY);
+  cachedOpenRouterPromptCap =
+    cachedOpenRouterPromptCap == null ? capped : Math.min(cachedOpenRouterPromptCap, capped);
+}
+
+/** По умолчанию true: на проде pm2 часто держит устаревший 850 — не полагаемся только на env. */
+function openRouterForceTightMode() {
+  const v = String(process.env.AI_SUPPORT_OPENROUTER_FORCE_TIGHT ?? 'true').trim().toLowerCase();
+  return !['0', 'false', 'off', 'no'].includes(v);
+}
+
+function openRouterKeyIsTight() {
+  if (openRouterForceTightMode()) return true;
+  return OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450;
+}
+
+function getEffectiveOpenRouterPromptBudget() {
+  let cap = OPENROUTER_KEY_MAX_PROMPT_TOKENS;
+  if (cachedOpenRouterPromptCap != null) {
+    cap = Math.min(cap, cachedOpenRouterPromptCap);
+  } else if (openRouterKeyIsTight()) {
+    cap = Math.min(cap, OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP - OPENROUTER_PROMPT_CAP_SAFETY);
+  }
+  return cap;
+}
+
+/** Бюджет prompt для fit/preflight: не съедаем токены, нужные для ответа. */
+function getOpenRouterPromptBudgetForFit() {
+  const effective = getEffectiveOpenRouterPromptBudget();
+  const reserve =
+    openRouterKeyIsTight() || cachedOpenRouterPromptCap != null
+      ? OPENROUTER_COMPLETION_TOKEN_RESERVE
+      : 0;
+  return Math.max(120, effective - reserve);
+}
+
+/** Консервативная оценка: OpenRouter почти всегда считает prompt больше, чем encodeChat. */
+function conservativeOpenRouterPromptEstimate(messages) {
+  const n = countOpenRouterMessagesTokens(messages);
+  const mult =
+    openRouterKeyIsTight() || cachedOpenRouterPromptCap != null ? 1.35 : 1.24;
+  return Math.ceil(n * mult);
+}
+
+function computeSafeMaxOutputTokens(promptEstimate) {
+  if (!openRouterKeyIsTight() && cachedOpenRouterPromptCap == null) {
+    return DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+  const promptCeiling =
+    cachedOpenRouterPromptCap != null
+      ? cachedOpenRouterPromptCap + OPENROUTER_PROMPT_CAP_SAFETY
+      : OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP;
+  const room = promptCeiling - promptEstimate - 20;
+  return Math.max(
+    32,
+    Math.min(OPENROUTER_TIGHT_MAX_OUTPUT_START, DEFAULT_MAX_OUTPUT_TOKENS, room)
+  );
+}
 const KNOWLEDGE_PATH_EN = path.join(KNOWLEDGE_ROOT, 'support_en', 'chunks.json');
 const KNOWLEDGE_PATH_RU = path.join(KNOWLEDGE_ROOT, 'support_ru', 'chunks.json');
 
@@ -2375,11 +2457,11 @@ function isTightOpenRouterPromptBudget(raw) {
 
 /** encodeChat занижает vs OpenRouter на коротких ключах — завышаем оценку при fit. */
 function estimateOpenRouterPromptTokens(messages, tight) {
-  const n = countOpenRouterMessagesTokens(messages);
-  if (tight && OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450) {
-    return Math.ceil(n * 1.62);
+  if (tight || OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 650) {
+    return conservativeOpenRouterPromptEstimate(messages);
   }
-  return tight ? Math.ceil(n * 1.5) : Math.ceil(n * 1.08);
+  const n = countOpenRouterMessagesTokens(messages);
+  return Math.ceil(n * 1.08);
 }
 
 function countOpenRouterMessagesTokens(messages) {
@@ -2416,8 +2498,12 @@ function fitOpenRouterPromptParts({
   maxPromptTokens,
   minimalUserTurn = false
 }) {
-  const rawBudget = Math.max(260, Number(maxPromptTokens) || OPENROUTER_KEY_MAX_PROMPT_TOKENS);
   const tight = isTightOpenRouterPromptBudget(maxPromptTokens);
+  const budgetFloor = tight ? 110 : 260;
+  const rawBudget = Math.max(
+    budgetFloor,
+    Number(maxPromptTokens) || getOpenRouterPromptBudgetForFit()
+  );
   const budget = tight
     ? Math.floor(rawBudget * (rawBudget <= 450 ? 0.82 : 0.9))
     : rawBudget;
@@ -2510,13 +2596,29 @@ function parseOpenRouterPromptCapExceeded(errorMessage) {
 }
 
 function shrinkPromptBudgetAfterOpenRouterCap(promptBudget, capInfo) {
+  rememberOpenRouterPromptCap(capInfo.cap);
   const cap = capInfo.cap;
-  const margin = 48;
+  const margin = OPENROUTER_PROMPT_CAP_SAFETY;
   let next = cap - margin;
   if (capInfo.sent && capInfo.sent > cap) {
     next = Math.min(next, Math.floor((promptBudget * cap) / capInfo.sent) - margin);
   }
   return Math.min(promptBudget, Math.max(120, next));
+}
+
+/** Не вызывать OpenRouter, пока консервативная оценка prompt > budget. */
+function refitUntilUnderPromptBudget(refitForAttempt, startBudget) {
+  let budget = startBudget;
+  let fitted = refitForAttempt(budget);
+  let estimate = conservativeOpenRouterPromptEstimate(fitted.openRouterMessages);
+  let guard = 0;
+  while (estimate > budget && guard < 20) {
+    budget = Math.max(120, Math.floor(budget * 0.82));
+    fitted = refitForAttempt(budget);
+    estimate = conservativeOpenRouterPromptEstimate(fitted.openRouterMessages);
+    guard += 1;
+  }
+  return { budget, fitted, estimate };
 }
 
 async function callOpenRouterAnswer({
@@ -2527,7 +2629,8 @@ async function callOpenRouterAnswer({
   roleHint,
   systemInstruction: prebuiltSystem,
   openRouterMessages: prebuiltMessages,
-  sessionId
+  sessionId,
+  maxOutputTokens
 }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -2552,7 +2655,10 @@ async function callOpenRouterAnswer({
   const sid = sanitizeOpenRouterSessionId(sessionId);
   const providerPrefs = buildOpenRouterProviderPreferencesFromEnv();
 
-  let maxTokens = DEFAULT_MAX_OUTPUT_TOKENS;
+  let maxTokens =
+    Number.isFinite(maxOutputTokens) && maxOutputTokens > 0
+      ? Math.min(DEFAULT_MAX_OUTPUT_TOKENS, Math.floor(maxOutputTokens))
+      : DEFAULT_MAX_OUTPUT_TOKENS;
   let lastMsg = 'ai_unavailable';
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -2586,9 +2692,13 @@ async function callOpenRouterAnswer({
       if (!response.ok) {
         const msg = json?.error?.message || `OpenRouter error ${response.status}`;
         lastMsg = msg;
+        const capExceeded = parseOpenRouterPromptCapExceeded(msg);
+        if (capExceeded) {
+          rememberOpenRouterPromptCap(capExceeded.cap);
+        }
         const afford = parseOpenRouterAffordMaxTokens(msg);
         if (afford != null && attempt < 3) {
-          maxTokens = Math.max(48, afford - 24);
+          maxTokens = Math.max(24, afford - 4);
           continue;
         }
         throw new Error(msg);
@@ -2607,7 +2717,7 @@ async function callOpenRouterAnswer({
       const msg = String(err?.message || '');
       const afford = parseOpenRouterAffordMaxTokens(msg);
       if (afford != null && attempt < 3) {
-        maxTokens = Math.max(48, afford - 24);
+        maxTokens = Math.max(24, afford - 4);
         lastMsg = msg;
         continue;
       }
@@ -2898,8 +3008,8 @@ async function getSupportAiAnswer({
       maxPromptTokens: budget
     });
 
-  let promptBudget = OPENROUTER_KEY_MAX_PROMPT_TOKENS;
-  let useCompactPrompt = OPENROUTER_KEY_MAX_PROMPT_TOKENS <= 450;
+  let promptBudget = getOpenRouterPromptBudgetForFit();
+  let useCompactPrompt = promptBudget <= 450;
   const refitForAttempt = (budget) => {
     const ultraTight = budget <= 385;
     const tightNow = isTightOpenRouterPromptBudget(budget);
@@ -2951,7 +3061,9 @@ async function getSupportAiAnswer({
     }
     return fitted;
   };
-  let fittedChunks = refitForAttempt(promptBudget);
+  let preflight = refitUntilUnderPromptBudget(refitForAttempt, promptBudget);
+  promptBudget = preflight.budget;
+  let fittedChunks = preflight.fitted;
   const llmArgs = {
     userQuestion: questionForModel,
     chunks: fittedChunks.chunks,
@@ -2960,15 +3072,19 @@ async function getSupportAiAnswer({
     roleHint,
     systemInstruction: fittedChunks.systemInstruction,
     openRouterMessages: fittedChunks.openRouterMessages,
-    sessionId: orSessionId
+    sessionId: orSessionId,
+    maxOutputTokens: computeSafeMaxOutputTokens(preflight.estimate)
   };
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     if (attempt > 0) {
-      fittedChunks = refitForAttempt(promptBudget);
+      preflight = refitUntilUnderPromptBudget(refitForAttempt, promptBudget);
+      promptBudget = preflight.budget;
+      fittedChunks = preflight.fitted;
       llmArgs.chunks = fittedChunks.chunks;
       llmArgs.systemInstruction = fittedChunks.systemInstruction;
       llmArgs.openRouterMessages = fittedChunks.openRouterMessages;
+      llmArgs.maxOutputTokens = computeSafeMaxOutputTokens(preflight.estimate);
     }
     try {
       const aiResult = await callOpenRouterAnswer(llmArgs);
@@ -3000,6 +3116,12 @@ async function getSupportAiAnswer({
     } catch (err) {
       const msg = String(err?.message || '');
       if (attempt < 4 && overflowRe.test(msg)) {
+        const affordHit = parseOpenRouterAffordMaxTokens(msg);
+        if (affordHit != null) {
+          promptBudget = Math.max(120, Math.floor(promptBudget * 0.72));
+          useCompactPrompt = true;
+          continue;
+        }
         const capExceeded = parseOpenRouterPromptCapExceeded(msg);
         if (capExceeded) {
           promptBudget = shrinkPromptBudgetAfterOpenRouterCap(promptBudget, capExceeded);

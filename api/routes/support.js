@@ -120,7 +120,11 @@ router.post(
       .isString()
       .trim()
       .isIn(SUPPORTED_LOCALES)
-      .withMessage(`locale must be one of: ${SUPPORTED_LOCALES.join(', ')}`)
+      .withMessage(`locale must be one of: ${SUPPORTED_LOCALES.join(', ')}`),
+    body('conversationContext')
+      .optional()
+      .isArray()
+      .withMessage('conversationContext must be an array')
   ],
   async (req, res) => {
     try {
@@ -140,11 +144,19 @@ router.post(
 
       const message = String(req.body.message || '').trim();
       const locale = String(req.body.locale || 'en').trim();
+      const rawCtx = Array.isArray(req.body.conversationContext) ? req.body.conversationContext : [];
+      const conversationContext = rawCtx
+        .slice(-12)
+        .map((turn) => ({
+          user_message: String(turn?.user_message || turn?.userMessage || '').trim().slice(0, 2000),
+          answer: String(turn?.answer || '').trim().slice(0, 4000)
+        }))
+        .filter((t) => t.user_message && t.answer);
       const data = await getSupportAiAnswer({
         message,
         locale,
-        conversationContext: [],
-        openRouterSessionId: 'support-eval'
+        conversationContext,
+        openRouterSessionId: `support-eval-${crypto.randomUUID()}`
       });
       return success(res, data, 'Support AI eval reply');
     } catch (err) {

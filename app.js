@@ -1,4 +1,17 @@
 require('dotenv').config();
+// pm2 может держать устаревший AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS — приоритет у .env
+try {
+  const _envPath = require('path').join(__dirname, '.env');
+  if (require('fs').existsSync(_envPath)) {
+    const _parsed = require('dotenv').parse(require('fs').readFileSync(_envPath, 'utf8'));
+    if (_parsed.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS != null) {
+      process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS =
+        _parsed.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS;
+    }
+  }
+} catch {
+  // ignore
+}
 
 // Passenger (Beget): путь к node задаётся через PASSENGER_NODEJS_BIN в .env
 // или переменной окружения на стороне хостинга; захардкоженных путей нет.
