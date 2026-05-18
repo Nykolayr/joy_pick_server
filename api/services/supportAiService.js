@@ -2748,7 +2748,7 @@ function parseOpenRouterAffordMaxTokens(errorMessage) {
   const m = String(errorMessage || '').match(/can\s+only\s+afford\s+(\d+)/i);
   if (!m) return null;
   const n = Number(m[1]);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /** OpenRouter: «Prompt tokens limit exceeded: 470 > 382» — лимит ключа на prompt, не max_tokens ответа. */
