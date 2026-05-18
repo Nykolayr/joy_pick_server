@@ -40,7 +40,7 @@ const OPENROUTER_TIGHT_KEY_OR_PROMPT_CAP = Math.max(
 /** Запас под completion (max_tokens), иначе prompt влезает, а ответ — «can only afford 42». */
 const OPENROUTER_COMPLETION_TOKEN_RESERVE = Math.max(
   80,
-  Number(process.env.AI_SUPPORT_OPENROUTER_COMPLETION_RESERVE || 130) || 130
+  Number(process.env.AI_SUPPORT_OPENROUTER_COMPLETION_RESERVE || 160) || 160
 );
 /** Стартовый max_tokens на ключе с низким credit limit (OR часто даёт afford ~40–80). */
 const OPENROUTER_TIGHT_MAX_OUTPUT_START = Math.min(
@@ -78,6 +78,11 @@ let cachedOpenRouterPromptCap = null;
 /** Снимок GET /api/v1/key — limit/limit_remaining (не путать с «потрачено $0.20»). */
 let openRouterKeySnapshot = null;
 let openRouterKeySnapshotAt = 0;
+/** Сколько max_tokens OR реально «одобрит» на этом ключе (из afford в ошибке). */
+let openRouterAffordableMaxTokens = null;
+/** OR вернул микроскопический prompt-cap (например 24 > 5) — ключ на стороне OR заблокирован. */
+let openRouterKeyPerRequestBlocked = false;
+let openRouterKeyPerRequestBlockDetail = '';
 const OPENROUTER_KEY_SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 
 async function refreshOpenRouterKeySnapshot(force = false) {
@@ -116,6 +121,54 @@ async function refreshOpenRouterKeySnapshot(force = false) {
     // ignore
   }
   return openRouterKeySnapshot;
+}
+
+/** Один лёгкий запрос к OR, чтобы узнать afford для max_tokens (не путать с «потратили $5»). */
+async function probeOpenRouterAffordableMaxTokens(sampleMessages) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  const messages =
+    Array.isArray(sampleMessages) && sampleMessages.length
+      ? sampleMessages
+      : [
+          { role: 'system', content: 'Brief.' },
+          { role: 'user', content: 'ping' }
+        ];
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: 64,
+        temperature: 0.2
+      })
+    });
+    const json = await res.json();
+    if (res.ok) {
+      openRouterAffordableMaxTokens = 64;
+      return 64;
+    }
+    const errMsg = json?.error?.message || '';
+    const capExceeded = parseOpenRouterPromptCapExceeded(errMsg);
+    if (capExceeded && capExceeded.cap <= 80) {
+      openRouterKeyPerRequestBlocked = true;
+      openRouterKeyPerRequestBlockDetail = errMsg;
+    }
+    const afford = parseOpenRouterAffordMaxTokens(errMsg);
+    if (afford != null) {
+      openRouterAffordableMaxTokens = Math.max(1, afford - 1);
+      return openRouterAffordableMaxTokens;
+    }
+  } catch {
+    // ignore
+  }
+  return openRouterAffordableMaxTokens;
 }
 
 /** Потолок prompt по настройке Credit limit ключа ($5→~342, $10→~684), не по usage. */
@@ -184,7 +237,7 @@ function conservativeOpenRouterPromptEstimate(messages) {
   const list = Array.isArray(messages) ? messages : [];
   const nano =
     list.length <= 2 &&
-    list.every((m) => String(m.content || '').length <= 80);
+    list.every((m) => String(m.content || '').length <= 180);
   const mult = nano
     ? 1.15
     : openRouterKeyIsTight() || cachedOpenRouterPromptCap != null
@@ -202,10 +255,14 @@ function computeSafeMaxOutputTokens(promptEstimate) {
       ? cachedOpenRouterPromptCap + OPENROUTER_PROMPT_CAP_SAFETY
       : getAssumedPromptCapFromKeyLimit() + OPENROUTER_PROMPT_CAP_SAFETY;
   const room = promptCeiling - promptEstimate - 20;
-  return Math.max(
-    48,
+  let cap = Math.max(
+    6,
     Math.min(OPENROUTER_TIGHT_MAX_OUTPUT_START, DEFAULT_MAX_OUTPUT_TOKENS, room)
   );
+  if (openRouterAffordableMaxTokens != null) {
+    cap = Math.min(cap, openRouterAffordableMaxTokens);
+  }
+  return cap;
 }
 
 function humanizeOpenRouterError(rawMessage, locale) {
@@ -1727,13 +1784,13 @@ function buildMicroOpenRouterSystemInstruction(modelLanguage) {
     : 'Joy Pick. Brief English answer.';
 }
 
-/** Аварийный prompt при cap OR < ~80 (ключ почти без кредитов). */
+/** Минимальный prompt для ключа с низким per-request cap (Joy Pick support). */
 function buildNanoOpenRouterMessages(userQuestion, modelLanguage) {
-  const q = String(userQuestion || '').trim().slice(0, 72);
+  const q = String(userQuestion || '').trim().slice(0, 120);
   return [
     {
       role: 'system',
-      content: modelLanguage === 'ru' ? 'Кратко.' : 'Brief.'
+      content: modelLanguage === 'ru' ? 'Joy Pick. Кратко по-русски.' : 'Joy Pick. Brief.'
     },
     { role: 'user', content: q }
   ];
@@ -2779,9 +2836,11 @@ async function callOpenRouterAnswer({
         model,
         messages,
         temperature: DEFAULT_TEMPERATURE,
-        max_tokens: maxTokens,
-        plugins: [{ id: 'context-compression' }]
+        max_tokens: maxTokens
       };
+      if (!openRouterKeyIsTight()) {
+        payload.plugins = [{ id: 'context-compression' }];
+      }
       if (sid) {
         payload.session_id = sid;
       }
@@ -3112,6 +3171,24 @@ async function getSupportAiAnswer({
   }
   await refreshOpenRouterKeySnapshot(true);
   cachedOpenRouterPromptCap = null;
+  openRouterAffordableMaxTokens = null;
+  openRouterKeyPerRequestBlocked = false;
+  openRouterKeyPerRequestBlockDetail = '';
+  const tightKey = openRouterKeyIsTight();
+  if (tightKey) {
+    await probeOpenRouterAffordableMaxTokens(null);
+    if (openRouterKeyPerRequestBlocked) {
+      const capExceeded = parseOpenRouterPromptCapExceeded(openRouterKeyPerRequestBlockDetail);
+      const capHint = capExceeded ? `${capExceeded.sent || '?'} > ${capExceeded.cap}` : 'limit';
+      const rem = openRouterKeySnapshot?.limit_remaining;
+      return buildUnavailableAnswer(
+        answerLocale,
+        answerLocale === 'ru'
+          ? `openrouter_key_blocked: лимит OR на один запрос исчерпан (${capHint} prompt-токенов). На ключе осталось ~$${rem != null ? rem.toFixed(2) : '?'}, но это не помогает, пока OR режет запрос. Откройте https://openrouter.ai/settings/credits — пополните баланс аккаунта (не только Credit limit ключа) или создайте новый API-ключ.`
+          : `openrouter_key_blocked: ${capHint}`
+      );
+    }
+  }
 
   const systemInstruction = buildOpenRouterSystemInstruction(modelLanguage);
   const overflowRe =
@@ -3129,9 +3206,12 @@ async function getSupportAiAnswer({
     });
 
   let promptBudget = getOpenRouterPromptBudgetForFit();
-  let useCompactPrompt = promptBudget <= 450;
+  if (tightKey) {
+    promptBudget = Math.min(promptBudget, 118);
+  }
+  let useCompactPrompt = tightKey || promptBudget <= 450;
   const refitForAttempt = (budget) => {
-    const nanoTight = budget <= 70;
+    const nanoTight = tightKey || budget <= 70;
     const ultraTight = budget <= 385;
     const tightNow = isTightOpenRouterPromptBudget(budget);
     if (nanoTight) {
@@ -3203,7 +3283,7 @@ async function getSupportAiAnswer({
     roleHint,
     systemInstruction: fittedChunks.systemInstruction,
     openRouterMessages: fittedChunks.openRouterMessages,
-    sessionId: orSessionId,
+    sessionId: tightKey ? null : orSessionId,
     maxOutputTokens: computeSafeMaxOutputTokens(preflight.estimate)
   };
 
