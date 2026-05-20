@@ -192,6 +192,26 @@ router.post(
       const locale = String(req.body.locale || 'en').trim();
       const guestKey = guestKeyFromRequest(req);
 
+      if (guestKey) {
+        const messageId = await createPendingGuestSupportMessage({
+          guestKey,
+          userMessage: message,
+          locale
+        });
+        processSupportMessageAsync({
+          mode: 'guest',
+          messageId,
+          guestKey,
+          message,
+          locale
+        });
+        return success(
+          res,
+          { message_id: messageId, status: 'accepted' },
+          'Support AI request accepted'
+        );
+      }
+
       if (req.user && req.user.userId) {
         const userId = req.user.userId;
         const messageId = await createPendingSupportMessage({
@@ -203,26 +223,6 @@ router.post(
           mode: 'user',
           messageId,
           userId,
-          message,
-          locale
-        });
-        return success(
-          res,
-          { message_id: messageId, status: 'accepted' },
-          'Support AI request accepted'
-        );
-      }
-
-      if (guestKey) {
-        const messageId = await createPendingGuestSupportMessage({
-          guestKey,
-          userMessage: message,
-          locale
-        });
-        processSupportMessageAsync({
-          mode: 'guest',
-          messageId,
-          guestKey,
           message,
           locale
         });
@@ -267,16 +267,16 @@ router.get(
       const messageId = String(req.params.messageId || '').trim();
       const guestKey = guestKeyFromRequest(req);
 
-      if (req.user && req.user.userId) {
-        const item = await getSupportMessageById(req.user.userId, messageId);
+      if (guestKey) {
+        const item = await getGuestSupportMessageById(guestKey, messageId);
         if (!item) {
           return error(res, 'Support AI message not found', 404);
         }
         return success(res, item, 'Support AI message status');
       }
 
-      if (guestKey) {
-        const item = await getGuestSupportMessageById(guestKey, messageId);
+      if (req.user && req.user.userId) {
+        const item = await getSupportMessageById(req.user.userId, messageId);
         if (!item) {
           return error(res, 'Support AI message not found', 404);
         }
@@ -301,26 +301,37 @@ router.get(
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
       const offset = Math.max(parseInt(String(req.query.offset || '0'), 10) || 0, 0);
+      const order = String(req.query.order || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
       const guestKey = guestKeyFromRequest(req);
+      const listOpts = { limit, offset, order };
+
+      // Лендинг: гость с X-Support-Guest-Id не должен терять историю из-за случайного JWT.
+      if (guestKey) {
+        const [items, total] = await Promise.all([
+          listGuestSupportMessages(guestKey, listOpts),
+          countGuestSupportMessages(guestKey)
+        ]);
+        return success(
+          res,
+          { items, total: Number(total) || 0, limit, offset, order },
+          'Support AI history'
+        );
+      }
 
       if (req.user && req.user.userId) {
         const userId = req.user.userId;
         const [items, total] = await Promise.all([
-          listSupportMessages(userId, { limit, offset }),
+          listSupportMessages(userId, listOpts),
           countSupportMessages(userId)
         ]);
-        return success(res, { items, total, limit, offset }, 'Support AI history');
+        return success(
+          res,
+          { items, total: Number(total) || 0, limit, offset, order },
+          'Support AI history'
+        );
       }
 
-      if (guestKey) {
-        const [items, total] = await Promise.all([
-          listGuestSupportMessages(guestKey, { limit, offset }),
-          countGuestSupportMessages(guestKey)
-        ]);
-        return success(res, { items, total, limit, offset }, 'Support AI history');
-      }
-
-      return success(res, { items: [], total: 0, limit, offset }, 'Support AI history');
+      return success(res, { items: [], total: 0, limit, offset, order }, 'Support AI history');
     } catch (err) {
       return error(res, 'Failed to load support AI history', 500, err);
     }
@@ -338,15 +349,15 @@ router.delete(
     try {
       const guestKey = guestKeyFromRequest(req);
 
-      if (req.user && req.user.userId) {
-        const deleted = await clearSupportMessages(req.user.userId);
-        await clearOpenRouterSessionForUser(req.user.userId);
-        return success(res, { deleted }, 'Support AI history cleared');
-      }
-
       if (guestKey) {
         const deleted = await clearGuestSupportMessages(guestKey);
         await clearOpenRouterSessionForGuest(guestKey);
+        return success(res, { deleted }, 'Support AI history cleared');
+      }
+
+      if (req.user && req.user.userId) {
+        const deleted = await clearSupportMessages(req.user.userId);
+        await clearOpenRouterSessionForUser(req.user.userId);
         return success(res, { deleted }, 'Support AI history cleared');
       }
 

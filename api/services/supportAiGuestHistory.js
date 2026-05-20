@@ -25,6 +25,31 @@ function deriveStatus(row) {
   return 'pending';
 }
 
+function toIsoDate(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  const s = String(value).trim();
+  return s || null;
+}
+
+function mapGuestRow(r) {
+  const sources = parseSources(r.sources_json);
+  return {
+    id: r.id,
+    user_message: r.user_message,
+    answer: r.answer,
+    answer_en: r.answer_en,
+    locale: r.locale,
+    model: r.model,
+    sources,
+    translation_fallback: Boolean(r.translation_fallback),
+    status: deriveStatus(r),
+    error_message: r.error_message,
+    created_at: toIsoDate(r.created_at),
+    updated_at: toIsoDate(r.updated_at)
+  };
+}
+
 async function createPendingGuestSupportMessage(p) {
   const id = generateId();
   const userMessage = String(p.userMessage || '').trim().slice(0, MAX_USER_MESSAGE);
@@ -64,33 +89,22 @@ async function listGuestSupportMessages(guestKey, opts = {}) {
   const offset = Math.max(parseInt(String(opts.offset || 0), 10) || 0, 0);
   const safeLimit = Number.isFinite(limit) ? limit : 50;
   const safeOffset = Number.isFinite(offset) ? offset : 0;
+  const order = String(opts.order || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
 
   const [rows] = await pool.execute(
     `SELECT id, user_message, answer, answer_en, locale, model, sources_json, translation_fallback, error_message, created_at, updated_at
      FROM support_ai_messages_guest
      WHERE guest_key = ?
-     ORDER BY created_at ASC, id ASC
+     ORDER BY created_at ${order}, id ${order}
      LIMIT ${safeLimit} OFFSET ${safeOffset}`,
     [guestKey]
   );
 
-  return rows.map((r) => {
-    const sources = parseSources(r.sources_json);
-    return {
-      id: r.id,
-      user_message: r.user_message,
-      answer: r.answer,
-      answer_en: r.answer_en,
-      locale: r.locale,
-      model: r.model,
-      sources,
-      translation_fallback: Boolean(r.translation_fallback),
-      status: deriveStatus(r),
-      error_message: r.error_message,
-      created_at: r.created_at,
-      updated_at: r.updated_at
-    };
-  });
+  const mapped = rows.map(mapGuestRow);
+  if (order === 'DESC') {
+    mapped.reverse();
+  }
+  return mapped;
 }
 
 async function getGuestSupportMessageById(guestKey, messageId) {
@@ -102,21 +116,7 @@ async function getGuestSupportMessageById(guestKey, messageId) {
     [guestKey, messageId]
   );
   if (!rows.length) return null;
-  const row = rows[0];
-  return {
-    id: row.id,
-    user_message: row.user_message,
-    answer: row.answer,
-    answer_en: row.answer_en,
-    locale: row.locale,
-    model: row.model,
-    sources: parseSources(row.sources_json),
-    translation_fallback: Boolean(row.translation_fallback),
-    status: deriveStatus(row),
-    error_message: row.error_message,
-    created_at: row.created_at,
-    updated_at: row.updated_at
-  };
+  return mapGuestRow(rows[0]);
 }
 
 async function listRecentGuestConversationContext(guestKey, opts = {}) {
@@ -149,7 +149,9 @@ async function countGuestSupportMessages(guestKey) {
     'SELECT COUNT(*) AS c FROM support_ai_messages_guest WHERE guest_key = ?',
     [guestKey]
   );
-  return Number(rows[0].c) || 0;
+  const raw = rows[0]?.c ?? 0;
+  const n = typeof raw === 'bigint' ? Number(raw) : Number(raw);
+  return Number.isFinite(n) ? n : 0;
 }
 
 async function clearGuestSupportMessages(guestKey) {

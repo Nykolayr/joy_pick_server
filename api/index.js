@@ -60,6 +60,7 @@ const corsOptions = {
     'Authorization',
     'Content-Type',
     'Accept',
+    'X-Support-Guest-Id',
     'X-Support-Eval-Secret',
     'X-Support-Review-Agent-Secret'
   ],

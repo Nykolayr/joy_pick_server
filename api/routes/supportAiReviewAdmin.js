@@ -100,7 +100,8 @@ router.get(
   [
     query('status').optional().isString().trim().isIn(STATUSES),
     query('limit').optional().isInt({ min: 1, max: 200 }),
-    query('offset').optional().isInt({ min: 0 })
+    query('offset').optional().isInt({ min: 0 }),
+    query('created_by_admin_id').optional().isUUID()
   ],
   async (req, res) => {
     try {
@@ -111,7 +112,8 @@ router.get(
       const data = await listTickets({
         status: req.query.status,
         limit: req.query.limit,
-        offset: req.query.offset
+        offset: req.query.offset,
+        createdByAdminId: req.query.created_by_admin_id
       });
       return success(res, data, 'Support AI review tickets');
     } catch (err) {
@@ -149,7 +151,8 @@ router.post(
     body('ai_answer').isString().trim().isLength({ min: 1, max: 16000 }),
     body('ai_sources').optional().isArray(),
     body('locale').optional().isString().trim().isIn(SUPPORTED_LOCALES),
-    body('model').optional().isString().trim().isLength({ max: 128 })
+    body('model').optional().isString().trim().isLength({ max: 128 }),
+    body('admin_remark').optional().isString().trim().isLength({ max: 8000 })
   ],
   async (req, res) => {
     try {
@@ -176,7 +179,8 @@ router.patch(
     body('ai_answer').optional().isString().trim().isLength({ min: 1, max: 16000 }),
     body('ai_sources').optional().isArray(),
     body('locale').optional().isString().trim().isIn(SUPPORTED_LOCALES),
-    body('model').optional().isString().trim().isLength({ max: 128 })
+    body('model').optional().isString().trim().isLength({ max: 128 }),
+    body('admin_remark').optional().isString().trim().isLength({ max: 8000 })
   ],
   async (req, res) => {
     try {

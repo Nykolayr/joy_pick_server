@@ -47,6 +47,8 @@ function getLastRound(history) {
 function rowToListItem(row) {
   const history = parseHistory(row.history_json);
   const last = getLastRound(history);
+  const aiAnswer = last?.ai_answer ? String(last.ai_answer).trim() : null;
+  const answerAfterFix = last?.answer_after_fix ? String(last.answer_after_fix).trim() : null;
   return {
     id: row.id,
     status: row.status,
@@ -54,7 +56,14 @@ function rowToListItem(row) {
     round_count: history.length,
     last_question: last?.question || null,
     last_admin_remark: last?.admin_remark || null,
-    has_answer_after_fix: Boolean(last?.answer_after_fix),
+    /** Исходный ответ ИИ в последнем раунде (до правки агента). */
+    ai_answer: aiAnswer || null,
+    /** То же поле для обратной совместимости с админкой. */
+    last_ai_answer: aiAnswer || null,
+    /** Ответ после правки агента (последний в раунде). */
+    answer_after_fix: answerAfterFix || null,
+    last_answer_after_fix: answerAfterFix || null,
+    has_answer_after_fix: Boolean(answerAfterFix),
     created_by_admin_id: row.created_by_admin_id,
     fixed_at: row.fixed_at,
     fixed_by: row.fixed_by,
@@ -79,15 +88,20 @@ function rowToDetail(row) {
   };
 }
 
-async function listTickets({ status, limit = 50, offset = 0 }) {
+async function listTickets({ status, limit = 50, offset = 0, createdByAdminId = null }) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const params = [];
-  let where = '';
+  const conditions = [];
   if (status && STATUSES.includes(status)) {
-    where = 'WHERE status = ?';
+    conditions.push('status = ?');
     params.push(status);
   }
+  if (createdByAdminId) {
+    conditions.push('created_by_admin_id = ?');
+    params.push(createdByAdminId);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const [countRows] = await pool.execute(
     `SELECT COUNT(*) AS total FROM support_ai_review_tickets ${where}`,
     params
@@ -116,7 +130,8 @@ async function createTicket(adminId, payload) {
     question: payload.question,
     ai_answer: payload.ai_answer,
     ai_sources: payload.ai_sources,
-    model: payload.model
+    model: payload.model,
+    admin_remark: payload.admin_remark
   });
   if (!round.question) {
     const err = new Error('question is required');
@@ -163,6 +178,10 @@ async function updateDraftTicket(id, adminId, payload) {
   if (payload.ai_answer !== undefined) last.ai_answer = String(payload.ai_answer).trim();
   if (payload.ai_sources !== undefined) last.ai_sources = normalizeSources(payload.ai_sources);
   if (payload.model !== undefined) last.model = payload.model != null ? String(payload.model).trim() : null;
+  if (payload.admin_remark !== undefined) {
+    const remark = String(payload.admin_remark).trim();
+    last.admin_remark = remark || null;
+  }
   if (payload.locale !== undefined) {
     row.locale = String(payload.locale).trim();
   }

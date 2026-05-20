@@ -217,6 +217,19 @@
     "answerMustNotContain": []
   },
   {
+    "id": "waste_creator_find_executor_ru",
+    "message": "Как найти исполнителя для уборки мусора",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["waste_creator_how_find_executor_one_join"],
+    "answerMustNotContain": [
+      "Исполнители могут",
+      "исполнители могут присоедин",
+      "Не формулируйте",
+      "слот",
+      "только на карте"
+    ]
+  },
+  {
     "id": "waste_join_forgot_ru",
     "message": "Если я нажал на участие в заявке Уборка мусора, но забыл про это, что случится?",
     "locale": "ru",
@@ -450,5 +463,33 @@
     "answerMustNotContain": [
       "тот участник"
     ]
+  },
+  {
+    "id": "haul_territory_help_ru",
+    "message": "хочу чтобы кто либо вывез мусор с участка. может ли приложение помочь с этим вопросом?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["product_qa_haul_trash_territory_waste_only"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "supported_languages_ru",
+    "message": "на каких языках доступно приложение?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["app_supported_languages_list"],
+    "answerMustNotContain": ["только русский", "только два"]
+  },
+  {
+    "id": "app_overview_ru",
+    "message": "что может данное приложение?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["intent_what_is_app_for_beginners"],
+    "answerMustNotContain": []
+  },
+  {
+    "id": "plant_tree_not_gardening_ru",
+    "message": "как посадить дерево",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["product_qa_plant_tree_how_in_app_not_gardening"],
+    "answerMustNotContain": ["яму", "мульч", "полейте", "освещен", "корневой"]
   }
 ]

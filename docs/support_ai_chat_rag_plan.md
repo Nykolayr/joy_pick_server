@@ -44,10 +44,11 @@
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/api/admin/support-ai-reviews` | Список (`?status=`, `?limit=`, `?offset=`) |
+| GET | `/api/admin/support-ai-reviews` | Список (`?status=`, `?limit=`, `?offset=`); в `items[]`: `last_question`, `last_admin_remark`, `ai_answer`, `answer_after_fix`, `has_answer_after_fix` |
 | GET | `/api/admin/support-ai-reviews/:id` | Деталь + полная `history` |
-| POST | `/api/admin/support-ai-reviews` | Создать `draft`: `question`, `ai_answer`, `ai_sources?`, `locale?`, `model?` |
-| PATCH | `/api/admin/support-ai-reviews/:id` | Обновить только `draft` |
+| POST | `/api/admin/support-ai-reviews` | Создать `draft`: `question`, `ai_answer`, `ai_sources?`, `locale?`, `model?`, `admin_remark?` |
+| PATCH | `/api/admin/support-ai-reviews/:id` | Обновить только `draft` (в т.ч. `admin_remark` в последнем раунде — автосейв админки) |
+| GET | `?created_by_admin_id=` | Опциональный фильтр списка по автору черновика |
 | POST | `/api/admin/support-ai-reviews/:id/submit` | `{ "admin_remark" }` → `pending_review` |
 | POST | `/api/admin/support-ai-reviews/:id/reopen` | `{ "admin_remark", "question"? }` → новый раунд, `pending_review` |
 | DELETE | `/api/admin/support-ai-reviews/:id` | Только `draft` |

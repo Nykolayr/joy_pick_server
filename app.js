@@ -8,6 +8,9 @@ try {
       process.env.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS =
         _parsed.AI_SUPPORT_OPENROUTER_KEY_MAX_PROMPT_TOKENS;
     }
+    if (_parsed.OPENROUTER_API_KEY != null && String(_parsed.OPENROUTER_API_KEY).trim()) {
+      process.env.OPENROUTER_API_KEY = String(_parsed.OPENROUTER_API_KEY).trim();
+    }
   }
 } catch {
   // ignore

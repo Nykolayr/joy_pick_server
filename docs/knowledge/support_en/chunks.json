@@ -340,6 +340,18 @@
     ]
   },
   {
+    "chunk_id": "waste_creator_how_find_executor_one_join",
+    "title": "Waste creator: how an executor appears (one Join, not several executors)",
+    "text": "If you are the creator of a Waste Location (trash cleanup) and ask how to find an executor: create the request in the app (home tab, + button, Waste Location type, required fields and photos). After publishing it appears on the map and in the list. An executor appears when one user opens details and taps Join—only one executor at a time, usually about a day to complete. While nobody joined, the request stays open for others; Share from details and add a donation if needed. In user-facing answers do not say «executors can join» in plural, avoid jargon like «slot», and never output meta instructions to the model («do not phrase…»). For someone else’s open request they must Join, not «create a request to become executor».",
+    "tags": [
+      "how to find executor",
+      "find executor trash cleanup",
+      "creator waiting join",
+      "one executor waste",
+      "attract executor waste location"
+    ]
+  },
+  {
     "chunk_id": "request_join_event_flow",
     "title": "How to join an event",
     "text": "Open Event details and tap Join when the Join button is available. Current client flow does not define a separate explicit -30/-60 minute pre-start join window; use Join availability on the card as source of truth. After event start, participant perform/submit actions follow screen rules.",
@@ -2580,6 +2592,22 @@
     ]
   },
   {
+    "chunk_id": "product_qa_plant_tree_how_in_app_not_gardening",
+    "title": "How to plant a tree: Joy Pick app only, not gardening",
+    "text": "“How to plant a tree” in Joy Pick Support AI is about the app, not horticulture. Do not answer with digging holes, watering, mulch, or picking a sunny yard spot. In Joy Pick: tree icon in a white circle on a card = the Event (subbotnik) includes tree planting (Help → UI Guide). Organizer: home tab → + → Event, place, time, enable Plant tree. Participants find it on map/list and join. Not Waste Location. Pure gardening with no app link: briefly say you only help with Joy Pick.",
+    "tags": [
+      "how to plant a tree",
+      "plant a tree",
+      "plant tree",
+      "tree planting",
+      "not gardening",
+      "event",
+      "subbotnik",
+      "tree icon",
+      "help_plant_tree"
+    ]
+  },
+  {
     "chunk_id": "product_plant_tree_icon_not_request_type_waste",
     "title": "Tree icon: Plant a tree (Event), not Waste Location type",
     "text": "The tree icon in Joy Pick does not mean the request type is Waste Location (trash cleanup). Per Help → UI Guide it is the Plant Tree indicator: for an Event (subbotnik) when tree planting is included—tree in a white circle on the map and card; in Event creation the same icon marks the Plant a tree option. Help also describes the paired Trash pickup only marker with a truck icon. Request type (Waste / Speed / Event) is chosen separately in the create menu; Waste uses different fields/icons—do not equate the tree with Waste Location.",
@@ -2626,7 +2654,7 @@
   {
     "chunk_id": "intent_what_is_app_for_beginners",
     "title": "What Joy Pick is for and what you can do in the app",
-    "text": "Joy Pick helps people organize and join environmental cleanups. On the first bottom tab you browse other people’s requests on a map and in a list. It is the same data, and you can switch between map and list, search, and filter. Everything there is a request. There are three request types: trash cleanup with a pollution pin, a solo quick cleanup with before and after photos, and a scheduled subbotnik-style cleanup with a time and participants. The second tab is recycling stations and partners. The third tab is Joy Pick news. The fourth tab is your profile with Stripe payouts, JoyCoins and partner redemptions, tracked cleanup time and a PDF certificate, your own requests list, notifications, language, and human support. The blue Support AI entry on the main screen answers app questions. Requests have chats. You can donate from another user’s request card. The app is meant to make trash cleanup easier and encourage people to act together.",
+    "text": "Joy Pick helps organize and join environmental cleanups: mark polluted areas, report litter, find volunteers, and send donations. The home tab shows requests on a map and list (trash cleanup, quick cleanup, events) with chats to talk to participants. The second tab is recycling stations and partners. The third is good-news stories. The fourth is your profile with tracked cleanup time and a volunteer-hours PDF, JoyCoins, Stripe for donations and payouts, My requests, notifications, language, and human support. You can donate and receive donations for cleanups per app rules. Support AI on the home screen answers app questions.",
     "tags": [
       "what is joy pick",
       "what is the app for",
@@ -2657,7 +2685,7 @@
   {
     "chunk_id": "product_qa_haul_trash_territory_waste_only",
     "title": "Haul trash away: haul-only option and Waste Location",
-    "text": "When you need garbage hauled away from a site, create a trash-cleanup request in Joy Pick. The creation form has a separate Trash pickup only toggle for cases where you need haul-away rather than a full on-site cleanup. After you save, the map and list show the truck-in-white-circle indicator from Help. If you do not enable haul-only, the usual flow is an on-site cleanup by a joined executor.",
+    "text": "When you need trash hauled away from a yard or property, Joy Pick can help: create a Waste Location request. Turn on Trash pickup only in the form when you need haul-away, not a full on-site cleanup. An executor can join; after review and moderation they may receive monetary donations per app rules. The map and list show the truck-in-white-circle indicator (see Help). Without haul-only, the usual flow is on-site cleanup by a joined executor.",
     "tags": [
       "haul trash",
       "haul away",
