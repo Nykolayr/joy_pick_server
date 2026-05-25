@@ -1831,7 +1831,9 @@ Authorization: Bearer <jwt_token>
 **Поля формы:**
 - `category` (string, обязательное) - категория заявки
 - `name` (string, обязательное) - название заявки
-- `description` (string, опционально) - описание
+- `description` (string, обязательное если `integrity_enforce=true`, иначе опционально) - описание
+- `integrity_enforce` (boolean/string, опционально) - `true`/`1`: проверка integrity на create, при провале 422; без поля — legacy (заявка создаётся)
+- `locale` (string, опционально) - язык UI для текстов ошибок integrity
 - `latitude` (float, опционально) - широта
 - `longitude` (float, опционально) - долгота
 - `city` (string, опционально) - город
@@ -1939,9 +1941,52 @@ Future<void> createRequestWithPhotos({
   if (response.statusCode == 201) {
     final data = jsonDecode(response.body);
     print('Заявка создана: ${data['data']['request']['id']}');
+  } else if (jsonDecode(response.body)['errorCode'] == 'INTEGRITY_CHECK_FAILED') {
+    // Заявка НЕ создана — показать data.integrity.issues
   }
 }
 ```
+
+#### Проверка integrity при создании
+
+Перед записью в БД сервер может проверить **адрес**, **название и описание**, **фото «до»** (для speed — обязательны; AI: не интерьер). Радиус и «фото после» на create не проверяются.
+
+**Поле `integrity_enforce`** (multipart / JSON): единственный признак «проверять на create и не создавать при провале».
+
+| Значение | Поведение |
+|----------|-----------|
+| не передано, пусто, `false`, `0` | Заявка **создаётся**; `description` может быть пустым (подставится из `name`); integrity на **`pending`** (модерация) |
+| `true` / `1` | При провале integrity — **422**, заявка **не** создаётся; `description` обязателен |
+
+**Ошибка (422)** — только если передано `integrity_enforce=true`:
+
+```json
+{
+  "success": false,
+  "errorCode": "INTEGRITY_CHECK_FAILED",
+  "message": "Заявка не прошла проверку. Исправьте поля ниже.",
+  "data": {
+    "integrity": {
+      "ok": false,
+      "request_created": false,
+      "locale": "ru",
+      "summary": "… на языке пользователя …",
+      "issues": [
+        {
+          "code": "GIBBERISH_NAME",
+          "field": "name",
+          "severity": "block",
+          "message_key": "integrity_gibberish_name",
+          "message": "… переведённый текст …",
+          "source": "rules"
+        }
+      ]
+    }
+  }
+}
+```
+
+Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
 
 **Ответ (201):**
 ```json
@@ -2247,6 +2292,7 @@ Future<void> createRequestWithPayment({
 - **Для заявок типа `event` и `wasteLocation`:** изменение статуса на `pending` через этот эндпоинт **ЗАПРЕЩЕНО**. Используйте `POST /api/requests/:requestId/close-by-creator` для закрытия заявки создателем
 - **Перенос времени события (event):** для заявок типа `event` изменить `start_date` и/или `end_date` (переназначить время встречи) могут **только создатель события или админ**. Исполнитель и другие участники не могут переносить время. Передайте в теле запроса новые значения `start_date` и/или `end_date` в формате ISO 8601 (например `"2025-12-15T14:00:00.000Z"`).
 - При изменении статуса на `pending` (для других типов заявок) отправляется push-уведомление создателю
+- **`approved` / `rejected` через этот PUT — только админ** (исполнитель/создатель не могут финально модерировать). Логика финализации — `requestModerationService.finalizeModeration` (то же, что admin POST ниже).
 - При изменении статуса на `approved` (одобрение) автоматически выполняются действия согласно типу заявки (см. раздел "Важно о начислении коинов")
 - При изменении статуса на `rejected` (отклонение) возвращаются деньги и отправляются push-уведомления
 
@@ -2347,12 +2393,20 @@ Future<void> createRequestWithPayment({
 - **На отметке 7 суток:** один раз пуш **создателю** (лог `cron_actions`: `executorStaleWarnCreator`).
 - **На отметке 8 суток:** статус **`archived`**, пуши создателю / исполнителю (если есть) / донатерам; **автоматический рефанд донатов не выполняется** в этой ветке (как у мягкого архива «истёк срок» для waste).
 
-#### 2. На модерации (`pending`): **7 суток пуш модераторам → +1 сутки архив с рефандом**
+#### 2. На модерации (`pending`): автомодерация (grace) + fallback **7 суток** → архив
 
-Опорное время: **`submitted_for_review_at`** (при отсутствии — ориентир **`updated_at`** для старых записей).
+**Предварительное авторешение** (поля `moderation_proposed_*` в `requests`):
 
-- **7 суток** в `pending`: пуш **всем админам** (`admin = true`, есть FCM), лог `moderationStaleWarnAdmins`.
-- **8 суток** в `pending`: **рефанд донатов** (Stripe), статус **`archived`**, поле **`submitted_for_review_at`** сбрасывается; **`participant_completions`** и **`work_duration_minutes`** **не** удаляются; **групповой чат не** удаляется; **jcoins на пользователях не** уменьшаются (отдельного отката начислений нет).
+- Пока действует предложение, клиентский **`status` остаётся `pending`**.
+- После **`moderation_finalize_at`** (по умолчанию **24 ч** с `moderation_proposed_at`, `AUTO_MODERATION_GRACE_HOURS`) крон **`finalizePendingModerationProposals`** применяет решение как финальный **`approved`** / **`rejected`**.
+- При proposed **`reject`** — пуш модераторам `moderation_auto_reject_pending` (в тексте — число/сумма донатов). При proposed **`approve`** — пуш модераторам **не** отправляется.
+- Модератор: **`POST /api/admin/requests/:id/moderation/confirm-proposed`**, **`cancel-proposed`**, **`approve`**, **`reject`** (JWT + admin). См. раздел **Admin: модерация заявок** ниже.
+- **`PUT /api/requests/:id`** со статусом `approved`/`rejected` — **только админ**; внутри вызывается тот же финализатор.
+
+**Fallback без решения (как раньше):** опорное время **`submitted_for_review_at`** (или `updated_at`).
+
+- **7 суток** в `pending` **без** активного предложения (`moderation_finalize_at` в будущем не блокирует): пуш админам `moderationStaleWarnAdmins`.
+- **≥ 7 суток** без активного grace-предложения: **`archived`** + рефанд донатов (`archivePendingModerationTimeout`).
 
 #### 3. Прочее (кратко)
 
@@ -2360,7 +2414,30 @@ Future<void> createRequestWithPayment({
 - **speedCleanup / event**, статусы **`new` / `inProgress`**, **8 суток** с **`created_at`** без ухода в **`pending`**: автоотклонение через **`handleRequestRejection`** (рефанды по донатам, как при отклонении).
 - Напоминания waste (2 ч / 24 ч), **checkEventAfterStartDate** (event после `start_date`), выплаты, **cleanupUnpaidRequests** (legacy `pending_payment`) и др. — по-прежнему в том же cron-скрипте.
 
-**Ответ POST `/api/cron/run`** может содержать блоки результатов, например **`checkExecutorStaleness`**, **`checkModerationReviewStale`**, **`deleteInactiveRequests`** (архив без исполнителя / автоотклонение speed-event и т.д.).
+**Ответ POST `/api/cron/run`** может содержать блоки результатов, например **`finalizePendingModerationProposals`**, **`checkExecutorStaleness`**, **`checkModerationReviewStale`**, **`deleteInactiveRequests`** (архив без исполнителя / автоотклонение speed-event и т.д.).
+
+---
+
+### Admin: модерация заявок (автомодерация + ручное вмешательство)
+
+**Префикс:** `/api/admin/requests` · **JWT + `requireAdmin`**
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/moderation-queue` | Список `pending`. Query: `has_proposed`, `proposed_action`, `sort` (`finalize_at` \| `submitted`), `limit`, `offset` |
+| GET | `/:id/moderation` | Карточка заявки + блок `moderation` + `donations_summary` |
+| POST | `/:id/moderation/confirm-proposed` | Подтвердить текущее предложенное решение |
+| POST | `/:id/moderation/cancel-proposed` | Отменить предложение, остаться в `pending` |
+| POST | `/:id/moderation/approve` | Ручной финальный approve |
+| POST | `/:id/moderation/reject` | Ручной финальный reject; body: `rejection_reason`, `rejection_message` |
+
+**Поля `moderation` в ответе:** `proposed_action`, `finalize_at`, `seconds_until_finalize`, `reason_code`, `meta`, `can_confirm`, `can_cancel`, `can_manual_approve`, `can_manual_reject`, `donations_summary`, **`integrity_check`** (последний прогон `requestIntegrityCheck`), **`integrity_summary_for_moderator`** (текст причин для UI).
+
+При **авто-reject** в `moderation.meta` / `integrity_check.issues` — список кодов и сообщений (почему предложено отклонение). Event без участников — **не** ошибка.
+
+**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`20`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY`.
+
+**Миграции:** `042_requests_auto_moderation.sql`, `043_requests_integrity_check.sql`.
 
 ---
 
@@ -5770,7 +5847,8 @@ Cron задачи выполняются автоматически через `
    - Начало события
 5. **checkEventAfterStartDate**, **checkTransferPayoutAvailability**, **notifyInactiveWasteRequests**, **notifySuperadminsRequestNotClosed**, **cleanupUnpaidRequests** — вспомогательные задачи из `runAllCronTasks()` (см. `scripts/cronTasks.js`)
 6. **checkExecutorStaleness** / **executorStaleWarnCreator**, **executorStaleArchive** — SLA исполнителя **7+1** (см. [SLA и cron](#автоматические-сроки-sla-и-cron))
-7. **checkModerationReviewStale** / **moderationStaleWarnAdmins**, **moderationTimeoutArchive** — SLA модерации **`pending`** **7+1**
+6. **finalizePendingModerationProposals** — финализация предложенной автомодерации после grace period  
+7. **checkModerationReviewStale** / **moderationStaleWarnAdmins**, **moderationTimeoutArchive** — SLA модерации **`pending`** **7+1** (не пересекается с активным `moderation_finalize_at` в будущем)
 8. **deleteInactiveRequests** — waste **`new`** после **`expires_at` + 1 день** → **`archived`**; speed/event **`new`/`inProgress`**, **8 суток** с **`created_at`** без **`pending`** → автоотклонение (**не** удаление строки)
 
 **Поля выполненных действий:**

@@ -473,7 +473,14 @@ router.get('/:id', async (req, res) => {
 router.post('/', authenticate, uploadRequestPhotos, [
   body('category').isIn(['wasteLocation', 'speedCleanup', 'event']).withMessage('Invalid category'),
   body('name').notEmpty().withMessage('Name is required'),
-  body('description').optional().isString(),
+  body('description').custom((value, { req }) => {
+    const { requiresDescriptionOnCreate } = require('../utils/clientAppCompat');
+    if (!requiresDescriptionOnCreate(req)) return true;
+    if (!value || !String(value).trim()) {
+      throw new Error('Description is required');
+    }
+    return true;
+  }),
   body('latitude').optional().isFloat(),
   body('longitude').optional().isFloat(),
   body('city').optional().isString()
@@ -639,6 +646,38 @@ router.post('/', authenticate, uploadRequestPhotos, [
       ? uniqueUrls([...uploadedPhotosBefore, ...externalPhotos])
       : uploadedPhotosBefore;
     const finalPhotosAfter = uploadedPhotosAfter;
+
+    const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
+    const { sendIntegrityCheckFailed } = require('../utils/integrityErrorResponse');
+    const {
+      supportsIntegrityBlockOnCreate,
+      normalizeDescriptionForCreate,
+    } = require('../utils/clientAppCompat');
+    const requestLocale = normalizeLocale(
+      bodyData.locale || req.query.locale || req.headers['accept-language']
+    );
+    const descriptionForCreate = normalizeDescriptionForCreate(req, description, name);
+    const photoFilesBefore = (req.files?.photos_before || []).map((f) => f.path);
+    const photoFilesAfter = (req.files?.photos_after || []).map((f) => f.path);
+
+    const integrityResult = await checkRequestIntegrity({
+      phase: 'create',
+      category,
+      name,
+      description: descriptionForCreate,
+      latitude,
+      longitude,
+      city,
+      photosBefore: finalPhotosBefore,
+      photosAfter: finalPhotosAfter,
+      photoFilesBefore,
+      photoFilesAfter,
+      locale: requestLocale,
+    });
+
+    if (!integrityResult.ok && supportsIntegrityBlockOnCreate(req)) {
+      return sendIntegrityCheckFailed(res, integrityResult);
+    }
 
     const requestId = generateId();
     const userId = req.user.userId;
@@ -1087,16 +1126,30 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         if (statusNormalized === 'rejected' && oldStatus !== 'rejected') {
           statusChangedToRejected = true;
         }
+
+        if (
+          (statusNormalized === 'approved' || statusNormalized === 'rejected') &&
+          (statusChangedToApproved || statusChangedToRejected)
+        ) {
+          if (!isAdmin) {
+            return error(res, 'Only admin can approve or reject requests', 403);
+          }
+        }
       }
 
-      updates.push('status = ?');
-      params.push(statusNormalized);
-      if (statusNormalized === 'approved') {
-        updates.push('approved_at = NOW()');
-        updates.push('submitted_for_review_at = NULL');
-      }
-      if (statusNormalized === 'rejected') {
-        updates.push('submitted_for_review_at = NULL');
+      const deferStatusToModerationService =
+        statusChangedToApproved || statusChangedToRejected;
+
+      if (!deferStatusToModerationService) {
+        updates.push('status = ?');
+        params.push(statusNormalized);
+        if (statusNormalized === 'approved') {
+          updates.push('approved_at = NOW()');
+          updates.push('submitted_for_review_at = NULL');
+        }
+        if (statusNormalized === 'rejected') {
+          updates.push('submitted_for_review_at = NULL');
+        }
       }
     }
     if (statusChangedToPending) {
@@ -1257,17 +1310,19 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && !statusChangedToApproved && !statusChangedToRejected) {
       return error(res, 'No data to update', 400);
     }
 
-    updates.push('updated_at = NOW()');
-    params.push(id);
+    if (updates.length > 0) {
+      updates.push('updated_at = NOW()');
+      params.push(id);
 
-    await pool.execute(
-      `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
+      await pool.execute(
+        `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+    }
 
     // ========== ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА ==========
     
@@ -1300,37 +1355,36 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
             requestCategory: requestInfo.category || requestCategory,
             creatorName: requestInfo.creator_name || 'Unknown User',
           }).catch(() => {});
+
+          const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
+          runIntegrityOnPending(id, { locale: bodyData?.locale || req.query?.locale }).catch(() => {});
         }
       } catch (error) {
         // Игнорируем ошибки обработки отправки на рассмотрение
       }
     }
 
-    // 2. Обработка одобрения заявки (approved): первая выплата — коины и распределение донатов сразу
+    // 2–3. Финальная модерация (approve/reject) — единый сервис
     let wasteTransferResult = null;
-    if (statusChangedToApproved) {
-      const cat = (requestCategory || '').toString().trim().toLowerCase();
+    if (statusChangedToApproved || statusChangedToRejected) {
+      const requestModerationService = require('../services/requestModerationService');
       try {
-        if (cat === 'wastelocation') {
-          wasteTransferResult = await handleWasteApproval(id, requestCreatedBy);
-        } else if (cat === 'event') {
-          await handleEventApproval(id, requestCreatedBy);
-        } else if (cat === 'speedcleanup') {
-          await handleSpeedCleanupApproval(id, requestCreatedBy, speedCleanupEarnedCoin);
-        } else {
-          console.warn(`[requests] Approval: unknown category "${requestCategory}" for request ${id}, coins not awarded`);
+        const modResult = await requestModerationService.finalizeModeration(id, {
+          action: statusChangedToApproved ? 'approve' : 'reject',
+          source: 'manual',
+          adminUserId: req.user.userId,
+          rejectionReason: rejection_reason,
+          rejectionMessage: rejection_message,
+        });
+        if (modResult.transfer_result) {
+          wasteTransferResult = modResult.transfer_result;
         }
-      } catch (err) {
-        console.error('[requests] Approval handler error (coins may not have been awarded):', err);
-      }
-    }
-
-    // 3. Обработка отклонения заявки (rejected)
-    if (statusChangedToRejected) {
-      try {
-        await handleRequestRejection(id, requestCategory, requestCreatedBy, rejection_reason, rejection_message);
-      } catch (error) {
-        // Игнорируем ошибки обработки отклонения заявки
+      } catch (modErr) {
+        if (modErr.code === 'INVALID_STATUS') {
+          return error(res, modErr.message, 400);
+        }
+        console.error('[requests] finalizeModeration error:', modErr);
+        return error(res, 'Error finalizing moderation', 500, modErr);
       }
     }
 
@@ -2920,6 +2974,9 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
         requestCategory: 'wasteLocation',
         creatorName: requestInfo[0]?.creator_name || 'Unknown User',
       }).catch(() => {});
+
+      const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
+      runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});
     } else {
       // Для event: отправляем push-уведомление создателю
       const { sendRequestSubmittedNotification } = require('../services/pushNotification');
@@ -3125,7 +3182,23 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     const updatedRequest = updatedRequests[0];
     // Обработка JSON полей
     updatedRequest.participant_completions = parseJsonFieldSafe(updatedRequest.participant_completions, {});
-success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
+
+    const { sendModerationNotification } = require('../services/pushNotification');
+    const [requestInfo] = await pool.execute(
+      'SELECT r.name, u.display_name as creator_name FROM requests r LEFT JOIN users u ON r.created_by = u.id WHERE r.id = ?',
+      [requestId]
+    );
+    sendModerationNotification({
+      requestId,
+      requestName: requestInfo[0]?.name || 'Unnamed Request',
+      requestCategory: 'event',
+      creatorName: requestInfo[0]?.creator_name || 'Unknown User',
+    }).catch(() => {});
+
+    const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
+    runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});
+
+    success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
   } catch (err) {
     error(res, 'Error closing request', 500, err);
   }
@@ -3151,6 +3224,7 @@ router.post('/create-with-payment', authenticate, async (req, res) => {
 module.exports = router;
 module.exports.buildRequestDetailForApi = buildRequestDetailForApi;
 module.exports.handleRequestRejection = handleRequestRejection;
+module.exports.handleWasteApproval = handleWasteApproval;
 module.exports.handleEventApproval = handleEventApproval;
 module.exports.handleSpeedCleanupApproval = handleSpeedCleanupApproval;
 module.exports.payoutSpeedCleanupNewDonationsBeforeArchive = payoutSpeedCleanupNewDonationsBeforeArchive;

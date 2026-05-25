@@ -1380,6 +1380,58 @@ async function sendModerationNotification({ requestId, requestName, requestCateg
 /**
  * Напоминание модераторам: заявка в pending дольше положенного (нужен апрув или архив по SLA).
  */
+/**
+ * Пуш модераторам: предложен auto-reject, можно вмешаться до финализации.
+ */
+async function sendModerationAutoRejectPendingNotification({
+  requestId,
+  requestName,
+  requestCategory,
+  finalizeAt,
+  donationsCount = 0,
+  donationsTotal = 0,
+  reasonCode = null,
+}) {
+  try {
+    const adminIds = await getAllAdminIds();
+    if (adminIds.length === 0) {
+      return { successCount: 0, failureCount: 0 };
+    }
+    const categoryDisplayNames = {
+      wasteLocation: 'Waste Location',
+      speedCleanup: 'Speed Cleanup',
+      event: 'Event',
+    };
+    const categoryDisplayName = categoryDisplayNames[requestCategory] || 'Request';
+    const deeplink = `https://garbagedev-9c240.web.app/admin/requests/${requestId}`;
+    const donatePart =
+      donationsCount > 0
+        ? ` Donations: ${donationsCount} ($${Number(donationsTotal).toFixed(2)}).`
+        : ' No donations.';
+    const reasonPart = reasonCode ? ` Reason: ${reasonCode}.` : '';
+    const title = 'Auto-moderation: proposed reject';
+    const body = `${categoryDisplayName}: "${(requestName || '').slice(0, 60)}" — reject scheduled.${donatePart}${reasonPart} Review before ${finalizeAt || 'deadline'}.`;
+
+    return await sendNotificationToUsers({
+      title,
+      body,
+      userIds: adminIds,
+      sound: 'default',
+      data: {
+        type: 'moderation_auto_reject_pending',
+        requestId,
+        requestCategory,
+        initialPageName: 'AdminRequestDetails',
+        parameterData: JSON.stringify({ requestId, category: requestCategory }),
+        deeplink,
+      },
+    });
+  } catch (error) {
+    console.error('❌ sendModerationAutoRejectPendingNotification:', error);
+    return { successCount: 0, failureCount: 0 };
+  }
+}
+
 async function sendModerationStaleReminderNotification({
   requestId,
   requestName,
@@ -1593,6 +1645,7 @@ module.exports = {
   sendEventTimeNotification,
   sendEventCompletionReminderNotification,
   sendModerationNotification,
+  sendModerationAutoRejectPendingNotification,
   sendModerationStaleReminderNotification,
   sendTransferPaidNotification,
   sendTransferFailedNotification,

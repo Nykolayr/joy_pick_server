@@ -549,8 +549,33 @@ async function checkExecutorStaleness() {
 }
 
 /**
+ * Финализация предложенных решений автомодерации после grace period (24ч по умолчанию).
+ */
+async function finalizePendingModerationProposals() {
+  const { finalizeDueProposals } = require('../api/services/requestModerationService');
+  let result = { finalized: 0, errors: 0, total: 0 };
+  try {
+    result = await finalizeDueProposals();
+    if (result.finalized > 0) {
+      await logCronAction(
+        'moderationAutoFinalize',
+        null,
+        null,
+        `Автофинализация предложенной модерации: ${result.finalized} заявок`,
+        'completed',
+        result
+      );
+    }
+  } catch (e) {
+    result = { finalized: 0, errors: 1, total: 0, error: e.message };
+  }
+  return result;
+}
+
+/**
  * pending на модерации: окно 7 суток с первой сдачи (donation_window_started_at / submitted_for_review_at).
  * На 6–7 сутки — пуш админам; после 7 — архив + рефанд донатов (как раньше по смыслу, SLA под новое окно донатов).
+ * Не архивирует заявки с активным предложением автомодерации до moderation_finalize_at.
  */
 async function checkModerationReviewStale() {
   const { sendModerationStaleReminderNotification } = require('../api/services/pushNotification');
@@ -565,6 +590,12 @@ async function checkModerationReviewStale() {
        FROM requests
        WHERE status = 'pending'
          AND category IN ('wasteLocation', 'speedCleanup', 'event')
+         AND NOT (
+           moderation_proposed_action IS NOT NULL
+           AND moderation_cancelled_at IS NULL
+           AND moderation_finalize_at IS NOT NULL
+           AND moderation_finalize_at > NOW()
+         )
          AND (
            (COALESCE(donation_window_started_at, submitted_for_review_at) IS NOT NULL
             AND COALESCE(donation_window_started_at, submitted_for_review_at) <= DATE_SUB(NOW(), INTERVAL 7 DAY))
@@ -1508,6 +1539,7 @@ async function runAllCronTasks() {
     results.notifySuperadminsRequestNotClosed = await notifySuperadminsRequestNotClosed();
     results.cleanupUnpaidRequests = await cleanupUnpaidRequests();
     results.checkExecutorStaleness = await checkExecutorStaleness();
+    results.finalizePendingModerationProposals = await finalizePendingModerationProposals();
     results.checkModerationReviewStale = await checkModerationReviewStale();
 
     // Раньше архивация вызывалась только в 00:00 локального сервера — из‑за этого «просроченные»
@@ -1627,6 +1659,7 @@ module.exports = {
   checkEventAfterStartDate,
   cleanupUnpaidRequests,
   checkExecutorStaleness,
+  finalizePendingModerationProposals,
   checkModerationReviewStale
 };
 

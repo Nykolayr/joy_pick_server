@@ -1,0 +1,228 @@
+---
+description: План инфраструктуры автомодерации заявок (статусы, API, пуши, админка) — без блока критериев авто-решения
+alwaysApply: false
+---
+
+# Автомодерация заявок — план инфраструктуры (фаза 1)
+
+**Цель:** подготовить бэкенд и контракт для админки под согласованную модель: авторешение → **24 ч** «тишины» → финальный `approved`/`rejected`, с вмешательством модератора. **Критерии** approve/reject/manual — отдельный документ/фаза 2.
+
+**Не путать:** модерация Joy Pick (админ, `requests.status`) ≠ approve/reject участника создателем Event (`participant_completions`).
+
+---
+
+## Текущее состояние (as-is)
+
+| Что | Где |
+|-----|-----|
+| Статусы заявки | `new`, `inProgress`, `pending`, `approved`, `rejected`, `archived` |
+| Ручной approve/reject | **`PUT /api/requests/:id`** + `status`, `rejection_reason`, `rejection_message` |
+| Права на PUT | создатель, исполнитель (`joined_user_id`), **или** `isAdmin` — **нет отдельного guard «только админ на approved/rejected»** |
+| Попадание в `pending` | waste: `POST …/participant-completion`; event: `POST …/close-by-creator`; speed: `PUT` → `pending` |
+| Пуш «новая на модерации» | `sendModerationNotification` → все `users.admin = true` |
+| Пуш «висит 7+ суток» | `sendModerationStaleReminderNotification` (крон `checkModerationReviewStale`) |
+| Список заявок в админке (Stripe) | `GET /api/stripe-admin/requests/active` — только **superadmin**, только заявки **с донатами** |
+| Поля SLA | `submitted_for_review_at`, `donation_window_started_at`, `approved_at` |
+
+**Вывод:** отдельных роутов «подтвердить авто» / «отменить авто» **нет**. Слоя tentative (авторешение без финального статуса) **нет**.
+
+---
+
+## Целевая модель (to-be)
+
+### Поведение
+
+1. Заявка в **`pending`** (как сейчас для клиента).
+2. Движок авто-решения (фаза 2) выставляет **предварительное** решение: `approve` или `reject`.
+3. **24 часа** (`AUTO_MODERATION_GRACE_HOURS=24`):
+   - клиентский статус остаётся **`pending`**;
+   - при **proposed reject** — **пуш модераторам** (в теле: категория, название, **число/сумма донатов**, дедлайн финализации);
+   - при **proposed approve** — **без пуша**.
+4. За 24 ч модератор может:
+   - **подтвердить** предложенное → сразу финальный `approved`/`rejected` + текущие side-effects (коины, Stripe, пуши пользователям);
+   - **отменить авто** → сброс tentative, остаётся чистый `pending` (ручная очередь);
+   - **перебить** → финальный другой статус (ручной approve/reject).
+5. Если за 24 ч **тишина** → крон применяет предложенное **как ручной** approve/reject (те же обработчики, что в `PUT` сегодня).
+
+### Сумма донатов
+
+Не влияет на выбор auto/manual. Только **информация** в пуше и в карточке админки.
+
+---
+
+## Фаза 1 — чеклист работ
+
+### 1. Миграция БД (`requests`)
+
+Рекомендуемые колонки (имена можно уточнить при реализации):
+
+| Колонка | Тип | Назначение |
+|---------|-----|------------|
+| `moderation_proposed_action` | `ENUM('approve','reject')` NULL | Предложенное решение |
+| `moderation_proposed_at` | `DATETIME` NULL | Когда вынесено авто (или вручную «предложено» — не нужно в v1) |
+| `moderation_finalize_at` | `DATETIME` NULL | `proposed_at + 24h` |
+| `moderation_proposed_reason_code` | `VARCHAR` NULL | Код причины (reject/audit), фаза 2 |
+| `moderation_proposed_meta` | `JSON` NULL | Снимок сигналов для админки (гео, фото, rule_id, scores) |
+| `moderation_proposed_rule_version` | `VARCHAR` NULL | Версия правил |
+| `moderation_confirmed_by` | `UUID` NULL | Кто подтвердил вручную |
+| `moderation_confirmed_at` | `DATETIME` NULL | |
+| `moderation_cancelled_at` | `DATETIME` NULL | Отмена авто модератором |
+
+Индекс: `(status, moderation_finalize_at)` где `status='pending' AND moderation_proposed_action IS NOT NULL`.
+
+**Не менять** публичный `status` до финализации.
+
+### 2. Сервис `api/services/requestModerationService.js`
+
+Вынести из `requests.js` единую точку:
+
+- `proposeModerationDecision(requestId, { action, reasonCode, meta, ruleVersion })` — только если `status === 'pending'` и нет активного proposed (или перезапись по политике);
+- `cancelProposedModeration(requestId, adminUserId)`;
+- `confirmProposedModeration(requestId, adminUserId)` → вызывает финализацию;
+- `finalizeModeration(requestId, { action, source: 'auto'|'manual', adminUserId?, rejectionReason?, rejectionMessage? })` — **единственное** место для:
+  - `UPDATE status`, `approved_at`, `submitted_for_review_at`;
+  - `handleWasteApproval` / `handleEventApproval` / `handleSpeedCleanupApproval`;
+  - reject + refunds + user pushes.
+
+`PUT /api/requests/:id` при смене на `approved`/`rejected` → делегировать в сервис (рефакторинг, не дублировать логику).
+
+### 3. Новые Admin API (JWT + `requireAdmin`)
+
+Префикс: **`/api/admin/requests`** (новый роутер `api/routes/requestsAdmin.js`).
+
+| Метод | Путь | Действие |
+|-------|------|----------|
+| GET | `/moderation-queue` | Список `pending`: без proposed / с proposed / все; сортировка по `finalize_at`, `submitted_for_review_at` |
+| GET | `/:id/moderation` | Деталь блока модерации + донаты (count, total) + фото/гео из заявки |
+| POST | `/:id/moderation/confirm-proposed` | Подтвердить текущее proposed |
+| POST | `/:id/moderation/cancel-proposed` | Отменить авто, остаться в `pending` |
+| POST | `/:id/moderation/approve` | Ручной approve (сброс/игнор proposed) |
+| POST | `/:id/moderation/reject` | Ручной reject + `rejection_reason` / `rejection_message` |
+
+**Опционально (совместимость):** оставить `PUT /api/requests/:id` для админа, но:
+- при `pending` + есть proposed → **409** с подсказкой использовать admin endpoints;
+- для `approved`/`rejected` только **`requireAdmin`** (закрыть дыру creator/executor).
+
+Документировать в `API_DOCUMENTATION.md` + `joy_pick_admin/API_DOCUMENTATION.md`.
+
+### 4. Ответы API для админки (поля)
+
+В `GET …/moderation` и в элементах очереди:
+
+```json
+{
+  "status": "pending",
+  "moderation": {
+    "proposed_action": "reject",
+    "proposed_at": "2026-05-25T10:00:00.000Z",
+    "finalize_at": "2026-05-26T10:00:00.000Z",
+    "seconds_until_finalize": 43200,
+    "reason_code": "GEO_OUT_OF_RADIUS",
+    "reason_summary": "…",
+    "meta": { },
+    "rule_version": "v0-placeholder",
+    "can_confirm": true,
+    "can_cancel": true,
+    "can_manual_approve": true,
+    "can_manual_reject": true
+  },
+  "donations_summary": { "count": 3, "total_amount": 45.5, "currency": "USD" }
+}
+```
+
+Фильтры очереди: `?has_proposed=1`, `?proposed_action=reject`, `?sort=finalize_at`.
+
+### 5. Пуши (`pushNotification.js`)
+
+| Событие | Получатели | Когда |
+|---------|------------|-------|
+| `moderation` (есть) | админы | Заявка впервые в `pending` |
+| **`moderation_auto_reject_pending`** (новый) | админы | После `propose` с `reject`; body: категория, имя, **N донатов / сумма**, «решение reject через 24ч, можно вмешаться» |
+| **`moderation_auto_finalize`** (опционально) | админы | Только если нужен лог «сработал авто-финал» — по умолчанию **не** слать пользователям-админам на approve |
+| Пользовательские approve/reject | как сейчас | Только при **финализации** |
+
+Тип в `data.type` для deeplink: `AdminRequestDetails` + `requestId`.
+
+### 6. Крон (`scripts/cronTasks.js`)
+
+Новая задача **`finalizePendingModerationProposals`** (каждый проход крона или раз в 15 мин):
+
+- `status = 'pending'`
+- `moderation_proposed_action IS NOT NULL`
+- `moderation_finalize_at <= NOW()`
+- `moderation_cancelled_at IS NULL`
+- → `finalizeModeration(..., source: 'auto')`
+
+**Согласование с `checkModerationReviewStale` (7+ суток):**
+
+- Архив по таймауту **не трогать** заявки, у которых `moderation_finalize_at > NOW()` (ещё идут сутки).
+- Либо: если есть proposed reject/approve и finalize в будущем — не архивировать до финализации.
+- Зафиксировать в коде и в API-доке, чтобы не было двойного исхода (архив + approve).
+
+### 7. ENV
+
+```env
+AUTO_MODERATION_ENABLED=0
+AUTO_MODERATION_GRACE_HOURS=24
+AUTO_MODERATION_RULE_VERSION=v0
+```
+
+Пока `ENABLED=0` — только инфраструктура: ручные admin-роуты + поля в ответах; propose/finalize из крона вызываются только из тестов или вручную.
+
+### 8. Админ-панель (Flutter `joy_pick_admin`)
+
+Отдельная задача в клиенте (после контракта API):
+
+- Бейдж на карточке: «Авто: reject через 12ч» / «Авто: approve через …».
+- Кнопки: Подтвердить / Отменить авто / Approve / Reject.
+- Показ `donations_summary`, `reason_summary`, `meta` (свёрнуто).
+- Переход с пуша `moderation_auto_reject_pending`.
+
+### 9. Тесты и smoke (минимум)
+
+- `node scripts/…` или интеграционный: pending → propose reject → cancel → propose approve → confirm.
+- Крон: propose + `finalize_at` в прошлом → статус `approved`/`rejected`.
+- Регрессия: финализация вызывает те же коины/рефанды, что старый `PUT`.
+
+---
+
+## Фаза 2 (отдельно, не в этой итерации)
+
+- `api/services/requestAutoModerationRules.js` — критерии approve / reject / только manual.
+- Триггер propose: сразу после перехода в `pending` (синхронно или job в очереди).
+- Shadow mode: писать proposed в лог без `moderation_proposed_*` в БД.
+- Датасет / версии правил.
+
+---
+
+## Порядок реализации (рекомендуемый)
+
+1. ~~Миграция + `requestModerationService` + рефактор финализации из `PUT`.~~ ✅
+2. ~~Admin routes + дока API.~~ ✅
+3. ~~Расширить `GET` очереди (не только stripe-admin с донатами).~~ ✅ `GET /api/admin/requests/moderation-queue`
+4. ~~Пуш `moderation_auto_reject_pending`.~~ ✅
+5. ~~Крон финализации + правка `checkModerationReviewStale`.~~ ✅
+6. Админка Flutter — промпт `.cursor/admin-agent-request-auto-moderation-prompt.md` (joy_pick_admin).
+7. **Integrity модуль** — ✅ `api/services/requestIntegrity/`, create 422, `integrity_check_json`, `runIntegrityOnPending`.
+8. Мобилка — промпт `.cursor/joypick-mobile-integrity-create-prompt.md`.
+9. **Фаза 2:** тюнинг AI/порогов + `AUTO_MODERATION_ENABLED=1` на проде.
+
+---
+
+## Риски / решения заранее
+
+| Риск | Митигация |
+|------|-----------|
+| Двойная финализация (крон + админ) | Транзакция + `WHERE status='pending' AND …` |
+| Creator ставит `approved` через PUT | Guard: `approved`/`rejected` только `requireAdmin` |
+| 7-дневный архив vs 24ч grace | Исключения в SQL архива |
+| Нет донатов в stripe-admin active | Новая очередь **всех** `pending`, не только с донатами |
+
+---
+
+## Ссылки в репозитории
+
+- `api/routes/requests.js` — PUT, handlers approve/reject
+- `api/services/pushNotification.js` — moderation pushes
+- `scripts/cronTasks.js` — `checkModerationReviewStale`
+- `REQUEST_CONCEPT.md`, `API_DOCUMENTATION.md` — статусы и модерация
