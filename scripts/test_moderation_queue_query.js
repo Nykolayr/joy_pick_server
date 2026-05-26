@@ -2,12 +2,17 @@ require('dotenv').config();
 const requestModerationService = require('../api/services/requestModerationService');
 
 async function main() {
-  const data = await requestModerationService.listModerationQueue({
-    limit: 28,
-    offset: 0,
-    sort: 'finalize_at',
-  });
-  console.log('ok', data.total, data.items.length);
+  const cases = [
+    {},
+    { has_proposed: '1' },
+    { has_proposed: '0' },
+    { proposed_action: 'reject', has_proposed: '1' },
+    { sort: 'submitted', limit: 28, offset: 0 },
+  ];
+  for (const q of cases) {
+    const data = await requestModerationService.listModerationQueue(q);
+    console.log('ok', JSON.stringify(q), 'total=', data.total);
+  }
 }
 
 main().catch((e) => {

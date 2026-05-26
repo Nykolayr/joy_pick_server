@@ -1,0 +1,47 @@
+---
+description: MySQL pool.execute — не использовать LIMIT ? OFFSET ? (mysqld_stmt_execute на проде)
+alwaysApply: true
+---
+
+# MySQL2: LIMIT / OFFSET без prepared-плейсхолдеров
+
+На проде (joypick.world, MySQL + mysql2) запросы вида `pool.execute('... LIMIT ? OFFSET ?', [..., limit, offset])` дают:
+
+`Incorrect arguments to mysqld_stmt_execute`
+
+## Правило
+
+- **Не писать** `LIMIT ?` и `OFFSET ?` в `pool.execute` / `connection.execute`.
+- После `parseInt` и clamp использовать **литералы в SQL**:
+
+```javascript
+const safeLimit = Math.min(200, Math.max(1, parseInt(query.limit, 10) || 50));
+const safeOffset = Math.max(0, parseInt(query.offset, 10) || 0);
+await pool.execute(
+  `SELECT ... WHERE ${where} ORDER BY ${orderBy} LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+  params // только плейсхолдеры из WHERE, без limit/offset
+);
+```
+
+- `safeLimit` / `safeOffset` — только целые числа из доверенного кода, не из сырой строки SQL.
+
+## Перед коммитом / деплоем
+
+```bash
+node scripts/check_sql_limit_placeholders.js
+```
+
+При правках `api/services/requestModerationService.js` или списков с пагинацией — прогнать скрипт и smoke:
+
+```bash
+node scripts/test_moderation_queue_query.js
+```
+
+## Деплой API на прод
+
+1. `scp` изменённых файлов в `/opt/joypick/...`
+2. **`pm2 stop joypick && pm2 start app.js --name joypick --update-env`** (из `/opt/joypick`) — одного `pm2 restart` иногда **недостаточно**, процесс держит старый `require()` в памяти.
+3. Smoke HTTP: `node scripts/test_moderation_queue_http.js` → `status 200`
+4. На диске: `grep 'LIMIT ? OFFSET'` в изменённом файле — пусто
+
+Инцидент: `GET /admin/requests/moderation-queue` — `listModerationQueue` без `LIMIT ?`.
