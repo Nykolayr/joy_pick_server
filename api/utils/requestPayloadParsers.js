@@ -113,11 +113,23 @@ function parseJsonFieldSafe(value, fallback) {
   return value;
 }
 
+/** Массив URL/строк из JSON-колонки или уже массива (без нормализации BASE_URL). */
+function parseJsonArraySafe(value) {
+  if (value == null || value === '') return [];
+  if (Array.isArray(value)) {
+    return value.filter((v) => typeof v === 'string' && v.trim() !== '');
+  }
+  const parsed = parseJsonFieldSafe(value, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((v) => typeof v === 'string' && v.trim() !== '');
+}
+
 module.exports = {
   parseBooleanToDbInt,
   formatDateTimeForMySql,
   parseMultipartScalar,
   parseWasteTypesFromField,
   parseWasteTypesFromBodyData,
-  parseJsonFieldSafe
+  parseJsonFieldSafe,
+  parseJsonArraySafe,
 };

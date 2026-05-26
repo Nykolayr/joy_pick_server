@@ -1429,7 +1429,9 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
           });
 
           const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
-          runIntegrityOnPending(id, { locale: bodyData?.locale || req.query?.locale }).catch(() => {});
+          runIntegrityOnPending(id, { locale: bodyData?.locale || req.query?.locale }).catch((e) => {
+            console.error('[requests] runIntegrityOnPending:', id, e?.message || e);
+          });
         }
       } catch (error) {
         // Игнорируем ошибки обработки отправки на рассмотрение
@@ -3080,7 +3082,9 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
       });
 
       const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
-      runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});
+      runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch((e) => {
+        console.error('[requests] runIntegrityOnPending:', requestId, e?.message || e);
+      });
     } else {
       // Для event: отправляем push-уведомление создателю
       const { sendRequestSubmittedNotification } = require('../services/pushNotification');
@@ -3342,7 +3346,9 @@ router.post('/:requestId/close-by-creator', authenticate, uploadRequestPhotos, a
     });
 
     const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
-    runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});
+    runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch((e) => {
+      console.error('[requests] runIntegrityOnPending:', requestId, e?.message || e);
+    });
 
     success(res, { request: normalizeDatesInObject(updatedRequest) }, 'Request closed and sent for review');
   } catch (err) {
