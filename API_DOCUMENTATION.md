@@ -1999,7 +1999,24 @@ Future<void> createRequestWithPhotos({
 | event (участник) | `POST …/participant-completion` | фото участника, гео в 200 м |
 | event (заказчик) | `POST …/close-by-creator` | фото и гео **всех** участников из `registered_participants` + создателя; опционально фото/гео заказчика в том же запросе |
 
-При провале — **422** `INTEGRITY_CHECK_FAILED`, статус заявки **не** меняется на `pending` (остаётся `inProgress`).
+При провале — **422** `INTEGRITY_CHECK_FAILED`, статус заявки **не** меняется на `pending` (остаётся `inProgress`). Сервер сохраняет причину в БД (`completion_integrity_*`).
+
+**Поле в ответах заявки** (`GET /api/requests`, `GET /api/requests/:id`, деталка в админке модерации): объект `completion_integrity` или `null`:
+
+```json
+"completion_integrity": {
+  "rejected": true,
+  "rejected_at": "2026-05-25T12:00:00.000Z",
+  "summary": "Краткий текст для UI",
+  "issues": [{ "code": "WORK_TOO_SHORT_SPEED", "field": "work_duration_minutes", "message": "…" }],
+  "primary_code": "WORK_TOO_SHORT_SPEED",
+  "locale": "ru"
+}
+```
+
+После **успешной** сдачи с `integrity_enforce` поля очищаются, `completion_integrity` → `null`, статус → `pending`. Это **не** модераторский `rejection_reason` (`status=rejected`).
+
+Показ баннера только создателю — на стороне мобильного клиента; API отдаёт поле всем, у кого есть доступ к заявке.
 
 Поля (multipart): `integrity_enforce`, `locale`, `photos_after`, `completion_latitude`, `completion_longitude`, `work_duration_minutes` (где применимо).
 
@@ -2450,7 +2467,7 @@ Future<void> createRequestWithPayment({
 
 При **авто-reject** в `moderation.meta` / `integrity_check.issues` — список кодов и сообщений (почему предложено отклонение). Event без участников — **не** ошибка.
 
-**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`20`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY`.
+**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`15`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY`.
 
 **Миграции:** `042_requests_auto_moderation.sql`, `043_requests_integrity_check.sql`.
 

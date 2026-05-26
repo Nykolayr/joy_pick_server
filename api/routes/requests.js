@@ -140,6 +140,9 @@ function processRequestListItem(request) {
 
   normalizeRequestRowWorkDuration(result);
 
+  const { attachCompletionIntegrityToRequest } = require('../services/completionIntegrityPersist');
+  attachCompletionIntegrityToRequest(result);
+
   return normalizeDatesInObject(result);
 }
 
@@ -430,6 +433,9 @@ async function buildRequestDetailForApi(pool, id) {
     request.from_external_source = Boolean(request.from_external_source);
 
     normalizeRequestRowWorkDuration(request);
+
+    const { attachCompletionIntegrityToRequest } = require('../services/completionIntegrityPersist');
+    attachCompletionIntegrityToRequest(request);
 
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
@@ -1337,27 +1343,34 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
         const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
         const { integrityEnforceOrRespond } = require('../utils/integrityGate');
-        const blockedSpeed = await integrityEnforceOrRespond(req, res, () =>
-          checkRequestIntegrity({
-            phase: 'close',
-            category: 'speedCleanup',
-            latitude: speedRow.latitude,
-            longitude: speedRow.longitude,
-            photosBefore: photosBeforeMerged,
-            photosAfter: photosAfterMerged,
-            photoFilesBefore: (req.files?.photos_before || []).map((f) => f.path),
-            photoFilesAfter: (req.files?.photos_after || []).map((f) => f.path),
-            completionLatitude: bodyData.completion_latitude,
-            completionLongitude: bodyData.completion_longitude,
-            workDurationMinutes: workMinutesCheck,
-            joinDate: speedRow.join_date,
-            startDate: speedRow.start_date,
-            endDate: speedRow.end_date,
-            submittedForReviewAt: new Date().toISOString(),
-            locale: normalizeLocale(bodyData?.locale || req.query?.locale),
-          })
+        const blockedSpeed = await integrityEnforceOrRespond(
+          req,
+          res,
+          () =>
+            checkRequestIntegrity({
+              phase: 'close',
+              category: 'speedCleanup',
+              latitude: speedRow.latitude,
+              longitude: speedRow.longitude,
+              photosBefore: photosBeforeMerged,
+              photosAfter: photosAfterMerged,
+              photoFilesBefore: (req.files?.photos_before || []).map((f) => f.path),
+              photoFilesAfter: (req.files?.photos_after || []).map((f) => f.path),
+              completionLatitude: bodyData.completion_latitude,
+              completionLongitude: bodyData.completion_longitude,
+              workDurationMinutes: workMinutesCheck,
+              joinDate: speedRow.join_date,
+              startDate: speedRow.start_date,
+              endDate: speedRow.end_date,
+              submittedForReviewAt: new Date().toISOString(),
+              locale: normalizeLocale(bodyData?.locale || req.query?.locale),
+            }),
+          { requestId: id }
         );
         if (blockedSpeed) return;
+
+        const { clearCompletionIntegrityRejected } = require('../services/completionIntegrityPersist');
+        await clearCompletionIntegrityRejected(id);
       }
     }
 
@@ -2998,24 +3011,31 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
     const workMinutesForCheck =
       workDurationMinutesPayload.work_duration_minutes ?? request.work_duration_minutes;
 
-    const blocked = await integrityEnforceOrRespond(req, res, () =>
-      checkRequestIntegrity({
-        phase: 'close',
-        category: request.category,
-        latitude: request.latitude,
-        longitude: request.longitude,
-        photosBefore: parseJsonArraySafe(request.photos_before),
-        photosAfter: photosAfterUrls,
-        photoFilesAfter: photoFilesAfterPaths,
-        completionLatitude,
-        completionLongitude,
-        workDurationMinutes: workMinutesForCheck,
-        joinDate: request.join_date,
-        submittedForReviewAt: new Date().toISOString(),
-        locale: normalizeLocale(req.body?.locale || req.query?.locale),
-      })
+    const blocked = await integrityEnforceOrRespond(
+      req,
+      res,
+      () =>
+        checkRequestIntegrity({
+          phase: 'close',
+          category: request.category,
+          latitude: request.latitude,
+          longitude: request.longitude,
+          photosBefore: parseJsonArraySafe(request.photos_before),
+          photosAfter: photosAfterUrls,
+          photoFilesAfter: photoFilesAfterPaths,
+          completionLatitude,
+          completionLongitude,
+          workDurationMinutes: workMinutesForCheck,
+          joinDate: request.join_date,
+          submittedForReviewAt: new Date().toISOString(),
+          locale: normalizeLocale(req.body?.locale || req.query?.locale),
+        }),
+      { requestId }
     );
     if (blocked) return;
+
+    const { clearCompletionIntegrityRejected } = require('../services/completionIntegrityPersist');
+    await clearCompletionIntegrityRejected(requestId);
 
     // Обновляем participant_completions
     const { updateParticipantCompletion } = require('../utils/participantCompletions');
@@ -3235,37 +3255,42 @@ router.post('/:requestId/close-by-creator', authenticate, uploadRequestPhotos, a
     const uploadedCreatorPhotos = (req.files?.photos_after || []).map((f) => getFileUrlFromPath(f.path));
     const creatorLat = parseFloat(req.body.completion_latitude);
     const creatorLng = parseFloat(req.body.completion_longitude);
+    const completionsForCheck = { ...participantCompletions };
     if (uploadedCreatorPhotos.length > 0 || (!Number.isNaN(creatorLat) && !Number.isNaN(creatorLng))) {
-      const { updateParticipantCompletion, getParticipantCompletions } = require('../utils/participantCompletions');
-      if (!participantCompletions[userId]) {
-        const fresh = await getParticipantCompletions(requestId);
-        participantCompletions = fresh;
-      }
-      const prev = participantCompletions[userId] || {};
-      const patch = { ...prev };
-      if (uploadedCreatorPhotos.length > 0) {
-        patch.photos_after = uploadedCreatorPhotos;
-      }
-      if (!Number.isNaN(creatorLat) && !Number.isNaN(creatorLng)) {
-        patch.completion_latitude = creatorLat;
-        patch.completion_longitude = creatorLng;
-      }
-      await updateParticipantCompletion(requestId, userId, patch);
-      participantCompletions[userId] = { ...prev, ...patch };
+      const prev = completionsForCheck[userId] || {};
+      completionsForCheck[userId] = {
+        ...prev,
+        ...(uploadedCreatorPhotos.length > 0 ? { photos_after: uploadedCreatorPhotos } : {}),
+        ...(!Number.isNaN(creatorLat) && !Number.isNaN(creatorLng)
+          ? { completion_latitude: creatorLat, completion_longitude: creatorLng }
+          : {}),
+      };
     }
 
     const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
     const { integrityEnforceOrRespond } = require('../utils/integrityGate');
-    const blocked = await integrityEnforceOrRespond(req, res, () =>
-      checkRequestIntegrity({
-        phase: 'close',
-        eventCloseAllParticipants: true,
-        request,
-        participantCompletions,
-        locale: normalizeLocale(req.body?.locale || req.query?.locale),
-      })
+    const blocked = await integrityEnforceOrRespond(
+      req,
+      res,
+      () =>
+        checkRequestIntegrity({
+          phase: 'close',
+          eventCloseAllParticipants: true,
+          request,
+          participantCompletions: completionsForCheck,
+          locale: normalizeLocale(req.body?.locale || req.query?.locale),
+        }),
+      { requestId }
     );
     if (blocked) return;
+
+    if (completionsForCheck[userId]) {
+      const { updateParticipantCompletion } = require('../utils/participantCompletions');
+      await updateParticipantCompletion(requestId, userId, completionsForCheck[userId]);
+    }
+
+    const { clearCompletionIntegrityRejected } = require('../services/completionIntegrityPersist');
+    await clearCompletionIntegrityRejected(requestId);
 
     // Обновляем статус заявки на pending
     const updates = [
