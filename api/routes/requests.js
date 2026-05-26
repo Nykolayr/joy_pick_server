@@ -31,6 +31,15 @@ const { parseWorkDurationMinutesInput, normalizeRequestRowWorkDuration } = requi
 const router = express.Router();
 const PUBLIC_BASE_URL = (process.env.BASE_URL || process.env.APP_URL || 'https://joypick.world').replace(/\/+$/, '');
 
+/** Пуш «новая на модерации» — только без автомодерации; при AUTO_MODERATION — только proposed reject. */
+function notifyModeratorsNewPendingRequest(payload) {
+  const { isAutoModerationEnabled } = require('../services/requestModerationService');
+  if (isAutoModerationEnabled()) {
+    return;
+  }
+  sendModerationNotification(payload).catch(() => {});
+}
+
 /**
  * Преобразует сырую строку заявки из БД в объект для ответа (JSON-поля, булевы значения, даты).
  */
@@ -1412,13 +1421,12 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
             requestCategory: requestInfo.category || requestCategory,
           }).catch(() => {});
 
-          // Отправляем пуш-уведомление всем модераторам
-          sendModerationNotification({
+          notifyModeratorsNewPendingRequest({
             requestId: id,
             requestName: requestInfo.name || 'Unnamed Request',
             requestCategory: requestInfo.category || requestCategory,
             creatorName: requestInfo.creator_name || 'Unknown User',
-          }).catch(() => {});
+          });
 
           const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
           runIntegrityOnPending(id, { locale: bodyData?.locale || req.query?.locale }).catch(() => {});
@@ -3064,14 +3072,12 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
         [requestId]
       );
 
-      // Отправляем push-уведомление админам о новой заявке на модерации
-      const { sendModerationNotification } = require('../services/pushNotification');
-      sendModerationNotification({
+      notifyModeratorsNewPendingRequest({
         requestId: requestId,
         requestName: requestInfo[0]?.name || 'Unnamed Request',
         requestCategory: 'wasteLocation',
         creatorName: requestInfo[0]?.creator_name || 'Unknown User',
-      }).catch(() => {});
+      });
 
       const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
       runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});
@@ -3324,17 +3330,16 @@ router.post('/:requestId/close-by-creator', authenticate, uploadRequestPhotos, a
     // Обработка JSON полей
     updatedRequest.participant_completions = parseJsonFieldSafe(updatedRequest.participant_completions, {});
 
-    const { sendModerationNotification } = require('../services/pushNotification');
     const [requestInfo] = await pool.execute(
       'SELECT r.name, u.display_name as creator_name FROM requests r LEFT JOIN users u ON r.created_by = u.id WHERE r.id = ?',
       [requestId]
     );
-    sendModerationNotification({
+    notifyModeratorsNewPendingRequest({
       requestId,
       requestName: requestInfo[0]?.name || 'Unnamed Request',
       requestCategory: 'event',
       creatorName: requestInfo[0]?.creator_name || 'Unknown User',
-    }).catch(() => {});
+    });
 
     const { runIntegrityOnPending } = require('../services/requestIntegrityOnPending');
     runIntegrityOnPending(requestId, { locale: req.body?.locale || req.query?.locale }).catch(() => {});

@@ -4893,13 +4893,15 @@ Body: Алексей Смирнов donated $25.00 to your request "Уборка
 
 #### 5. При отправке заявки на модерацию
 
-Когда заявка переходит в статус `pending` (отправляется на рассмотрение), все модераторы (администраторы) получают push-уведомление.
+**Если `AUTO_MODERATION_ENABLED` выключен:** при переходе в `pending` все модераторы получают push «New Request for Moderation».
 
-**Триггер:** `PUT /api/requests/:id` (изменение статуса на `pending`) - **НЕ для заявок типа `event` и `wasteLocation`** (для них используется `POST /api/requests/:requestId/close-by-creator`)
+**Если автомодерация включена:** при `pending` этот пуш **не** отправляется. Модераторы получают push только при **proposed reject** (см. раздел автомодерации: `moderation_auto_reject_pending` / `Auto-moderation: proposed reject`) — после `runIntegrityOnPending` или иного `proposeModerationDecision` с `action=reject`.
 
-**Получатели:** Все администраторы (пользователи с `admin = TRUE` и валидным FCM токеном)
+**Триггер (ручная очередь):** `PUT /api/requests/:id` → `pending` (speed), `POST …/participant-completion` (waste), `POST …/close-by-creator` (event) — только при выключенной автомодерации.
 
-**Формат уведомления:**
+**Получатели:** Все администраторы (`admin = TRUE`, валидный FCM)
+
+**Формат (ручная очередь):**
 - **Заголовок:** `New Request for Moderation`
 - **Текст:** `{Категория}: "{Название заявки}"\nCreated by: {Имя создателя}`
 - **Deeplink:** Переход на страницу заявки в админ-панели
