@@ -65,8 +65,18 @@ async function fetchDonationsSummary(requestId) {
   };
 }
 
+function buildAutoDecisionStatus(row) {
+  if (!isAutoModerationEnabled()) return 'off';
+  if (row.moderation_cancelled_at) return 'cancelled';
+  if (hasActiveProposal(row)) {
+    return row.moderation_proposed_action === 'approve' ? 'approve_grace' : 'reject_grace';
+  }
+  return 'manual_queue';
+}
+
 function buildModerationUi(row, donationsSummary) {
   const active = hasActiveProposal(row);
+  const autoDecisionStatus = buildAutoDecisionStatus(row);
   const finalizeAt = row.moderation_finalize_at ? new Date(row.moderation_finalize_at) : null;
   const now = Date.now();
   const secondsUntilFinalize =
@@ -75,6 +85,9 @@ function buildModerationUi(row, donationsSummary) {
       : 0;
 
   return {
+    has_active_proposal: active,
+    /** off | manual_queue | approve_grace | reject_grace | cancelled — для бейджей в админке */
+    auto_decision_status: autoDecisionStatus,
     proposed_action: active ? row.moderation_proposed_action : null,
     proposed_at: active ? row.moderation_proposed_at : null,
     finalize_at: active ? row.moderation_finalize_at : null,

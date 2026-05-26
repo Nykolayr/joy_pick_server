@@ -19,7 +19,8 @@ async function loadRequestForIntegrity(requestId) {
 }
 
 /**
- * Проверка integrity для заявки в pending; сохранение в БД; при включённой автомодерации — proposed reject.
+ * Проверка integrity для заявки в pending; сохранение в БД;
+ * при AUTO_MODERATION — proposed reject (провал) или proposed approve (успех), grace 24 ч.
  */
 async function runIntegrityOnPending(requestId, options = {}) {
   const row = await loadRequestForIntegrity(requestId);
@@ -52,18 +53,31 @@ async function runIntegrityOnPending(requestId, options = {}) {
   await saveIntegrityOnRequest(requestId, integrity);
 
   let proposed = null;
-  if (!integrity.ok && isAutoModerationEnabled()) {
+  if (isAutoModerationEnabled()) {
     try {
-      proposed = await proposeModerationDecision(requestId, {
-        action: 'reject',
-        reasonCode: integrity.primary_reject_code || 'INTEGRITY_FAILED',
-        meta: {
-          integrity_issues: integrity.issues,
-          integrity_summary: integrity.summary,
-          integrity_summary_en: integrity.summary_en,
-        },
-        ruleVersion: integrity.rule_version,
-      });
+      if (!integrity.ok) {
+        proposed = await proposeModerationDecision(requestId, {
+          action: 'reject',
+          reasonCode: integrity.primary_reject_code || 'INTEGRITY_FAILED',
+          meta: {
+            integrity_issues: integrity.issues,
+            integrity_summary: integrity.summary,
+            integrity_summary_en: integrity.summary_en,
+          },
+          ruleVersion: integrity.rule_version,
+        });
+      } else {
+        proposed = await proposeModerationDecision(requestId, {
+          action: 'approve',
+          reasonCode: 'INTEGRITY_PASSED',
+          meta: {
+            integrity_ok: true,
+            integrity_summary: integrity.summary,
+            integrity_summary_en: integrity.summary_en,
+          },
+          ruleVersion: integrity.rule_version,
+        });
+      }
     } catch (e) {
       if (e.code !== 'PROPOSAL_EXISTS') {
         console.error('[integrityOnPending] propose failed:', requestId, e.message);

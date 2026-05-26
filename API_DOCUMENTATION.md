@@ -2463,7 +2463,20 @@ Future<void> createRequestWithPayment({
 | POST | `/:id/moderation/approve` | Ручной финальный approve |
 | POST | `/:id/moderation/reject` | Ручной финальный reject; body: `rejection_reason`, `rejection_message` |
 
-**Поля `moderation` в ответе:** `proposed_action`, `finalize_at`, `seconds_until_finalize`, `reason_code`, `meta`, `can_confirm`, `can_cancel`, `can_manual_approve`, `can_manual_reject`, `donations_summary`, **`integrity_check`** (последний прогон `requestIntegrityCheck`), **`integrity_summary_for_moderator`** (текст причин для UI).
+**Поля `moderation` в ответе:**
+
+| Поле | Назначение |
+|------|------------|
+| `has_active_proposal` | `true` — есть авто-решение, ждём grace или вмешательства |
+| `auto_decision_status` | `off` · `manual_queue` · **`approve_grace`** · **`reject_grace`** · `cancelled` |
+| `proposed_action` | `approve` \| `reject` \| `null` |
+| `proposed_at`, `finalize_at`, `seconds_until_finalize` | Старт grace и дедлайн авто-финализации (крон) |
+| `reason_code`, `meta` | Код и снимок (integrity issues / INTEGRITY_PASSED) |
+| `can_confirm`, `can_cancel` | Подтвердить или отменить предложение до `finalize_at` |
+| `auto_moderation_enabled` | Фича на сервере (не путать с `has_active_proposal`) |
+| `integrity_check`, `integrity_summary_for_moderator` | Последний прогон integrity |
+
+После сдачи в `pending` бэкенд вызывает `runIntegrityOnPending`: при успехе — **`proposed_action: approve`** + 24 ч, при провале — **`reject`** + пуш модераторам.
 
 При **авто-reject** в `moderation.meta` / `integrity_check.issues` — список кодов и сообщений (почему предложено отклонение). Event без участников — **не** ошибка.
 
