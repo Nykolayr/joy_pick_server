@@ -1,7 +1,7 @@
 const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
 
 const WASTE_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_WASTE_MINUTES || '15', 10) || 15);
-const SPEED_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_SPEED_MINUTES || '20', 10) || 20);
+const SPEED_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_SPEED_MINUTES || '15', 10) || 15);
 
 function issue(code, field = 'time', severity = 'reject') {
   return {

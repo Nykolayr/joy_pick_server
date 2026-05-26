@@ -1995,7 +1995,7 @@ Future<void> createRequestWithPhotos({
 | Тип | Endpoint | Что проверяется при `integrity_enforce` |
 |-----|----------|----------------------------------------|
 | waste | `POST …/participant-completion` | `photos_after`, гео исполнителя в **200 м** от точки заявки, мин. время (15 мин) |
-| speed | `PUT …/requests/:id` → `status=pending` | `photos_before` / `photos_after`, `completion_latitude` / `completion_longitude`, мин. 20 мин |
+| speed | `PUT …/requests/:id` → `status=pending` | `photos_before` / `photos_after`, `completion_latitude` / `completion_longitude`, мин. 15 мин |
 | event (участник) | `POST …/participant-completion` | фото участника, гео в 200 м |
 | event (заказчик) | `POST …/close-by-creator` | фото и гео **всех** участников из `registered_participants` + создателя; опционально фото/гео заказчика в том же запросе |
 

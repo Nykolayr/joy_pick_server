@@ -54,7 +54,7 @@ const MESSAGE_EN = {
   [REASON.PHOTOS_BEFORE_AFTER_SAME]: 'Before and after photos look identical. Submit real cleanup photos.',
   [REASON.INDOOR_PHOTO]: 'Photos look like an indoor room, not an outdoor cleanup spot.',
   [REASON.WORK_TOO_SHORT_WASTE]: 'Cleanup time is too short (minimum 15 minutes).',
-  [REASON.WORK_TOO_SHORT_SPEED]: 'Work duration is too short (minimum 20 minutes).',
+  [REASON.WORK_TOO_SHORT_SPEED]: 'Work duration is too short (minimum 15 minutes).',
   [REASON.EXECUTOR_COORDS_MISSING]: 'Turn on location and submit your position at the cleanup spot.',
   [REASON.EXECUTOR_TOO_FAR]: 'You are too far from the request location. Move closer and try again.',
   [REASON.PARTICIPANT_NOT_COMPLETED]: 'Not all participants have submitted photos and location.',
