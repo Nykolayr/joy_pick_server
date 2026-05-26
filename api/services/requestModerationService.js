@@ -423,12 +423,16 @@ async function listModerationQueue(query = {}) {
   );
   const total = Number(countRows[0]?.total) || 0;
 
+  // LIMIT/OFFSET — литералы: prepared LIMIT ? ломает mysqld_stmt_execute на части хостингов
+  const safeLimit = Number(limit);
+  const safeOffset = Number(offset);
   const [items] = await pool.execute(
     `SELECT r.id, r.name, r.category, r.status, r.created_at, r.updated_at,
             r.submitted_for_review_at, r.created_by, r.joined_user_id,
             r.moderation_proposed_action, r.moderation_proposed_at, r.moderation_finalize_at,
             r.moderation_proposed_reason_code, r.moderation_cancelled_at,
             r.integrity_check_json, r.integrity_checked_at,
+            r.description, r.city,
             u.display_name AS creator_name,
             d.donations_count, d.total_donations
      FROM requests r
@@ -439,8 +443,8 @@ async function listModerationQueue(query = {}) {
      ) d ON d.request_id = r.id
      WHERE ${where}
      ORDER BY ${orderBy}
-     LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
+     LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+    params
   );
 
   const mapped = await Promise.all(
@@ -453,6 +457,8 @@ async function listModerationQueue(query = {}) {
       return {
         id: row.id,
         name: row.name,
+        description: row.description,
+        city: row.city,
         category: row.category,
         status: row.status,
         created_at: row.created_at,
