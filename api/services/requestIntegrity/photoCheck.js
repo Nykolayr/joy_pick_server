@@ -1,6 +1,10 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
 const { classifyPhotoScene, isAiEnabled } = require('./openRouterVision');
+
+const UPLOADS_ROOT = path.join(__dirname, '../../../uploads');
 
 function issue(code, field, severity, source, extra = {}) {
   return {
@@ -31,6 +35,62 @@ function sameUrlSet(a, b) {
     if (kb.has(k)) return true;
   }
   return false;
+}
+
+function sha256FileAt(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    const buf = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(buf).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/** URL вида …/uploads/photos/{file} → локальный файл на диске сервера. */
+function localPathFromUploadUrl(url) {
+  const u = String(url || '');
+  const m = u.match(/\/uploads\/(photos|general|avatars|logos)\/([^/?#]+)/i);
+  if (!m) return null;
+  const fp = path.join(UPLOADS_ROOT, m[1], decodeURIComponent(m[2]));
+  return fs.existsSync(fp) ? fp : null;
+}
+
+function contentHashForPhoto(url, filePath) {
+  const fromUpload = sha256FileAt(filePath);
+  if (fromUpload) return fromUpload;
+  return sha256FileAt(localPathFromUploadUrl(url));
+}
+
+function collectContentHashes(urls, filePaths) {
+  const hashes = new Set();
+  const urlList = urls || [];
+  const pathList = filePaths || [];
+  for (let i = 0; i < urlList.length; i++) {
+    const h = contentHashForPhoto(urlList[i], pathList[i]);
+    if (h) hashes.add(h);
+  }
+  for (let i = urlList.length; i < pathList.length; i++) {
+    const h = contentHashForPhoto(null, pathList[i]);
+    if (h) hashes.add(h);
+  }
+  return hashes;
+}
+
+/** Один и тот же файл с разными URL (повторная загрузка) — по SHA-256 байтов. */
+function samePhotoContent(urlsBefore, urlsAfter, pathsBefore, pathsAfter) {
+  const hb = collectContentHashes(urlsBefore, pathsBefore);
+  const ha = collectContentHashes(urlsAfter, pathsAfter);
+  if (hb.size === 0 || ha.size === 0) return false;
+  for (const h of hb) {
+    if (ha.has(h)) return true;
+  }
+  return false;
+}
+
+function hasDuplicateBeforeAfterPhotos(before, after, pathsBefore, pathsAfter) {
+  if (sameUrlSet(before, after)) return true;
+  return samePhotoContent(before, after, pathsBefore, pathsAfter);
 }
 
 async function checkPhotos({
@@ -67,7 +127,7 @@ async function checkPhotos({
           issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'reject', 'rules'));
         }
       }
-      if (sameUrlSet(before, after)) {
+      if (hasDuplicateBeforeAfterPhotos(before, after, photoFilesBefore, photoFilesAfter)) {
         issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
       }
     }
@@ -83,7 +143,7 @@ async function checkPhotos({
           issues.push(issue(REASON.MISSING_PHOTOS_AFTER, 'photos_after', 'reject', 'rules'));
         }
       }
-      if (sameUrlSet(before, after)) {
+      if (hasDuplicateBeforeAfterPhotos(before, after, photoFilesBefore, photoFilesAfter)) {
         issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
       }
     }
@@ -120,4 +180,9 @@ async function checkPhotos({
   return issues;
 }
 
-module.exports = { checkPhotos, sameUrlSet };
+module.exports = {
+  checkPhotos,
+  sameUrlSet,
+  samePhotoContent,
+  hasDuplicateBeforeAfterPhotos,
+};
