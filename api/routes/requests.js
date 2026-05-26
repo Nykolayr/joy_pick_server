@@ -1310,6 +1310,57 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       }
     }
 
+    if (
+      statusChangedToPending &&
+      String(requestCategory || '').toLowerCase() === 'speedcleanup'
+    ) {
+      const [speedRows] = await pool.execute(
+        `SELECT latitude, longitude, photos_before, photos_after, work_duration_minutes, start_date, end_date, join_date
+         FROM requests WHERE id = ?`,
+        [id]
+      );
+      if (speedRows.length > 0) {
+        const speedRow = speedRows[0];
+        let photosBeforeMerged = parseJsonArraySafe(speedRow.photos_before);
+        let photosAfterMerged = parseJsonArraySafe(speedRow.photos_after);
+        if (uploadedPhotosBefore.length > 0) photosBeforeMerged = uploadedPhotosBefore;
+        if (uploadedPhotosAfter.length > 0) photosAfterMerged = uploadedPhotosAfter;
+
+        let workMinutesCheck = speedRow.work_duration_minutes;
+        if (bodyData.work_duration_minutes !== undefined && bodyData.work_duration_minutes !== null && bodyData.work_duration_minutes !== '') {
+          try {
+            workMinutesCheck = parseWorkDurationMinutesInput(bodyData.work_duration_minutes);
+          } catch {
+            /* validation already failed earlier */
+          }
+        }
+
+        const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
+        const { integrityEnforceOrRespond } = require('../utils/integrityGate');
+        const blockedSpeed = await integrityEnforceOrRespond(req, res, () =>
+          checkRequestIntegrity({
+            phase: 'close',
+            category: 'speedCleanup',
+            latitude: speedRow.latitude,
+            longitude: speedRow.longitude,
+            photosBefore: photosBeforeMerged,
+            photosAfter: photosAfterMerged,
+            photoFilesBefore: (req.files?.photos_before || []).map((f) => f.path),
+            photoFilesAfter: (req.files?.photos_after || []).map((f) => f.path),
+            completionLatitude: bodyData.completion_latitude,
+            completionLongitude: bodyData.completion_longitude,
+            workDurationMinutes: workMinutesCheck,
+            joinDate: speedRow.join_date,
+            startDate: speedRow.start_date,
+            endDate: speedRow.end_date,
+            submittedForReviewAt: new Date().toISOString(),
+            locale: normalizeLocale(bodyData?.locale || req.query?.locale),
+          })
+        );
+        if (blockedSpeed) return;
+      }
+    }
+
     if (updates.length === 0 && !statusChangedToApproved && !statusChangedToRejected) {
       return error(res, 'No data to update', 400);
     }
@@ -2861,7 +2912,9 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
 
     // Получаем заявку
     const [requests] = await pool.execute(
-      'SELECT id, category, status, created_by, joined_user_id, registered_participants, start_date, name FROM requests WHERE id = ?',
+      `SELECT id, category, status, created_by, joined_user_id, registered_participants, start_date, name,
+              latitude, longitude, photos_before, join_date, work_duration_minutes, participant_completions
+       FROM requests WHERE id = ?`,
       [requestId]
     );
 
@@ -2920,6 +2973,7 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
 
     // Сохраняем фото и получаем URL
     const photosAfterUrls = uploadedPhotosAfter.map(file => getFileUrlFromPath(file.path));
+    const photoFilesAfterPaths = uploadedPhotosAfter.map((f) => f.path);
 
     let workDurationMinutesPayload = {};
     if (
@@ -2938,6 +2992,30 @@ router.post('/:requestId/participant-completion', authenticate, uploadRequestPho
         throw e;
       }
     }
+
+    const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
+    const { integrityEnforceOrRespond } = require('../utils/integrityGate');
+    const workMinutesForCheck =
+      workDurationMinutesPayload.work_duration_minutes ?? request.work_duration_minutes;
+
+    const blocked = await integrityEnforceOrRespond(req, res, () =>
+      checkRequestIntegrity({
+        phase: 'close',
+        category: request.category,
+        latitude: request.latitude,
+        longitude: request.longitude,
+        photosBefore: parseJsonArraySafe(request.photos_before),
+        photosAfter: photosAfterUrls,
+        photoFilesAfter: photoFilesAfterPaths,
+        completionLatitude,
+        completionLongitude,
+        workDurationMinutes: workMinutesForCheck,
+        joinDate: request.join_date,
+        submittedForReviewAt: new Date().toISOString(),
+        locale: normalizeLocale(req.body?.locale || req.query?.locale),
+      })
+    );
+    if (blocked) return;
 
     // Обновляем participant_completions
     const { updateParticipantCompletion } = require('../utils/participantCompletions');
@@ -3112,7 +3190,7 @@ success(res, { request: normalizeDatesInObject(updatedRequest) }, action === 'ap
  * POST /api/requests/:requestId/close-by-creator
  * Закрытие заявки создателем
  */
-router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
+router.post('/:requestId/close-by-creator', authenticate, uploadRequestPhotos, async (req, res) => {
   try {
     const { requestId } = req.params;
     const userId = req.user.userId;
@@ -3120,7 +3198,9 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
 
     // Получаем заявку
     const [requests] = await pool.execute(
-      'SELECT id, category, status, created_by FROM requests WHERE id = ?',
+      `SELECT id, category, status, created_by, latitude, longitude, registered_participants,
+              participant_completions, photos_before
+       FROM requests WHERE id = ?`,
       [requestId]
     );
 
@@ -3150,6 +3230,42 @@ router.post('/:requestId/close-by-creator', authenticate, async (req, res) => {
     if (request.status !== 'inProgress') {
       return error(res, 'Request must be in status inProgress', 400);
     }
+
+    let participantCompletions = parseJsonFieldSafe(request.participant_completions, {});
+    const uploadedCreatorPhotos = (req.files?.photos_after || []).map((f) => getFileUrlFromPath(f.path));
+    const creatorLat = parseFloat(req.body.completion_latitude);
+    const creatorLng = parseFloat(req.body.completion_longitude);
+    if (uploadedCreatorPhotos.length > 0 || (!Number.isNaN(creatorLat) && !Number.isNaN(creatorLng))) {
+      const { updateParticipantCompletion, getParticipantCompletions } = require('../utils/participantCompletions');
+      if (!participantCompletions[userId]) {
+        const fresh = await getParticipantCompletions(requestId);
+        participantCompletions = fresh;
+      }
+      const prev = participantCompletions[userId] || {};
+      const patch = { ...prev };
+      if (uploadedCreatorPhotos.length > 0) {
+        patch.photos_after = uploadedCreatorPhotos;
+      }
+      if (!Number.isNaN(creatorLat) && !Number.isNaN(creatorLng)) {
+        patch.completion_latitude = creatorLat;
+        patch.completion_longitude = creatorLng;
+      }
+      await updateParticipantCompletion(requestId, userId, patch);
+      participantCompletions[userId] = { ...prev, ...patch };
+    }
+
+    const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
+    const { integrityEnforceOrRespond } = require('../utils/integrityGate');
+    const blocked = await integrityEnforceOrRespond(req, res, () =>
+      checkRequestIntegrity({
+        phase: 'close',
+        eventCloseAllParticipants: true,
+        request,
+        participantCompletions,
+        locale: normalizeLocale(req.body?.locale || req.query?.locale),
+      })
+    );
+    if (blocked) return;
 
     // Обновляем статус заявки на pending
     const updates = [

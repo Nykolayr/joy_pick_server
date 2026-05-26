@@ -35,4 +35,6 @@ request.fields['locale'] = currentLocale;
 
 Дока: `joy_pick_server/API_DOCUMENTATION.md` — «Проверка integrity при создании».
 
+Закрытие заявки: см. **`joypick-mobile-integrity-close-prompt.md`**.
+
 ---

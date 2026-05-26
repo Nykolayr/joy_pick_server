@@ -23,7 +23,7 @@ function minutesBetween(a, b) {
 }
 
 function checkTime({ category, phase, workDurationMinutes, joinDate, submittedForReviewAt, startDate, endDate }) {
-  if (phase !== 'moderate') return [];
+  if (phase !== 'moderate' && phase !== 'close') return [];
 
   const issues = [];
   const cat = String(category || '').toLowerCase();

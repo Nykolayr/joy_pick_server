@@ -16,6 +16,9 @@ function supportsIntegrityBlockOnCreate(req) {
   return parseIntegrityEnforce(req);
 }
 
+/** То же поле integrity_enforce — для create и для закрытия заявки. */
+const supportsIntegrityEnforce = supportsIntegrityBlockOnCreate;
+
 function requiresDescriptionOnCreate(req) {
   return parseIntegrityEnforce(req);
 }
@@ -31,6 +34,7 @@ function normalizeDescriptionForCreate(req, description, name) {
 module.exports = {
   parseIntegrityEnforce,
   supportsIntegrityBlockOnCreate,
+  supportsIntegrityEnforce,
   requiresDescriptionOnCreate,
   normalizeDescriptionForCreate,
 };

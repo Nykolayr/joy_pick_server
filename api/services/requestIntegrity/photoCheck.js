@@ -40,6 +40,7 @@ async function checkPhotos({
   photosAfter = [],
   photoFilesBefore = [],
   photoFilesAfter = [],
+  onlyAfterForUser = false,
 }) {
   const issues = [];
   const cat = String(category || '').toLowerCase();
@@ -49,6 +50,26 @@ async function checkPhotos({
   if (cat === 'speedcleanup' && phase === 'create') {
     if (before.length === 0 && photoFilesBefore.length === 0) {
       issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'block', 'rules'));
+    }
+  }
+
+  if (phase === 'close') {
+    if (onlyAfterForUser) {
+      if (after.length === 0 && photoFilesAfter.length === 0) {
+        issues.push(issue(REASON.MISSING_PHOTOS_AFTER, 'photos_after', 'reject', 'rules'));
+      }
+    } else if (cat === 'wastelocation' || cat === 'speedcleanup') {
+      if (after.length === 0 && photoFilesAfter.length === 0) {
+        issues.push(issue(REASON.MISSING_PHOTOS_AFTER, 'photos_after', 'reject', 'rules'));
+      }
+      if (cat === 'speedcleanup') {
+        if (before.length === 0 && photoFilesBefore.length === 0) {
+          issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'reject', 'rules'));
+        }
+        if (sameUrlSet(before, after)) {
+          issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
+        }
+      }
     }
   }
 
@@ -67,9 +88,11 @@ async function checkPhotos({
   }
 
   const samples = [];
-  before.forEach((url, i) => {
-    samples.push({ field: 'photos_before', url, filePath: photoFilesBefore[i], index: i });
-  });
+  if (!onlyAfterForUser) {
+    before.forEach((url, i) => {
+      samples.push({ field: 'photos_before', url, filePath: photoFilesBefore[i], index: i });
+    });
+  }
   after.forEach((url, i) => {
     samples.push({ field: 'photos_after', url, filePath: photoFilesAfter[i], index: i });
   });

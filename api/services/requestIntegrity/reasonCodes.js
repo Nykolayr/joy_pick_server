@@ -16,6 +16,9 @@ const REASON = {
   WORK_TOO_SHORT_WASTE: 'WORK_TOO_SHORT_WASTE',
   WORK_TOO_SHORT_SPEED: 'WORK_TOO_SHORT_SPEED',
   TIME_CHECK_SKIPPED: 'TIME_CHECK_SKIPPED',
+  EXECUTOR_COORDS_MISSING: 'EXECUTOR_COORDS_MISSING',
+  EXECUTOR_TOO_FAR: 'EXECUTOR_TOO_FAR',
+  PARTICIPANT_NOT_COMPLETED: 'PARTICIPANT_NOT_COMPLETED',
 };
 
 const MESSAGE_KEYS = {
@@ -32,6 +35,9 @@ const MESSAGE_KEYS = {
   [REASON.INDOOR_PHOTO]: 'integrity_indoor_photo',
   [REASON.WORK_TOO_SHORT_WASTE]: 'integrity_work_too_short_waste',
   [REASON.WORK_TOO_SHORT_SPEED]: 'integrity_work_too_short_speed',
+  [REASON.EXECUTOR_COORDS_MISSING]: 'integrity_executor_coords_missing',
+  [REASON.EXECUTOR_TOO_FAR]: 'integrity_executor_too_far',
+  [REASON.PARTICIPANT_NOT_COMPLETED]: 'integrity_participant_not_completed',
 };
 
 /** Канонические тексты (EN) для перевода на locale клиента */
@@ -49,9 +55,13 @@ const MESSAGE_EN = {
   [REASON.INDOOR_PHOTO]: 'Photos look like an indoor room, not an outdoor cleanup spot.',
   [REASON.WORK_TOO_SHORT_WASTE]: 'Cleanup time is too short (minimum 15 minutes).',
   [REASON.WORK_TOO_SHORT_SPEED]: 'Work duration is too short (minimum 20 minutes).',
+  [REASON.EXECUTOR_COORDS_MISSING]: 'Turn on location and submit your position at the cleanup spot.',
+  [REASON.EXECUTOR_TOO_FAR]: 'You are too far from the request location. Move closer and try again.',
+  [REASON.PARTICIPANT_NOT_COMPLETED]: 'Not all participants have submitted photos and location.',
 };
 
 const SUMMARY_EN = 'Request did not pass verification. Fix the issues below and try again.';
+const SUMMARY_CLOSE_EN = 'Could not submit work for review. Fix the issues below and try again.';
 
 function messageKeyForCode(code) {
   return MESSAGE_KEYS[code] || `integrity_${String(code || 'unknown').toLowerCase()}`;
@@ -66,6 +76,7 @@ module.exports = {
   MESSAGE_KEYS,
   MESSAGE_EN,
   SUMMARY_EN,
+  SUMMARY_CLOSE_EN,
   messageKeyForCode,
   messageEnForCode,
 };

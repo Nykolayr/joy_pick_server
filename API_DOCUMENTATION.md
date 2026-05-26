@@ -1949,7 +1949,7 @@ Future<void> createRequestWithPhotos({
 
 #### Проверка integrity при создании
 
-Перед записью в БД сервер может проверить **адрес**, **название и описание**, **фото «до»** (для speed — обязательны; AI: не интерьер). Радиус и «фото после» на create не проверяются.
+Перед записью в БД при `integrity_enforce` проверяются **название и описание**, **фото «до»** (для speed — обязательны; AI: не интерьер). **Гео точки заявки на create не проверяется** (место может быть любым). «Фото после» и гео исполнителя — при **закрытии** заявки (см. ниже).
 
 **Поле `integrity_enforce`** (multipart / JSON): единственный признак «проверять на create и не создавать при провале».
 
@@ -1987,6 +1987,21 @@ Future<void> createRequestWithPhotos({
 ```
 
 Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
+
+#### Проверка integrity при закрытии (сдача на модерацию)
+
+Тот же **`integrity_enforce`** (`true` / `1`). Без поля — legacy: закрытие как раньше, проверка только в фоне на `pending`.
+
+| Тип | Endpoint | Что проверяется при `integrity_enforce` |
+|-----|----------|----------------------------------------|
+| waste | `POST …/participant-completion` | `photos_after`, гео исполнителя в **200 м** от точки заявки, мин. время (15 мин) |
+| speed | `PUT …/requests/:id` → `status=pending` | `photos_before` / `photos_after`, `completion_latitude` / `completion_longitude`, мин. 20 мин |
+| event (участник) | `POST …/participant-completion` | фото участника, гео в 200 м |
+| event (заказчик) | `POST …/close-by-creator` | фото и гео **всех** участников из `registered_participants` + создателя; опционально фото/гео заказчика в том же запросе |
+
+При провале — **422** `INTEGRITY_CHECK_FAILED`, статус заявки **не** меняется на `pending` (остаётся `inProgress`).
+
+Поля (multipart): `integrity_enforce`, `locale`, `photos_after`, `completion_latitude`, `completion_longitude`, `work_duration_minutes` (где применимо).
 
 **Ответ (201):**
 ```json
