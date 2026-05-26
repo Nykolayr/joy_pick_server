@@ -66,20 +66,22 @@ async function checkPhotos({
         if (before.length === 0 && photoFilesBefore.length === 0) {
           issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'reject', 'rules'));
         }
-        if (sameUrlSet(before, after)) {
-          issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
-        }
+      }
+      if (sameUrlSet(before, after)) {
+        issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
       }
     }
   }
 
   if (phase === 'moderate') {
-    if (cat === 'speedcleanup') {
-      if (before.length === 0) {
-        issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'reject', 'rules'));
-      }
-      if (after.length === 0) {
-        issues.push(issue(REASON.MISSING_PHOTOS_AFTER, 'photos_after', 'reject', 'rules'));
+    if (cat === 'speedcleanup' || cat === 'wastelocation') {
+      if (cat === 'speedcleanup') {
+        if (before.length === 0) {
+          issues.push(issue(REASON.MISSING_PHOTOS_BEFORE, 'photos_before', 'reject', 'rules'));
+        }
+        if (after.length === 0) {
+          issues.push(issue(REASON.MISSING_PHOTOS_AFTER, 'photos_after', 'reject', 'rules'));
+        }
       }
       if (sameUrlSet(before, after)) {
         issues.push(issue(REASON.PHOTOS_BEFORE_AFTER_SAME, 'photos_after', 'reject', 'rules'));
