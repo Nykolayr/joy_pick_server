@@ -82,7 +82,7 @@ function checkTextGibberishRules({ name, description }) {
   return issues;
 }
 
-/** Пустые поля — всегда; качество текста — AI (если включён) или правила. */
+/** Пустые поля — всегда. AI-текст только на pending (moderate); create/close — быстрые правила. */
 async function checkText({ name, description, phase, locale, category }) {
   const issues = checkTextRequired({ name, description });
   if (issues.some((i) => i.code === REASON.MISSING_NAME || i.code === REASON.MISSING_DESCRIPTION)) {
@@ -90,7 +90,7 @@ async function checkText({ name, description, phase, locale, category }) {
   }
 
   const { isTextAiEnabled, checkTextWithAi } = require('./textAiCheck');
-  if (isTextAiEnabled()) {
+  if (phase === 'moderate' && isTextAiEnabled()) {
     issues.push(
       ...(await checkTextWithAi({
         name,
