@@ -1833,7 +1833,7 @@ Authorization: Bearer <jwt_token>
 - `name` (string, обязательное) - название заявки
 - `description` (string, обязательное если `integrity_enforce=true`, иначе опционально) - описание
 - `integrity_enforce` (boolean/string, опционально) - `true`/`1`: проверка integrity на create, при провале 422; без поля — legacy (заявка создаётся)
-- `locale` (string, опционально) - язык UI для текстов ошибок integrity
+- `locale` (string) — язык UI приложения для текстов integrity (`en`, `ru`, `es`, `ar`, `zh`, `hi`, `fr`, `pt`, `he`, `de`). **Обязателен**, если `integrity_enforce=true`; иначе опционально (fallback `Accept-Language` / `en`)
 - `latitude` (float, опционально) - широта
 - `longitude` (float, опционально) - долгота
 - `city` (string, опционально) - город
@@ -1988,7 +1988,7 @@ Future<void> createRequestWithPhotos({
 
 Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
 
-**Язык:** передавайте `locale` (`ru`, `en`, …) в multipart/query — по нему переводятся `summary` и `issues[].message`. Определение языка на сервере по тексту не используется.
+**Язык:** при `integrity_enforce=true` поле **`locale` обязательно** (тот же код, что в настройках языка приложения). По нему переводятся `summary` и `issues[].message`. Определение языка по тексту на сервере не используется.
 
 **Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: текст, гео, дубликаты URL/хеша фото, мин. время.
 

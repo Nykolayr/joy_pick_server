@@ -664,12 +664,31 @@ router.post('/', authenticate, uploadRequestPhotos, [
 
     const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
     const { sendIntegrityCheckFailed } = require('../utils/integrityErrorResponse');
+    const { SUPPORTED_LOCALES } = require('../services/translateNews');
     const {
       supportsIntegrityBlockOnCreate,
       normalizeDescriptionForCreate,
     } = require('../utils/clientAppCompat');
+
+    const rawLocale = bodyData.locale ?? req.query?.locale;
+    if (supportsIntegrityBlockOnCreate(req)) {
+      const locKey = String(rawLocale || '')
+        .trim()
+        .toLowerCase()
+        .split('-')[0];
+      if (!locKey) {
+        return error(res, 'locale is required when integrity_enforce=true', 400);
+      }
+      if (!SUPPORTED_LOCALES.includes(locKey)) {
+        return error(
+          res,
+          `locale must be one of: ${SUPPORTED_LOCALES.join(', ')}`,
+          400
+        );
+      }
+    }
     const requestLocale = normalizeLocale(
-      bodyData.locale || req.query.locale || req.headers['accept-language']
+      rawLocale || req.headers['accept-language']
     );
     const descriptionForCreate = normalizeDescriptionForCreate(req, description, name);
     const photoFilesBefore = (req.files?.photos_before || []).map((f) => f.path);
