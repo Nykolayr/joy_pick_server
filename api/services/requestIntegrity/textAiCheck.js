@@ -3,7 +3,7 @@ const { isAiEnabled } = require('./openRouterVision');
 const { normalizeLocale } = require('./integrityTranslate');
 
 const DEFAULT_MODEL = process.env.INTEGRITY_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-const TIMEOUT_MS = Math.min(25000, Math.max(5000, parseInt(process.env.INTEGRITY_TEXT_AI_TIMEOUT_MS || '15000', 10) || 15000));
+const TIMEOUT_MS = Math.min(20000, Math.max(4000, parseInt(process.env.INTEGRITY_TEXT_AI_TIMEOUT_MS || '8000', 10) || 8000));
 
 function isTextAiEnabled() {
   if (process.env.INTEGRITY_TEXT_AI_ENABLED === '0' || process.env.INTEGRITY_TEXT_AI_ENABLED === 'false') {
@@ -61,8 +61,9 @@ function parseAiJson(raw) {
   }
 }
 
+/** @returns {Promise<Array|null>} issues, или null если AI недоступен — fallback на rules */
 async function checkTextWithAi({ name, description, locale, category, phase }) {
-  if (!isTextAiEnabled()) return [];
+  if (!isTextAiEnabled()) return null;
 
   const n = String(name || '').trim();
   const d = String(description || '').trim();
@@ -92,7 +93,7 @@ async function checkTextWithAi({ name, description, locale, category, phase }) {
     const json = await res.json();
     if (!res.ok) {
       console.warn('[textAiCheck] OpenRouter error:', json?.error?.message || res.status);
-      return [];
+      return null;
     }
     const raw = json?.choices?.[0]?.message?.content;
     const parsed = parseAiJson(raw);
@@ -113,7 +114,7 @@ async function checkTextWithAi({ name, description, locale, category, phase }) {
   } catch (e) {
     clearTimeout(timer);
     console.warn('[textAiCheck]', e.message);
-    return [];
+    return null;
   }
 }
 

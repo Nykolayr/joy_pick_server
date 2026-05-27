@@ -49,7 +49,7 @@ async function checkRequestIntegrity(input) {
         })
       );
     } else {
-      issues = issues.concat(await checkPhotos(input));
+      // Текст и фото на close не проверяем — только гео исполнителя и время.
       issues = issues.concat(
         checkExecutorAtRequestSite({
           requestLatitude: input.latitude,
@@ -63,7 +63,6 @@ async function checkRequestIntegrity(input) {
     }
   } else {
     issues = issues.concat(await checkGeo(input));
-    issues = issues.concat(await checkText({ ...input, phase }));
     issues = issues.concat(await checkPhotos(input));
     issues = issues.concat(checkTime({ ...input, phase }));
     if (input.completionLatitude != null || input.completionLongitude != null) {

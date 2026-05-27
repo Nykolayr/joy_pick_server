@@ -1949,7 +1949,7 @@ Future<void> createRequestWithPhotos({
 
 #### Проверка integrity при создании
 
-Перед записью в БД при `integrity_enforce` проверяются **название и описание**, **фото «до»** (для speed — обязательны; AI: не интерьер). **Гео точки заявки на create не проверяется** (место может быть любым). «Фото после» и гео исполнителя — при **закрытии** заявки (см. ниже).
+Перед записью в БД при `integrity_enforce` проверяются **название и описание** (правила + OpenRouter AI), **фото «до»** (для speed — обязательны; без AI). **Гео точки заявки на create не проверяется**. На **close** текст и фото **не** проверяются.
 
 **Поле `integrity_enforce`** (multipart / JSON): единственный признак «проверять на create и не создавать при провале».
 
@@ -1990,9 +1990,9 @@ Future<void> createRequestWithPhotos({
 
 **Язык:** передавайте **`locale`** с мобилки (код UI: `en`, `ru`, `zh`, …). Тексты ошибок — **`message_key`** / **`summary_key`** (ARB в приложении), сервер **не** переводит через Google. OpenRouter для текста: **title/description как есть** + `User app locale: …` в промпте (любой язык, в т.ч. китайский).
 
-**Текст (AI):** OpenRouter — текст **как есть**, в промпте указан `User app locale`. Ошибки — `message_key` / `summary_key` для ARB на клиенте (без Google Translate на сервере).
+**Текст:** только при **create** с `integrity_enforce`: быстрые правила + **OpenRouter** (текст as-is, `User app locale: …` — en, ru, zh, …). На **close** и **pending** текст **не** проверяется. Ошибки — `message_key` / `summary_key` (ARB).
 
-**Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: гео, дубликаты URL/хеша фото, мин. время.
+**Фото (AI indoor):** Vision OpenRouter — только на **`pending`** (автомодерация). На **create** — только правило «есть фото до» (speed). На **close** фото **не** проверяются (ни AI, ни дубликаты).
 
 #### Проверка integrity при закрытии (сдача на модерацию)
 
@@ -2000,10 +2000,10 @@ Future<void> createRequestWithPhotos({
 
 | Тип | Endpoint | Что проверяется при `integrity_enforce` |
 |-----|----------|----------------------------------------|
-| waste | `POST …/participant-completion` | `photos_after`, совпадение «до»/«после» по URL **или** SHA-256 файла на сервере (`PHOTOS_BEFORE_AFTER_SAME`), гео в **200 м**, мин. 15 мин |
-| speed | `PUT …/requests/:id` → `status=pending` | `photos_before` / `photos_after` (URL или тот же файл с новым URL), гео, мин. 15 мин |
-| event (участник) | `POST …/participant-completion` | фото участника, гео в 200 м |
-| event (заказчик) | `POST …/close-by-creator` | фото и гео **всех** участников из `registered_participants` + создателя; опционально фото/гео заказчика в том же запросе |
+| waste | `POST …/participant-completion` | гео в **200 м**, мин. 15 мин (фото **не** проверяются) |
+| speed | `PUT …/requests/:id` → `status=pending` | гео, мин. 15 мин (фото **не** проверяются) |
+| event (участник) | `POST …/participant-completion` | гео в 200 м |
+| event (заказчик) | `POST …/close-by-creator` | гео **всех** участников из `registered_participants` + создателя; опционально гео заказчика в том же запросе (фото **не** проверяются) |
 
 При провале — **422** `INTEGRITY_CHECK_FAILED`, статус заявки **не** меняется на `pending` (остаётся `inProgress`). Сервер сохраняет причину в БД (`completion_integrity_*`).
 

@@ -21,34 +21,48 @@ const MIN_DESCRIPTION_WORDS = Math.max(
   parseInt(process.env.INTEGRITY_MIN_DESCRIPTION_WORDS || '2', 10) || 2
 );
 
+function usesSpaceSeparatedWords(text) {
+  return /[a-zA-Zа-яА-ЯёЁ]/.test(text);
+}
+
 function isGibberish(text, { isDescription = false } = {}) {
   const s = String(text || '').trim();
-  if (s.length < 3) return true;
-  const lettersOnly = s.replace(/[^a-zA-Zа-яА-ЯёЁ0-9\s]/g, '');
-  if (lettersOnly.length < 3) return true;
-  if (/(.)\1{4,}/i.test(s)) return true;
-  if (/^[a-z]{1,2}[a-z]{4,}$/i.test(s.replace(/\s/g, ''))) return true;
-  if (/^[^a-zA-Zа-яА-ЯёЁ]*$/.test(s)) return true;
+  const contentChars = s.replace(/[\s\d\p{P}\p{S}]/gu, '');
+  const minContentLen = usesSpaceSeparatedWords(s) ? 3 : 2;
+  if (contentChars.length < minContentLen) return true;
+  if (/(.)\1{4,}/u.test(s)) return true;
 
-  const compact = s.replace(/\s/g, '');
-  const vowels = (compact.match(/[aeiouyаеёиоуыэюя]/gi) || []).length;
-  const ratio = vowels / Math.max(compact.length, 1);
+  const words = s.split(/\s+/).filter((w) => w.length >= 1);
+  const meaningfulWords = words.filter((w) => w.replace(/[\s\d\p{P}\p{S}]/gu, '').length >= 2);
 
-  // Только явный мусор (aaaa), не обычные слова вроде coffee / hello
-  if (isDescription && compact.length >= 4 && compact.length <= 12) {
-    if (ratio < 0.12 || ratio > 0.8) return true;
+  // Латиница — по словам, не по всей строке без пробелов (иначе ломается EN)
+  for (const word of words) {
+    const latin = word.replace(/[^a-zA-Z]/g, '');
+    if (latin.length < 4) continue;
+    const compact = latin.toLowerCase();
+    const vowels = (compact.match(/[aeiouy]/g) || []).length;
+    const ratio = vowels / compact.length;
+    if (ratio < 0.08) return true;
+    if (compact.length <= 12 && (ratio < 0.12 || ratio > 0.85)) return true;
+    if (/[bcdfghjklmnpqrstvwxyz]{6,}/i.test(compact)) return true;
   }
-  if (isDescription && compact.length > 8 && ratio < 0.08) return true;
 
-  if (isDescription && /[bcdfghjklmnpqrstvwxyzбвгджзйклмнпрстфхцчшщ]{6,}/i.test(compact)) {
-    return true;
+  // Кириллица — явный мусор без гласных
+  for (const word of words) {
+    const cyr = word.replace(/[^а-яА-ЯёЁ]/g, '');
+    if (cyr.length < 4) continue;
+    const vowels = (cyr.match(/[аеёиоуыэюя]/gi) || []).length;
+    if (vowels / cyr.length < 0.08) return true;
   }
 
-  const words = s.split(/\s+/).filter((w) => w.length >= 2);
-  if (words.length === 0 && s.length > 5) return true;
+  if (meaningfulWords.length === 0 && s.length > 5) return true;
 
   if (isDescription) {
-    if (s.length < MIN_DESCRIPTION_CHARS && words.length < MIN_DESCRIPTION_WORDS) {
+    if (usesSpaceSeparatedWords(s)) {
+      if (s.length < MIN_DESCRIPTION_CHARS && meaningfulWords.length < MIN_DESCRIPTION_WORDS) {
+        return true;
+      }
+    } else if (contentChars.length < 6) {
       return true;
     }
   }
@@ -82,29 +96,32 @@ function checkTextGibberishRules({ name, description }) {
   return issues;
 }
 
-/** Пустые поля — всегда. AI-текст только на pending (moderate); create/close — быстрые правила. */
+/** Текст проверяется только на create. Close / pending — без текста. */
 async function checkText({ name, description, phase, locale, category }) {
+  if (phase !== 'create') return [];
+
   const issues = checkTextRequired({ name, description });
   if (issues.some((i) => i.code === REASON.MISSING_NAME || i.code === REASON.MISSING_DESCRIPTION)) {
     return issues;
   }
 
-  const { isTextAiEnabled, checkTextWithAi } = require('./textAiCheck');
-  if (phase === 'moderate' && isTextAiEnabled()) {
-    issues.push(
-      ...(await checkTextWithAi({
-        name,
-        description,
-        locale,
-        category,
-        phase,
-      }))
-    );
-  } else {
-    issues.push(...checkTextGibberishRules({ name, description }));
-  }
+  issues.push(...checkTextGibberishRules({ name, description }));
+  if (issues.length > 0) return issues;
 
-  return issues;
+  const { isTextAiEnabled, checkTextWithAi } = require('./textAiCheck');
+  if (!isTextAiEnabled()) return issues;
+
+  const aiIssues = await checkTextWithAi({
+    name,
+    description,
+    locale,
+    category,
+    phase,
+  });
+  if (aiIssues === null) {
+    return issues;
+  }
+  return issues.concat(aiIssues);
 }
 
 module.exports = { checkText, checkTextRequired, checkTextGibberishRules, isGibberish };
