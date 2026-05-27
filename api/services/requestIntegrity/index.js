@@ -37,7 +37,7 @@ async function checkRequestIntegrity(input) {
   let issues = [];
 
   if (phase === 'create') {
-    issues = issues.concat(checkText({ ...input, phase }));
+    issues = issues.concat(await checkText({ ...input, phase }));
     issues = issues.concat(await checkPhotos(input));
   } else if (phase === 'close') {
     const cat = String(input.category || '').toLowerCase();
@@ -63,7 +63,7 @@ async function checkRequestIntegrity(input) {
     }
   } else {
     issues = issues.concat(await checkGeo(input));
-    issues = issues.concat(checkText({ ...input, phase }));
+    issues = issues.concat(await checkText({ ...input, phase }));
     issues = issues.concat(await checkPhotos(input));
     issues = issues.concat(checkTime({ ...input, phase }));
     if (input.completionLatitude != null || input.completionLongitude != null) {

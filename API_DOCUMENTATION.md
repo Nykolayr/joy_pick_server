@@ -1990,7 +1990,9 @@ Future<void> createRequestWithPhotos({
 
 **Язык:** при `integrity_enforce=true` поле **`locale` обязательно** (тот же код, что в настройках языка приложения). По нему переводятся `summary` и `issues[].message`. Определение языка по тексту на сервере не используется.
 
-**Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: текст, гео, дубликаты URL/хеша фото, мин. время.
+**Текст (AI):** при `OPENROUTER_API_KEY` и `INTEGRITY_TEXT_AI_ENABLED` ≠ `0` — проверка name/description через OpenRouter: **`locale=ru`** — текст на русском; **иначе** — модель переводит на EN и оценивает смысл. Без AI — локальные правила gibberish. Пустые name/description — всегда ошибка.
+
+**Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: гео, дубликаты URL/хеша фото, мин. время.
 
 #### Проверка integrity при закрытии (сдача на модерацию)
 
@@ -2484,7 +2486,7 @@ Future<void> createRequestWithPayment({
 
 При **авто-reject** в `moderation.meta` / `integrity_check.issues` — список кодов и сообщений (почему предложено отклонение). Event без участников — **не** ошибка.
 
-**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`15`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY` (AI-фото только на `pending`), `INTEGRITY_MIN_DESCRIPTION_CHARS` (по умолчанию `12`).
+**ENV:** `AUTO_MODERATION_ENABLED` (`1`), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`15`), `INTEGRITY_AI_ENABLED`, `INTEGRITY_TEXT_AI_ENABLED` (по умолчанию вкл. при наличии ключа), `OPENROUTER_API_KEY`, `INTEGRITY_TEXT_AI_TIMEOUT_MS` (по умолчанию `15000`), `INTEGRITY_OPENROUTER_MODEL`.
 
 **Миграции:** `042_requests_auto_moderation.sql`, `043_requests_integrity_check.sql`.
 
