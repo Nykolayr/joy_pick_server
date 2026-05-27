@@ -25,35 +25,28 @@ function aiIssue(code, field, phase, extra = {}) {
   };
 }
 
+/** Один промпт для всех locale: текст как есть, язык указываем явно (ru, zh, en, …). */
 function buildPrompt({ name, description, locale, category }) {
   const loc = normalizeLocale(locale);
-  const isRu = loc === 'ru';
+  return `You moderate cleanup/volunteer requests in a mobile app.
+Category: ${category}
+User app locale: ${loc}
 
-  if (isRu) {
-    return `Ты модератор заявок на уборку/волонтёрские задачи (категория: ${category}).
-Оцени заголовок и описание на русском языке: это осмысленная заявка (место, задача для волонтёров) или бессмыслица/набор символов/спам?
+The title and description below are written by the user in their language (same as or related to locale ${loc}). Read them as-is — do NOT require English.
 
-Заголовок: ${JSON.stringify(name)}
-Описание: ${JSON.stringify(description)}
-
-Ответь ТОЛЬКО JSON без markdown:
-{"ok":true}
-или
-{"ok":false,"fields":["name"],"fields":["description"] — какие поля плохие, можно оба}`;
-  }
-
-  return `You moderate cleanup/volunteer requests (category: ${category}).
-User app locale: ${loc} (not Russian). The title and description may be in the user's language.
-Step 1: mentally translate them to English if needed.
-Step 2: decide if they describe a real outdoor cleanup / volunteer task (clear place or action), or are gibberish/random characters/spam.
+Decide: is this a genuine outdoor cleanup / volunteer task (clear place or action), or gibberish / random characters / spam / placeholder?
 
 Title: ${JSON.stringify(name)}
 Description: ${JSON.stringify(description)}
 
-Reply ONLY JSON, no markdown:
+Reply ONLY valid JSON, no markdown:
 {"ok":true}
 or
-{"ok":false,"fields":["name"]} and/or "description"`;
+{"ok":false,"fields":["name"]}
+or
+{"ok":false,"fields":["description"]}
+or
+{"ok":false,"fields":["name","description"]}`;
 }
 
 function parseAiJson(raw) {
@@ -68,9 +61,6 @@ function parseAiJson(raw) {
   }
 }
 
-/**
- * @returns {Promise<object[]>} integrity issues
- */
 async function checkTextWithAi({ name, description, locale, category, phase }) {
   if (!isTextAiEnabled()) return [];
 

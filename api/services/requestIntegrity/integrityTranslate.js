@@ -1,5 +1,5 @@
-const { translateOne, SUPPORTED_LOCALES } = require('../translateNews');
-const { SUMMARY_EN } = require('./reasonCodes');
+const { SUPPORTED_LOCALES } = require('../translateNews');
+const { SUMMARY_EN, SUMMARY_CLOSE_EN, messageKeyForCode } = require('./reasonCodes');
 
 function normalizeLocale(locale) {
   const l = String(locale || 'en')
@@ -9,31 +9,35 @@ function normalizeLocale(locale) {
   return SUPPORTED_LOCALES.includes(l) ? l : 'en';
 }
 
-async function translateText(text, targetLocale, sourceLang = 'en') {
-  const locale = normalizeLocale(targetLocale);
-  if (!text || locale === sourceLang) return text;
-  const { text: out, error } = await translateOne(text, sourceLang, locale);
-  return error ? text : out || text;
-}
-
-async function localizeIntegrityResult(result, locale) {
+/**
+ * Локализация текстов ошибок — на клиенте по message_key / summary_key (ARB).
+ * Без Google Translate на сервере (быстро, все языки приложения).
+ */
+function localizeIntegrityResult(result, locale) {
   const loc = normalizeLocale(locale);
-  const issues = [];
-  for (const issue of result.issues || []) {
-    const base = issue.message_en || issue.message || '';
-    const message = await translateText(base, loc, 'en');
-    issues.push({
-      ...issue,
-      message,
-      message_key: issue.message_key,
-    });
+  const phase = result.phase || 'create';
+
+  if (result.ok) {
+    return { ...result, locale: loc };
   }
-  const summary = await translateText(result.summary_en || SUMMARY_EN, loc, 'en');
+
+  const summaryKey =
+    phase === 'close' ? 'integrity_check_failed_close_summary' : 'integrity_check_failed_summary';
+  const summaryEn = result.summary_en || (phase === 'close' ? SUMMARY_CLOSE_EN : SUMMARY_EN);
+
+  const issues = (result.issues || []).map((issue) => ({
+    ...issue,
+    message_key: issue.message_key || messageKeyForCode(issue.code),
+    message_en: issue.message_en || issue.message || '',
+    message: issue.message_en || issue.message || '',
+  }));
+
   return {
     ...result,
     locale: loc,
-    summary,
-    summary_en: result.summary_en || SUMMARY_EN,
+    summary_key: summaryKey,
+    summary_en: summaryEn,
+    summary: summaryEn,
     issues,
   };
 }

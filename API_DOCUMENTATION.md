@@ -1988,9 +1988,9 @@ Future<void> createRequestWithPhotos({
 
 Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
 
-**Язык:** при `integrity_enforce=true` передавайте **`locale`** с мобилки (код языка UI). По нему — перевод `summary` / `issues[].message` и ветка AI (ru vs EN). Без `locale` — fallback `en`, **не 400**. Старые клиенты **без** `integrity_enforce` — как раньше, без этих полей.
+**Язык:** передавайте **`locale`** с мобилки (код UI: `en`, `ru`, `zh`, …). Тексты ошибок — **`message_key`** / **`summary_key`** (ARB в приложении), сервер **не** переводит через Google. OpenRouter для текста: **title/description как есть** + `User app locale: …` в промпте (любой язык, в т.ч. китайский).
 
-**Текст (AI):** при `OPENROUTER_API_KEY` и `INTEGRITY_TEXT_AI_ENABLED` ≠ `0` — проверка name/description через OpenRouter: **`locale=ru`** — текст на русском; **иначе** — модель переводит на EN и оценивает смысл. Без AI — локальные правила gibberish. Пустые name/description — всегда ошибка.
+**Текст (AI):** OpenRouter — текст **как есть**, в промпте указан `User app locale`. Ошибки — `message_key` / `summary_key` для ARB на клиенте (без Google Translate на сервере).
 
 **Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: гео, дубликаты URL/хеша фото, мин. время.
 

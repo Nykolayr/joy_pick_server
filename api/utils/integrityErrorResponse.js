@@ -16,6 +16,7 @@ function sendIntegrityCheckFailed(res, integrityPayload, statusCode = 422) {
         ok: false,
         request_created: false,
         request_closed: false,
+        summary_key: integrityPayload.summary_key || null,
         ...integrityPayload,
       },
     },
