@@ -159,7 +159,8 @@ async function checkPhotos({
     samples.push({ field: 'photos_after', url, filePath: photoFilesAfter[i], index: i });
   });
 
-  if (!isAiEnabled()) return issues;
+  // Vision (OpenRouter) — только автомодерация на pending; create/close не блокируем по AI.
+  if (phase !== 'moderate' || !isAiEnabled()) return issues;
 
   for (const sample of samples.slice(0, 4)) {
     const verdict = await classifyPhotoScene({

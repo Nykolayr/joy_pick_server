@@ -13,8 +13,8 @@ function issue(code, field, source = 'rules', extra = {}) {
 }
 
 const MIN_DESCRIPTION_CHARS = Math.max(
-  10,
-  parseInt(process.env.INTEGRITY_MIN_DESCRIPTION_CHARS || '20', 10) || 20
+  8,
+  parseInt(process.env.INTEGRITY_MIN_DESCRIPTION_CHARS || '12', 10) || 12
 );
 const MIN_DESCRIPTION_WORDS = Math.max(
   2,
@@ -34,17 +34,15 @@ function isGibberish(text, { isDescription = false } = {}) {
   const vowels = (compact.match(/[aeiouyаеёиоуыэюя]/gi) || []).length;
   const ratio = vowels / Math.max(compact.length, 1);
 
-  // Короткий мусор: «пддисс», «раами» — повторы букв, мало смысла
-  const doubleLetterRuns = (compact.match(/(.)\1/g) || []).length;
-  if (compact.length <= 8 && doubleLetterRuns >= 1) return true;
-  if (compact.length <= 14 && doubleLetterRuns >= 2) return true;
-
-  if (compact.length >= 4 && compact.length <= 12) {
+  // Только явный мусор (aaaa), не обычные слова вроде coffee / hello
+  if (isDescription && compact.length >= 4 && compact.length <= 12) {
     if (ratio < 0.12 || ratio > 0.8) return true;
   }
-  if (compact.length > 8 && ratio < 0.08) return true;
+  if (isDescription && compact.length > 8 && ratio < 0.08) return true;
 
-  if (/[bcdfghjklmnpqrstvwxyzбвгджзйклмнпрстфхцчшщ]{5,}/i.test(compact)) return true;
+  if (isDescription && /[bcdfghjklmnpqrstvwxyzбвгджзйклмнпрстфхцчшщ]{6,}/i.test(compact)) {
+    return true;
+  }
 
   const words = s.split(/\s+/).filter((w) => w.length >= 2);
   if (words.length === 0 && s.length > 5) return true;

@@ -1988,6 +1988,10 @@ Future<void> createRequestWithPhotos({
 
 Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
 
+**Язык:** передавайте `locale` (`ru`, `en`, …) в multipart/query — по нему переводятся `summary` и `issues[].message`. Определение языка на сервере по тексту не используется.
+
+**Фото (AI indoor):** при create/close **не** вызывается (быстрый ответ). Vision OpenRouter — только на **`pending`** (автомодерация, `phase: moderate`). На create/close остаются правила: текст, гео, дубликаты URL/хеша фото, мин. время.
+
 #### Проверка integrity при закрытии (сдача на модерацию)
 
 Тот же **`integrity_enforce`** (`true` / `1`). Без поля — legacy: закрытие как раньше, проверка только в фоне на `pending`.
@@ -2480,7 +2484,7 @@ Future<void> createRequestWithPayment({
 
 При **авто-reject** в `moderation.meta` / `integrity_check.issues` — список кодов и сообщений (почему предложено отклонение). Event без участников — **не** ошибка.
 
-**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`15`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY`.
+**ENV:** `AUTO_MODERATION_ENABLED` (`1` — после настройки порогов), `AUTO_MODERATION_GRACE_HOURS` (`24`), `INTEGRITY_MIN_WASTE_MINUTES` (`15`), `INTEGRITY_MIN_SPEED_MINUTES` (`15`), `INTEGRITY_AI_ENABLED`, `OPENROUTER_API_KEY` (AI-фото только на `pending`), `INTEGRITY_MIN_DESCRIPTION_CHARS` (по умолчанию `12`).
 
 **Миграции:** `042_requests_auto_moderation.sql`, `043_requests_integrity_check.sql`.
 
