@@ -671,14 +671,8 @@ router.post('/', authenticate, uploadRequestPhotos, [
     } = require('../utils/clientAppCompat');
 
     const rawLocale = bodyData.locale ?? req.query?.locale;
-    if (supportsIntegrityBlockOnCreate(req)) {
-      const locKey = String(rawLocale || '')
-        .trim()
-        .toLowerCase()
-        .split('-')[0];
-      if (!locKey) {
-        return error(res, 'locale is required when integrity_enforce=true', 400);
-      }
+    if (rawLocale != null && String(rawLocale).trim() !== '') {
+      const locKey = String(rawLocale).trim().toLowerCase().split('-')[0];
       if (!SUPPORTED_LOCALES.includes(locKey)) {
         return error(
           res,
@@ -687,6 +681,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         );
       }
     }
+    // Без integrity_enforce — legacy, locale не обязателен. С enforce — желателен с мобилки, иначе en / Accept-Language.
     const requestLocale = normalizeLocale(
       rawLocale || req.headers['accept-language']
     );

@@ -1833,7 +1833,7 @@ Authorization: Bearer <jwt_token>
 - `name` (string, обязательное) - название заявки
 - `description` (string, обязательное если `integrity_enforce=true`, иначе опционально) - описание
 - `integrity_enforce` (boolean/string, опционально) - `true`/`1`: проверка integrity на create, при провале 422; без поля — legacy (заявка создаётся)
-- `locale` (string) — язык UI приложения для текстов integrity (`en`, `ru`, `es`, `ar`, `zh`, `hi`, `fr`, `pt`, `he`, `de`). **Обязателен**, если `integrity_enforce=true`; иначе опционально (fallback `Accept-Language` / `en`)
+- `locale` (string, опционально) — язык UI для текстов integrity (`en`, `ru`, `es`, …). **Рекомендуется** с `integrity_enforce=true` (тот же код, что в приложении). Без поля — `Accept-Language` или `en`. Legacy без `integrity_enforce` — поле не нужно.
 - `latitude` (float, опционально) - широта
 - `longitude` (float, опционально) - долгота
 - `city` (string, опционально) - город
@@ -1988,7 +1988,7 @@ Future<void> createRequestWithPhotos({
 
 Клиент: при `errorCode === 'INTEGRITY_CHECK_FAILED'` не считать заявку созданной; показать `issues[].message` у полей (`field`: `name`, `description`, `photos_before`, `location`).
 
-**Язык:** при `integrity_enforce=true` поле **`locale` обязательно** (тот же код, что в настройках языка приложения). По нему переводятся `summary` и `issues[].message`. Определение языка по тексту на сервере не используется.
+**Язык:** при `integrity_enforce=true` передавайте **`locale`** с мобилки (код языка UI). По нему — перевод `summary` / `issues[].message` и ветка AI (ru vs EN). Без `locale` — fallback `en`, **не 400**. Старые клиенты **без** `integrity_enforce` — как раньше, без этих полей.
 
 **Текст (AI):** при `OPENROUTER_API_KEY` и `INTEGRITY_TEXT_AI_ENABLED` ≠ `0` — проверка name/description через OpenRouter: **`locale=ru`** — текст на русском; **иначе** — модель переводит на EN и оценивает смысл. Без AI — локальные правила gibberish. Пустые name/description — всегда ошибка.
 
