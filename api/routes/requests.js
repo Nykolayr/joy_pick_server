@@ -3259,12 +3259,19 @@ router.patch('/:requestId/participant-completion/:userId', authenticate, async (
     // Отправляем push-уведомление участнику
     const { sendRequestRejectedNotification, sendRequestApprovedNotification } = require('../services/pushNotification');
     if (action === 'reject') {
+      const { resolveRejectionNotificationText } = require('../utils/rejectionNotificationText');
+      const resolved = resolveRejectionNotificationText({
+        rejectionMessage: rejection_reason,
+        messageType: 'participant',
+      });
       sendRequestRejectedNotification({
         userIds: [userId],
         requestId: requestId,
         messageType: 'participant',
-        rejectionMessage: `Ваше закрытие работы отклонено. Причина: ${rejection_reason}`,
-        requestCategory: request.category
+        rejectionMessage: resolved.body,
+        requestCategory: request.category,
+        primaryCode: resolved.primaryCode,
+        messageKey: resolved.messageKey,
       }).catch(() => {});
     } else {
       sendRequestApprovedNotification({

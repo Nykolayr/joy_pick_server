@@ -2001,7 +2001,7 @@ Future<void> createRequestWithPhotos({
 | Тип | Endpoint | Что проверяется при `integrity_enforce` |
 |-----|----------|----------------------------------------|
 | waste | `POST …/participant-completion` | гео в **200 м**, мин. 15 мин (фото **не** проверяются) |
-| speed | `PUT …/requests/:id` → `status=pending` | гео, мин. 15 мин (фото **не** проверяются) |
+| speed | `PUT …/requests/:id` → `status=pending` | **время:** от `start_date` в БД до `end_date`/момента сдачи, мин. **20** мин (`WORK_TOO_SHORT_SPEED`, `message_key`: `integrity_work_too_short_speed`). `work_duration_minutes` с клиента **не** используется, если в БД есть `start_date`. **Гео completion** для speed **не** проверяется (фото **не** проверяются). |
 | event (участник) | `POST …/participant-completion` | гео в 200 м |
 | event (заказчик) | `POST …/close-by-creator` | гео **всех** участников из `registered_participants` + создателя; опционально гео заказчика в том же запросе (фото **не** проверяются) |
 
@@ -2020,7 +2020,13 @@ Future<void> createRequestWithPhotos({
 }
 ```
 
+**`start_date` (speedCleanup):** после первой установки сервер **не сбрасывает** поле при resume/continue/`inProgress` без явного `start_date` в теле. Пустое значение в PATCH не затирает уже сохранённый `start_date`.
+
 После **успешной** сдачи с `integrity_enforce` поля очищаются, `completion_integrity` → `null`, статус → `pending`. Это **не** модераторский `rejection_reason` (`status=rejected`).
+
+**Push при `status=rejected`:** `data.type` = `request_rejected`, `requestId`, `primary_code`, `message_key` (напр. `integrity_work_too_short_speed`), `title_key`; в `body` — человекочитаемый текст, **не** сырой код `WORK_TOO_SHORT_SPEED`.
+
+**GET `/api/requests/my`:** заявки со статусом `rejected` **включены** (в отличие от публичного `GET /requests` без `status`). `completion_integrity` видит только **создатель** заявки.
 
 Показ баннера только создателю — на стороне мобильного клиента; API отдаёт поле всем, у кого есть доступ к заявке.
 
