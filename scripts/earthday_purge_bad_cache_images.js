@@ -1,6 +1,6 @@
 /**
  * Одноразовая/периодическая чистка earthday_image_cache через OpenRouter vision.
- * Usage: node scripts/earthday_purge_bad_cache_images.js [--dry-run] [--limit N]
+ * Usage: node scripts/earthday_purge_bad_cache_images.js [--dry-run] [--all] [--limit=N]
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
@@ -14,6 +14,7 @@ const {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  const scanAll = process.argv.includes('--all');
   const limitArg = process.argv.find((a) => a.startsWith('--limit='));
   const limit = limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10) || 100) : 200;
 
@@ -22,11 +23,11 @@ async function main() {
     process.exit(1);
   }
 
+  const limitSql = scanAll ? '' : ` LIMIT ${limit}`;
   const [rows] = await pool.execute(
     `SELECT id, image_url, country, region_key
      FROM earthday_image_cache
-     ORDER BY id ASC
-     LIMIT ${limit}`
+     ORDER BY id ASC${limitSql}`
   );
 
   let rejected = 0;

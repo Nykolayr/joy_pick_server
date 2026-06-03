@@ -7,6 +7,7 @@ const {
   buildWikimediaSearchAttempts,
   fetchWikimediaPreviewByAttempts,
   validEarthdayCoords,
+  shuffleArrayInPlace,
 } = require('../utils/wikimediaCommonsEarthday');
 const { createEventRequestFromExternalSource } = require('./createEventRequestCore');
 const {
@@ -22,12 +23,6 @@ const {
 const CHUNK_MAX = parseInt(process.env.EARTHDAY_BULK_CHUNK_MAX, 10) || 5;
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const IMAGE_REUSE_DAYS = Math.max(1, parseInt(process.env.EARTHDAY_IMAGE_REUSE_DAYS, 10) || 8);
-/** Сколько кэшированных URL проверить vision перед отказом от кэша. */
-const VISION_CACHE_MAX_ATTEMPTS = Math.min(
-  20,
-  Math.max(1, parseInt(process.env.EARTHDAY_VISION_CACHE_MAX_ATTEMPTS, 10) || 8)
-);
-/** Сколько пунктов Wikimedia пробовать (скачать+vision); env: EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES */
 const WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES = Math.min(
   30,
   Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 15)
@@ -332,6 +327,7 @@ async function markCleanupAsUsed(pool, objectid) {
   return (result && result.affectedRows ? Number(result.affectedRows) : 0) > 0;
 }
 
+/** Кэш уже чистится скриптом purge + vision при скачивании; при reuse — только проверка, что файл на диске есть. */
 async function pickReusableCachedImageUrl(pool, cacheMatch, reuseDays) {
   const [rows] = await pool.execute(
     `SELECT id, image_url
@@ -349,15 +345,10 @@ async function pickReusableCachedImageUrl(pool, cacheMatch, reuseDays) {
   );
   if (!rows || rows.length === 0) return null;
 
-  let attempts = 0;
+  const candidates = [];
   for (const row of rows) {
-    if (attempts >= VISION_CACHE_MAX_ATTEMPTS) break;
-    attempts += 1;
-
     const imageUrl = String(row.image_url);
-    const cacheId = Number(row.id);
     const filePath = localFilePathFromUploadUrl(imageUrl);
-
     if (!filePath || !fs.existsSync(filePath)) {
       try {
         await purgeBadEarthdayImage(pool, imageUrl, { reason: 'missing_file' });
@@ -366,28 +357,16 @@ async function pickReusableCachedImageUrl(pool, cacheMatch, reuseDays) {
       }
       continue;
     }
-
-    if (!(await isEarthdayVisionEnabled())) {
-      return { id: cacheId, image_url: imageUrl };
-    }
-
-    const verdict = await classifyEarthdayCoverImage({ filePath });
-    if (verdict.verdict === 'skip' || verdict.verdict === 'accept') {
-      return { id: cacheId, image_url: imageUrl };
-    }
-    if (verdict.verdict === 'uncertain') {
-      return { id: cacheId, image_url: imageUrl };
-    }
-    if (verdict.verdict === 'reject') {
-      try {
-        await purgeBadEarthdayImage(pool, imageUrl, { visionReason: verdict.reason });
-      } catch (e) {
-        console.warn('[earthdayBulk] purge rejected cache image:', imageUrl, e.message);
-      }
-    }
+    candidates.push(row);
   }
+  if (candidates.length === 0) return null;
 
-  return null;
+  shuffleArrayInPlace(candidates);
+  const picked = candidates[0];
+  return {
+    id: Number(picked.id),
+    image_url: String(picked.image_url),
+  };
 }
 
 async function markCachedImageAsUsed(pool, cacheId) {
