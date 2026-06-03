@@ -1110,19 +1110,26 @@ async function sendRequestApprovedNotification({ userIds, requestId, messageType
  * @param {string} options.requestCategory - Категория заявки (опционально, для deeplink)
  * @returns {Promise<{successCount: number, failureCount: number}>} Результат отправки
  */
-async function sendRequestRejectedNotification({ userIds, requestId, messageType = 'creator', rejectionMessage = null, requestCategory = 'wasteLocation' }) {
-  let title = 'Request Rejected';
-  let body = 'Your request was rejected';
-  
-  if (messageType === 'donor') {
-    body = rejectionMessage 
-      ? `Request you donated to was rejected: ${rejectionMessage}`
-      : 'Request you donated to was rejected';
-  } else {
-    body = rejectionMessage || 'Your request was rejected';
-  }
+async function sendRequestRejectedNotification({
+  userIds,
+  requestId,
+  messageType = 'creator',
+  rejectionMessage = null,
+  requestCategory = 'wasteLocation',
+  primaryCode = null,
+  messageKey = null,
+}) {
+  const { resolveRejectionNotificationText } = require('../utils/rejectionNotificationText');
+  const resolved = resolveRejectionNotificationText({
+    rejectionMessage,
+    primaryCode,
+    messageKey,
+    messageType,
+  });
 
-  // Формируем deeplink для перехода на заявку
+  const title = 'Request Rejected';
+  const body = resolved.body;
+
   const categoryPaths = {
     wasteLocation: 'waste_location',
     speedCleanup: 'speed_cleanup',
@@ -1137,15 +1144,20 @@ async function sendRequestRejectedNotification({ userIds, requestId, messageType
     userIds,
     sound: 'default',
     data: {
-      type: 'requestRejected',
-      requestId: requestId,
-      messageType: messageType,
+      type: 'request_rejected',
+      requestId,
+      messageType,
+      primary_code: resolved.primaryCode || '',
+      message_key: resolved.messageKey || '',
+      title_key: resolved.titleKey || '',
       initialPageName: 'RequestDetails',
       parameterData: JSON.stringify({
-        requestId: requestId,
+        requestId,
         category: requestCategory,
+        primary_code: resolved.primaryCode || '',
+        message_key: resolved.messageKey || '',
       }),
-      deeplink: deeplink,
+      deeplink,
     },
   });
 }

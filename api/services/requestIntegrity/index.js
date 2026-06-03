@@ -49,23 +49,30 @@ async function checkRequestIntegrity(input) {
         })
       );
     } else {
-      // Текст и фото на close не проверяем — только гео исполнителя и время.
-      issues = issues.concat(
-        checkExecutorAtRequestSite({
-          requestLatitude: input.latitude,
-          requestLongitude: input.longitude,
-          completionLatitude: input.completionLatitude,
-          completionLongitude: input.completionLongitude,
-          field: input.completionField || 'location',
-        })
-      );
+      const cat = String(input.category || '').toLowerCase();
+      const skipExecutorGeo = cat === 'speedcleanup';
+      if (!skipExecutorGeo) {
+        issues = issues.concat(
+          checkExecutorAtRequestSite({
+            requestLatitude: input.latitude,
+            requestLongitude: input.longitude,
+            completionLatitude: input.completionLatitude,
+            completionLongitude: input.completionLongitude,
+            field: input.completionField || 'location',
+          })
+        );
+      }
       issues = issues.concat(checkTime({ ...input, phase: 'close' }));
     }
   } else {
     issues = issues.concat(await checkGeo(input));
     issues = issues.concat(await checkPhotos(input));
     issues = issues.concat(checkTime({ ...input, phase }));
-    if (input.completionLatitude != null || input.completionLongitude != null) {
+    const cat = String(input.category || '').toLowerCase();
+    if (
+      cat !== 'speedcleanup' &&
+      (input.completionLatitude != null || input.completionLongitude != null)
+    ) {
       issues = issues.concat(
         checkExecutorAtRequestSite({
           requestLatitude: input.latitude,

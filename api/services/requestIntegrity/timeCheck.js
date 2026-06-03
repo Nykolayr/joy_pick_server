@@ -1,7 +1,11 @@
 const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
 
 const WASTE_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_WASTE_MINUTES || '15', 10) || 15);
-const SPEED_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_SPEED_MINUTES || '15', 10) || 15);
+const SPEED_MIN_MINUTES = Math.max(1, parseInt(process.env.INTEGRITY_MIN_SPEED_MINUTES || '20', 10) || 20);
+const SPEED_CLIENT_DRIFT_MINUTES = Math.max(
+  1,
+  parseInt(process.env.INTEGRITY_SPEED_CLIENT_DRIFT_MINUTES || '2', 10) || 2
+);
 
 function issue(code, field = 'time', severity = 'reject') {
   return {
@@ -22,6 +26,31 @@ function minutesBetween(a, b) {
   return Math.abs(t2 - t1) / (1000 * 60);
 }
 
+function resolveSpeedEndTime({ endDate, submittedForReviewAt }) {
+  if (endDate) return endDate;
+  if (submittedForReviewAt) return submittedForReviewAt;
+  return null;
+}
+
+function checkSpeedWorkDuration({ startDate, endDate, submittedForReviewAt, workDurationMinutes }) {
+  const issues = [];
+  const end = resolveSpeedEndTime({ endDate, submittedForReviewAt });
+  const serverMinutes = startDate && end ? minutesBetween(startDate, end) : null;
+
+  if (serverMinutes != null) {
+    if (serverMinutes < SPEED_MIN_MINUTES) {
+      issues.push(issue(REASON.WORK_TOO_SHORT_SPEED, 'work_duration_minutes'));
+    }
+    return issues;
+  }
+
+  if (workDurationMinutes != null && Number(workDurationMinutes) < SPEED_MIN_MINUTES) {
+    issues.push(issue(REASON.WORK_TOO_SHORT_SPEED, 'work_duration_minutes'));
+  }
+
+  return issues;
+}
+
 function checkTime({ category, phase, workDurationMinutes, joinDate, submittedForReviewAt, startDate, endDate }) {
   if (phase !== 'moderate' && phase !== 'close') return [];
 
@@ -39,16 +68,23 @@ function checkTime({ category, phase, workDurationMinutes, joinDate, submittedFo
   }
 
   if (cat === 'speedcleanup') {
-    const span = minutesBetween(startDate, endDate);
-    if (span != null && span < SPEED_MIN_MINUTES) {
-      issues.push(issue(REASON.WORK_TOO_SHORT_SPEED));
-    }
-    if (workDurationMinutes != null && Number(workDurationMinutes) < SPEED_MIN_MINUTES) {
-      issues.push(issue(REASON.WORK_TOO_SHORT_SPEED));
-    }
+    issues.push(
+      ...checkSpeedWorkDuration({
+        startDate,
+        endDate,
+        submittedForReviewAt,
+        workDurationMinutes,
+      })
+    );
   }
 
   return issues;
 }
 
-module.exports = { checkTime, WASTE_MIN_MINUTES, SPEED_MIN_MINUTES };
+module.exports = {
+  checkTime,
+  checkSpeedWorkDuration,
+  WASTE_MIN_MINUTES,
+  SPEED_MIN_MINUTES,
+  SPEED_CLIENT_DRIFT_MINUTES,
+};

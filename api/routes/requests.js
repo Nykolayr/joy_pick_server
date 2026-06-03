@@ -291,7 +291,8 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /api/requests/my
- * Заявки, где текущий пользователь — создатель, исполнитель, донатер или участник (любой тип и статус).
+ * Заявки, где текущий пользователь — создатель, исполнитель, донатер или участник.
+ * Статус rejected не скрывается (в отличие от GET /api/requests без status).
  * Требует аутентификации.
  */
 router.get('/my', authenticate, async (req, res) => {
@@ -333,7 +334,13 @@ router.get('/my', authenticate, async (req, res) => {
       LIMIT ${limitNum} OFFSET ${offset}
     `;
     const [requests] = await pool.execute(query, params);
-    const processedRequests = requests.map(processRequestListItem);
+    const processedRequests = requests.map((request) => {
+      const item = processRequestListItem(request);
+      if (item.created_by !== userId) {
+        item.completion_integrity = null;
+      }
+      return item;
+    });
 
     const countQuery = `
       SELECT COUNT(DISTINCT r.id) as total
@@ -962,7 +969,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
 
     // Проверка прав доступа
     const [existingRequests] = await pool.execute(
-      'SELECT created_by, joined_user_id, category FROM requests WHERE id = ?',
+      'SELECT created_by, joined_user_id, category, start_date FROM requests WHERE id = ?',
       [id]
     );
 
@@ -1089,8 +1096,26 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       if (start_date !== null && start_date !== '' && !normalizedStartDate) {
         return error(res, 'start_date: некорректный формат даты', 400);
       }
-      updates.push('start_date = ?');
-      params.push(normalizedStartDate);
+      const catNorm = String(existingRequests[0].category || '').toLowerCase();
+      const existingStart = existingRequests[0].start_date;
+      const explicitEmpty = start_date === null || start_date === '';
+      const explicitValue =
+        !explicitEmpty && normalizedStartDate != null && String(start_date).trim() !== '';
+
+      if (catNorm === 'speedcleanup') {
+        if (existingStart) {
+          if (explicitValue) {
+            updates.push('start_date = ?');
+            params.push(normalizedStartDate);
+          }
+        } else if (explicitValue) {
+          updates.push('start_date = ?');
+          params.push(normalizedStartDate);
+        }
+      } else {
+        updates.push('start_date = ?');
+        params.push(normalizedStartDate);
+      }
     }
     if (end_date !== undefined) {
       const normalizedEndDate = formatDateTimeForMySql(end_date);
@@ -1364,6 +1389,14 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
           }
         }
 
+        let effectiveEndDate = speedRow.end_date;
+        if (bodyData.end_date !== undefined && bodyData.end_date !== null && bodyData.end_date !== '') {
+          effectiveEndDate = formatDateTimeForMySql(bodyData.end_date) || speedRow.end_date;
+        } else if (statusChangedToPending) {
+          effectiveEndDate = new Date().toISOString();
+        }
+        const submittedAt = effectiveEndDate || new Date().toISOString();
+
         const { checkRequestIntegrity, normalizeLocale } = require('../services/requestIntegrity');
         const { integrityEnforceOrRespond } = require('../utils/integrityGate');
         const blockedSpeed = await integrityEnforceOrRespond(
@@ -1384,8 +1417,8 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
               workDurationMinutes: workMinutesCheck,
               joinDate: speedRow.join_date,
               startDate: speedRow.start_date,
-              endDate: speedRow.end_date,
-              submittedForReviewAt: new Date().toISOString(),
+              endDate: effectiveEndDate,
+              submittedForReviewAt: submittedAt,
               locale: normalizeLocale(bodyData?.locale || req.query?.locale),
             }),
           { requestId: id }
@@ -2805,12 +2838,23 @@ async function archivePendingModerationTimeout(requestId, category, creatorId) {
  * Обработка отклонения заявки
  */
 async function handleRequestRejection(requestId, category, creatorId, rejectionReason, rejectionMessage) {
-  // 1. Определяем сообщение об отклонении
-  const finalMessage = rejectionMessage || rejectionReason || 'Request was rejected by moderator';
+  const { resolveRejectionNotificationText, looksLikeIntegrityCode } = require('../utils/rejectionNotificationText');
+  const primaryCode = looksLikeIntegrityCode(rejectionReason) ? String(rejectionReason).trim() : null;
+  const resolved = resolveRejectionNotificationText({
+    rejectionMessage: rejectionMessage || rejectionReason,
+    primaryCode,
+    messageType: 'creator',
+  });
+  const finalMessage = resolved.body;
 
   const donorUserIds = await refundDonationsForRequest(requestId);
 
-  // 4. Отправляем push-уведомления
+  const [roleRows] = await pool.execute(
+    'SELECT joined_user_id FROM requests WHERE id = ?',
+    [requestId]
+  );
+  const executorId = roleRows[0]?.joined_user_id || null;
+
   if (creatorId) {
     sendRequestRejectedNotification({
       userIds: [creatorId],
@@ -2818,6 +2862,19 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       messageType: 'creator',
       rejectionMessage: finalMessage,
       requestCategory: category,
+      primaryCode: resolved.primaryCode,
+      messageKey: resolved.messageKey,
+    }).catch(() => {});
+  }
+  if (executorId && executorId !== creatorId) {
+    sendRequestRejectedNotification({
+      userIds: [executorId],
+      requestId,
+      messageType: 'executor',
+      rejectionMessage: finalMessage,
+      requestCategory: category,
+      primaryCode: resolved.primaryCode,
+      messageKey: resolved.messageKey,
     }).catch(() => {});
   }
   if (donorUserIds.length > 0) {
@@ -2827,6 +2884,8 @@ async function handleRequestRejection(requestId, category, creatorId, rejectionR
       messageType: 'donor',
       rejectionMessage: finalMessage,
       requestCategory: category,
+      primaryCode: resolved.primaryCode,
+      messageKey: resolved.messageKey,
     }).catch(() => {});
   }
 
