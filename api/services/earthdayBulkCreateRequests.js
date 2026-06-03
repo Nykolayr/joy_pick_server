@@ -7,16 +7,31 @@ const {
   buildWikimediaSearchAttempts,
   fetchWikimediaPreviewByAttempts,
   validEarthdayCoords,
-  shuffleArrayInPlace
 } = require('../utils/wikimediaCommonsEarthday');
 const { createEventRequestFromExternalSource } = require('./createEventRequestCore');
+const {
+  isEarthdayVisionEnabled,
+  classifyEarthdayCoverImage,
+} = require('./earthdayImageVision');
+const {
+  localFilePathFromUploadUrl,
+  purgeBadEarthdayImage,
+} = require('./earthdayImagePurge');
 
 /** Ожидаемые чанки с фронта (по умолчанию 5); переопределение: EARTHDAY_BULK_CHUNK_MAX */
 const CHUNK_MAX = parseInt(process.env.EARTHDAY_BULK_CHUNK_MAX, 10) || 5;
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const IMAGE_REUSE_DAYS = Math.max(1, parseInt(process.env.EARTHDAY_IMAGE_REUSE_DAYS, 10) || 8);
-/** Сколько пунктов Wikimedia перемешать и поочерёдно пробовать (скачать+сжать только первый успех); переопределение: EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES */
-const WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES = Math.min(30, Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 15));
+/** Сколько кэшированных URL проверить vision перед отказом от кэша. */
+const VISION_CACHE_MAX_ATTEMPTS = Math.min(
+  20,
+  Math.max(1, parseInt(process.env.EARTHDAY_VISION_CACHE_MAX_ATTEMPTS, 10) || 8)
+);
+/** Сколько пунктов Wikimedia пробовать (скачать+vision); env: EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES */
+const WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES = Math.min(
+  30,
+  Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 15)
+);
 
 const SELECT_ROW_COLUMNS = `
   objectid, cleanup_date, start_time, who_is_holding_the_cleanup, name_of_the_cleanup_event,
@@ -279,15 +294,28 @@ async function saveJpegToGallery(pool, userId, jpegBuf) {
   return imageUrl;
 }
 
-/** До WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES пунктов в случайном порядке; скачиваем и сохраняем только первый успешный — дальше не идём. */
+/** Кандидаты уже отсортированы по score; скачиваем и сохраняем первый, прошедший vision. */
 async function downloadFirstSuccessfulWikimediaImageToGallery(pool, userId, items, maxCandidates) {
-  const slice = itemsSlurp(items, maxCandidates);
+  const slice = items.slice(0, Math.min(items.length, maxCandidates));
   for (const item of slice) {
     const url = item.full_url || item.thumb_url;
     if (!url || !isAllowedWikimediaImageUrl(url)) continue;
+
+    const previewUrl = item.thumb_url || item.full_url;
     try {
+      if (isEarthdayVisionEnabled() && previewUrl) {
+        const pre = await classifyEarthdayCoverImage({ imageUrl: previewUrl });
+        if (pre.verdict === 'reject') continue;
+      }
+
       const buf = await fetchImageBuffer(url);
       const jpeg = await compressToJpegMaxBytes(buf, MAX_IMAGE_BYTES);
+
+      if (isEarthdayVisionEnabled()) {
+        const post = await classifyEarthdayCoverImage({ imageBuffer: jpeg });
+        if (post.verdict === 'reject' || post.verdict === 'uncertain') continue;
+      }
+
       return await saveJpegToGallery(pool, userId, jpeg);
     } catch {
       // следующий кандидат
@@ -320,11 +348,46 @@ async function pickReusableCachedImageUrl(pool, cacheMatch, reuseDays) {
     [cacheMatch.country, cacheMatch.regionKey, reuseDays]
   );
   if (!rows || rows.length === 0) return null;
-  const picked = rows[Math.floor(Math.random() * rows.length)];
-  return {
-    id: Number(picked.id),
-    image_url: String(picked.image_url)
-  };
+
+  let attempts = 0;
+  for (const row of rows) {
+    if (attempts >= VISION_CACHE_MAX_ATTEMPTS) break;
+    attempts += 1;
+
+    const imageUrl = String(row.image_url);
+    const cacheId = Number(row.id);
+    const filePath = localFilePathFromUploadUrl(imageUrl);
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      try {
+        await purgeBadEarthdayImage(pool, imageUrl, { reason: 'missing_file' });
+      } catch (e) {
+        console.warn('[earthdayBulk] purge missing cache file:', imageUrl, e.message);
+      }
+      continue;
+    }
+
+    if (!(await isEarthdayVisionEnabled())) {
+      return { id: cacheId, image_url: imageUrl };
+    }
+
+    const verdict = await classifyEarthdayCoverImage({ filePath });
+    if (verdict.verdict === 'skip' || verdict.verdict === 'accept') {
+      return { id: cacheId, image_url: imageUrl };
+    }
+    if (verdict.verdict === 'uncertain') {
+      return { id: cacheId, image_url: imageUrl };
+    }
+    if (verdict.verdict === 'reject') {
+      try {
+        await purgeBadEarthdayImage(pool, imageUrl, { visionReason: verdict.reason });
+      } catch (e) {
+        console.warn('[earthdayBulk] purge rejected cache image:', imageUrl, e.message);
+      }
+    }
+  }
+
+  return null;
 }
 
 async function markCachedImageAsUsed(pool, cacheId) {
@@ -362,12 +425,6 @@ async function upsertCachedImage(pool, cacheMatch, imageUrl) {
        updated_at = CURRENT_TIMESTAMP`,
     [pathOnly, cacheMatch.country, cacheMatch.locationHint, cacheMatch.regionKey]
   );
-}
-
-function itemsSlurp(items, max) {
-  const copy = items.slice();
-  shuffleArrayInPlace(copy);
-  return copy.slice(0, Math.min(copy.length, max));
 }
 
 function buildErrorDiagnostics(err) {

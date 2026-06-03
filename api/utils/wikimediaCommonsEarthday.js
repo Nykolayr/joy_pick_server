@@ -24,9 +24,10 @@ function appendBitmapFiletypeFilter(srsearch) {
 const COMMONS_SEARCHABLE_MAX = 290;
 
 const COMMONS_AUGMENT_COMPACT =
-  ' (landscape OR forest OR river OR lake OR nature OR wildlife OR park OR trail OR plant OR bird OR fish)'
+  ' (cleanup OR litter OR trash OR beach OR shore OR volunteer OR park OR trail OR landscape OR forest OR river OR lake OR nature OR wildlife)'
   + ' -satellite -NASA -ISS -Landsat -MODIS -orthophoto -"View of Earth"'
-  + ' -church -museum -hospital -Depot -Plaza -"Historic District" -Episcopal';
+  + ' -church -museum -hospital -Depot -Plaza -"Historic District" -Episcopal'
+  + ' -taxidermy -aquarium -specimen -indoor -diorama -banding';
 
 function finalizeCommonsImageSearch(srsearch) {
   const raw = String(srsearch).trim();
@@ -127,6 +128,41 @@ function validEarthdayCoords(lat, lng) {
   if (Math.abs(la) < 1e-9 && Math.abs(lo) < 1e-9) return false;
   if (la < -90 || la > 90 || lo < -180 || lo > 180) return false;
   return true;
+}
+
+function isLikelyIndoorOrIrrelevantTitle(title) {
+  if (title == null || typeof title !== 'string') return false;
+  const t = title.replace(/^File:/i, '');
+  if (/\b(taxidermy|stuffed|diorama|specimen|mounted|skull|herbarium|banding|ringed|telemetry)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(indoor|interior|inside|exhibit|display\s+case|visitor\s+center|nature\s+center|aquarium)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(zoo\b.*\b(indoor|exhibit)|museum\b)/i.test(t)) return true;
+  return false;
+}
+
+/** Выше — лучше для обложки cleanup/event. */
+function scoreCommonsTitle(title) {
+  if (!title || typeof title !== 'string') return -999;
+  const t = title.replace(/^File:/i, '').toLowerCase();
+  let score = 0;
+  if (/\b(cleanup|clean-up|litter|trash|garbage|rubbish|beach\s+clean|shoreline|coastal)\b/.test(t)) {
+    score += 50;
+  }
+  if (/\b(volunteer|beach|shore|coast|park|trail|forest|river|lake|preserve|refuge|wetland)\b/.test(t)) {
+    score += 25;
+  }
+  if (/\b(landscape|nature|wildlife|habitat|outdoor)\b/.test(t)) score += 10;
+  if (isLikelySatelliteOrOrthoTitle(title)) score -= 120;
+  if (isLikelyBuildingOrUrbanTitle(title)) score -= 80;
+  if (isLikelyIndoorOrIrrelevantTitle(title)) score -= 100;
+  return score;
+}
+
+function sortCommonsTitlesByScore(titles) {
+  return titles.slice().sort((a, b) => scoreCommonsTitle(b) - scoreCommonsTitle(a));
 }
 
 function isRasterPhotoCommonsTitle(title) {
@@ -302,11 +338,12 @@ async function fetchWikimediaPreviewByAttempts(attempts, limit) {
         .filter((t) => typeof t === 'string' && t.length > 0)
         .filter(isRasterPhotoCommonsTitle)
         .filter((t) => !isLikelySatelliteOrOrthoTitle(t))
-        .filter((t) => !isLikelyBuildingOrUrbanTitle(t));
+        .filter((t) => !isLikelyBuildingOrUrbanTitle(t))
+        .filter((t) => !isLikelyIndoorOrIrrelevantTitle(t));
 
       if (titles.length === 0) continue;
 
-      shuffleArrayInPlace(titles);
+      titles = sortCommonsTitlesByScore(titles);
       const titleChunk = titles.slice(0, 50);
       const infoUrl = new URL(endpoint);
       infoUrl.searchParams.set('action', 'query');
@@ -362,5 +399,7 @@ module.exports = {
   buildWikimediaSearchAttempts,
   fetchWikimediaPreviewByAttempts,
   validEarthdayCoords,
-  shuffleArrayInPlace
+  shuffleArrayInPlace,
+  scoreCommonsTitle,
+  sortCommonsTitlesByScore,
 };
