@@ -21,26 +21,17 @@ function defaultStripeReturnUrl() {
   return `${publicSiteOrigin()}/stripeCallback?stripe=success`;
 }
 
-/** Дефолт для старых клиентов, которые не присылают country в POST /stripe/create-account. */
-const CONNECT_COUNTRY_LEGACY_DEFAULT = 'US';
-
 /**
  * Страна для Stripe Connect: ISO 3166-1 alpha-2.
- * Пустое / отсутствующее поле → legacyDefault (US), чтобы не ломать старые версии приложения.
+ * Пустое / отсутствующее поле → countryUnset: Stripe Express onboarding сам покажет выбор страны
+ * (нельзя передавать country/capabilities при create — иначе страна залипає на US платформы).
  * @param {unknown} raw
- * @param {{ legacyDefault?: string }} [opts]
- * @returns {{ ok: true, country: string, usedLegacyDefault?: boolean } | { ok: false, reason: 'invalid' }}
+ * @returns {{ ok: true, country: string } | { ok: true, country: null, countryUnset: true } | { ok: false, reason: 'invalid' }}
  */
-function normalizeConnectCountry(raw, opts = {}) {
-  const legacyDefault = String(opts.legacyDefault || CONNECT_COUNTRY_LEGACY_DEFAULT)
-    .trim()
-    .toUpperCase();
+function normalizeConnectCountry(raw) {
   const s = raw == null ? '' : String(raw).trim().toUpperCase();
   if (s.length === 0) {
-    if (/^[A-Z]{2}$/.test(legacyDefault)) {
-      return { ok: true, country: legacyDefault, usedLegacyDefault: true };
-    }
-    return { ok: false, reason: 'invalid' };
+    return { ok: true, country: null, countryUnset: true };
   }
   if (!/^[A-Z]{2}$/.test(s)) return { ok: false, reason: 'invalid' };
   return { ok: true, country: s };
@@ -552,16 +543,17 @@ router.post('/create-account', authenticate, [
 
     const { email, first_name, last_name, phone, city } = req.body;
 
-    const countryNorm = normalizeConnectCountry(req.body.country, {
-      legacyDefault: CONNECT_COUNTRY_LEGACY_DEFAULT
-    });
+    const countryNorm = normalizeConnectCountry(req.body.country);
     if (!countryNorm.ok) {
       return error(res, 'country must be exactly 2 letters (ISO 3166-1 alpha-2)', 400, {
         code: 'STRIPE_COUNTRY_INVALID'
       });
     }
+    const countryUnset = countryNorm.countryUnset === true;
     const country = countryNorm.country;
-    const { phoneE164, phoneDialOnlyPlaceholder } = phoneForStripeConnect(country, phone);
+    const { phoneE164, phoneDialOnlyPlaceholder } = countryUnset
+      ? { phoneE164: undefined, phoneDialOnlyPlaceholder: false }
+      : phoneForStripeConnect(country, phone);
 
     // Используем user_id из токена (пользователь уже аутентифицирован)
     const user_id = req.user.userId;
@@ -581,13 +573,15 @@ router.post('/create-account', authenticate, [
         return error(res, 'Cannot load existing Stripe account', 500, e);
       }
       const stripeCountry = String(remoteAccount.country || '').toUpperCase();
-      if (stripeCountry === country) {
+      if (countryUnset || stripeCountry === country) {
         try {
-          const { phoneOmittedAfterStripeReject } = await syncConnectPhoneToExistingStripeAccount(
-            existingAccount.account_id,
-            country,
-            phone
-          );
+          const { phoneOmittedAfterStripeReject } = countryUnset
+            ? { phoneOmittedAfterStripeReject: false }
+            : await syncConnectPhoneToExistingStripeAccount(
+              existingAccount.account_id,
+              country,
+              phone
+            );
 
           const accountLink = await stripe.accountLinks.create({
             account: existingAccount.account_id,
@@ -612,7 +606,8 @@ router.post('/create-account', authenticate, [
             account_id: existingAccount.account_id,
             account_link_url: accountLink.url,
             message: 'Account already exists, onboarding link created',
-            stripe_onboarding_webview: buildStripeOnboardingWebviewHints(country),
+            stripe_onboarding_webview: buildStripeOnboardingWebviewHints(country || stripeCountry),
+            ...(countryUnset ? { stripe_country_select_in_onboarding: true } : {}),
             ...extraExisting
           }, 'Account link created');
         } catch (err) {
@@ -645,21 +640,38 @@ router.post('/create-account', authenticate, [
     const buildAccountCreateParams = (recipientMode, phoneValue) => {
       const pv = phoneValue != null && String(phoneValue).trim() ? String(phoneValue).trim() : '';
       const withPhone = !!pv;
+      const individual = {
+        first_name: first_name,
+        last_name: last_name,
+        email: email,
+        ...(withPhone ? { phone: pv } : {})
+      };
+      if (city) {
+        individual.address = countryUnset
+          ? { city }
+          : { city, country };
+      } else if (!countryUnset) {
+        individual.address = { country };
+      }
       return {
-        country,
+        ...(!countryUnset ? { country } : {}),
         business_type: 'individual',
         controller: {
           fees: { payer: 'application' },
           losses: { payments: 'application' },
           stripe_dashboard: { type: 'express' }
         },
-        capabilities: recipientMode
-          ? { transfers: { requested: true } }
-          : {
-              card_payments: { requested: true },
-              transfers: { requested: true }
-            },
-        ...(recipientMode ? { tos_acceptance: { service_agreement: 'recipient' } } : {}),
+        ...(!countryUnset
+          ? {
+              capabilities: recipientMode
+                ? { transfers: { requested: true } }
+                : {
+                    card_payments: { requested: true },
+                    transfers: { requested: true }
+                  },
+              ...(recipientMode ? { tos_acceptance: { service_agreement: 'recipient' } } : {})
+            }
+          : {}),
         settings: {
           payouts: {
             schedule: {
@@ -668,16 +680,7 @@ router.post('/create-account', authenticate, [
           }
         },
         email: email,
-        individual: {
-          first_name: first_name,
-          last_name: last_name,
-          email: email,
-          ...(withPhone ? { phone: pv } : {}),
-          address: {
-            city: city || undefined,
-            country
-          }
-        },
+        individual,
         business_profile: {
           url: `${publicSiteOrigin()}/profile/${user_id}`,
           product_description: 'Environmental cleanup volunteer on JoyPick platform',
@@ -732,18 +735,23 @@ router.post('/create-account', authenticate, [
     };
 
     try {
-      // Сначала обычный Express: card_payments + transfers (так для BE, EU и большинства стран).
-      // Только если Stripe запрещает card_payments для этой страны (как AM) — второй вызов: transfers + recipient.
-      try {
-        account = await createAccountWithOptionalPhoneRetry(false);
-      } catch (firstErr) {
-        const msg0 = String(firstErr.message || '');
-        const cardPaymentsBlocked =
-          firstErr?.param === 'requested_capabilities'
-          && /card_payments/i.test(msg0)
-          && (/cannot request/i.test(msg0) || /You cannot request/i.test(msg0));
-        if (!cardPaymentsBlocked) throw firstErr;
-        account = await createAccountWithOptionalPhoneRetry(true);
+      if (countryUnset) {
+        // Без country и capabilities — Stripe Express onboarding показывает выбор страны (Dashboard Connect settings).
+        account = await stripe.accounts.create(buildAccountCreateParams(false, undefined));
+      } else {
+        // Сначала обычный Express: card_payments + transfers (так для BE, EU и большинства стран).
+        // Только если Stripe запрещает card_payments для этой страны (как AM) — второй вызов: transfers + recipient.
+        try {
+          account = await createAccountWithOptionalPhoneRetry(false);
+        } catch (firstErr) {
+          const msg0 = String(firstErr.message || '');
+          const cardPaymentsBlocked =
+            firstErr?.param === 'requested_capabilities'
+            && /card_payments/i.test(msg0)
+            && (/cannot request/i.test(msg0) || /You cannot request/i.test(msg0));
+          if (!cardPaymentsBlocked) throw firstErr;
+          account = await createAccountWithOptionalPhoneRetry(true);
+        }
       }
     } catch (stripeErr) {
       const isCountry = stripeErr?.code === 'account_country_invalid'
@@ -814,7 +822,8 @@ router.post('/create-account', authenticate, [
     return success(res, {
       account_id: account.id,
       account_link_url: accountLink.url,
-      stripe_onboarding_webview: buildStripeOnboardingWebviewHints(country),
+      stripe_onboarding_webview: buildStripeOnboardingWebviewHints(country || account.country || ''),
+      ...(countryUnset ? { stripe_country_select_in_onboarding: true } : {}),
       ...extra
     }, 'Account created successfully');
 
