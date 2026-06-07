@@ -149,20 +149,25 @@ async function checkPhotos({
     }
   }
 
-  const samples = [];
-  if (!onlyAfterForUser) {
-    before.forEach((url, i) => {
-      samples.push({ field: 'photos_before', url, filePath: photoFilesBefore[i], index: i });
-    });
-  }
-  after.forEach((url, i) => {
-    samples.push({ field: 'photos_after', url, filePath: photoFilesAfter[i], index: i });
-  });
-
   // Vision (OpenRouter) — только автомодерация на pending; create/close не блокируем по AI.
   if (phase !== 'moderate' || !isAiEnabled()) return issues;
 
-  for (const sample of samples.slice(0, 4)) {
+  const visionSamples = [];
+  after.forEach((url, i) => {
+    visionSamples.push({ field: 'photos_after', url, filePath: photoFilesAfter[i], index: i });
+  });
+  if (!onlyAfterForUser) {
+    before.forEach((url, i) => {
+      visionSamples.push({ field: 'photos_before', url, filePath: photoFilesBefore[i], index: i });
+    });
+  }
+
+  const maxVisionPhotos = Math.min(
+    4,
+    Math.max(1, parseInt(process.env.INTEGRITY_VISION_MAX_PHOTOS, 10) || 2)
+  );
+
+  for (const sample of visionSamples.slice(0, maxVisionPhotos)) {
     const verdict = await classifyPhotoScene({
       imageUrl: sample.url,
       filePath: sample.filePath,

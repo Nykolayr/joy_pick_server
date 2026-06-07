@@ -406,8 +406,8 @@ const DEFAULT_SCOPE_DICTIONARY = {
     en: ['joypick', 'joy pick', 'app', 'application', 'request', 'cleanup', 'event', 'donation', 'stripe']
   },
   in_app_soft: {
-    ru: ['что это за приложение', 'как пользоваться', 'как работает'],
-    en: ['what is this app', 'how to use', 'how it works']
+    ru: ['что это за приложение', 'как пользоваться', 'как работает', 'как работать с приложением'],
+    en: ['what is this app', 'how to use', 'how it works', 'how to work with the app']
   },
   off_topic_strong: {
     ru: ['погода', 'прогноз', 'политик', 'кино', 'фильм', 'гороскоп'],
@@ -553,6 +553,43 @@ function stripSupportAnswerMarkdown(text) {
   s = s.replace(/`([^`]+)`/g, '$1');
   s = s.replace(/\*\*/g, '');
   return s.trim();
+}
+
+/**
+ * Финальный текст для пользователя: без markdown и без «это не садоводство / не инструкция» —
+ * только по существу про Joy Pick (правило для всех ответов, не одного вопроса).
+ */
+function polishSupportUserAnswer(text, answerLanguage) {
+  let s = stripSupportAnswerMarkdown(text);
+  if (!s) return s;
+  if (answerLanguage === 'ru') {
+    s = s.replace(/^[^.!?]{0,200}—\s*это\s+не[^.!?]+[.!?]\s*/iu, '');
+    s = s.replace(/[^.!?]{0,120}не\s+садовод[^.!?]+[.!?]\s*/giu, '');
+    s = s.replace(/[^.!?]{0,120}не\s+инструкц[^.!?]+[.!?]\s*/giu, '');
+    s = s.replace(/Это\s+не\s+тип\s+заявки[^.!?]+[.!?]\s*/giu, '');
+    s = s.replace(/не\s+про\s+садоводство[^.!?]+[.!?]\s*/giu, '');
+    s = s.replace(/а\s+метка\s+в\s+приложении[.!?]\s*/giu, '');
+    s = s.replace(/Подробнее\s*(?:—|–|-)\s*Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/См\.?\s*Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/Откройте\s+Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/в\s+разделе\s+Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/Help\s*(?:→|>|—|–|-)\s*Руководство[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/\(см\.?\s*Help[^)]*\)\s*/giu, '');
+  } else {
+    s = s.replace(/See\s+Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/For\s+details,?\s*see\s+Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/Open\s+Help[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/in\s+the\s+Help\s+section[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/Help\s*(?:→|>|—|–|-)\s*UI\s+Guide[^.!?]*[.!?]\s*/giu, '');
+    s = s.replace(/^[^.!?]{0,200}—\s*this\s+is\s+not[^.!?]+[.!?]\s*/iu, '');
+    s = s.replace(/[^.!?]{0,120}not\s+a\s+gardening[^.!?]+[.!?]\s*/giu, '');
+    s = s.replace(/This\s+is\s+not\s+a\s+Waste\s+Location[^.!?]+[.!?]\s*/giu, '');
+  }
+  return s.replace(/\s{2,}/g, ' ').trim();
+}
+
+function finalizeSupportAnswer(text, answerLanguage) {
+  return polishSupportUserAnswer(text, answerLanguage);
 }
 
 /** OpenRouter: session_id ≤256, для вкладки Logs → Sessions. */
@@ -873,6 +910,16 @@ function enrichQuestionForRetrievalKeywords(question, locale, conversationContex
     return isRu
       ? `${question} цвета рамок карточки зелёная мои оранжевая участие жёлтая донат фиолетовая 7 дней чёрная остальные help_map_border_colors`
       : `${question} card border colors green orange yellow purple black creator joined donated help_map_border_colors`;
+  }
+
+  if (
+    /как\s+работать\s+(с|в)\s+приложен|как\s+работать\s+в\s+joy|how\s+to\s+work\s+with\s+(the\s+)?app/i.test(
+      scoutLower
+    )
+  ) {
+    return isRu
+      ? `${question} product_how_to_work_with_app intent_what_is_app_for_beginners flow_types_waste_speed_event_roles_and_lifecycle request_create_plus profile_tab`
+      : `${question} product_how_to_work_with_app intent_what_is_app_for_beginners flow_types_waste_speed_event_roles_and_lifecycle`;
   }
 
   if (
@@ -1348,6 +1395,7 @@ const PINNED_STRIPE_SETUP_REQUIREMENT_CHUNK_ID = 'stripe_executor_setup_requirem
 const PINNED_PAYOUTS_TABS_CHUNK_ID = 'payout_page_available_and_history_tabs';
 const PINNED_WASTE_CREATOR_FIND_EXECUTOR_CHUNK_ID = 'waste_creator_how_find_executor_one_join';
 const PINNED_PLANT_TREE_APP_CHUNK_ID = 'product_qa_plant_tree_how_in_app_not_gardening';
+const PINNED_HOW_TO_WORK_WITH_APP_CHUNK_ID = 'product_how_to_work_with_app';
 const MAX_PINNED_KNOWLEDGE_CHUNKS = 8;
 
 function buildUserContextLinesForPinning(conversationContext) {
@@ -1548,6 +1596,15 @@ function shouldPinPlantTreeAppKnowledge(bundleLower) {
   );
 }
 
+function shouldPinHowToWorkWithAppKnowledge(bundleLower) {
+  return (
+    /как\s+работать\s+(с|в)\s+приложен|как\s+работать\s+в\s+joy|how\s+to\s+work\s+with\s+(the\s+)?app|how\s+do\s+i\s+work\s+with/i.test(
+      bundleLower
+    ) ||
+    (/как\s+работать|how\s+to\s+work/i.test(bundleLower) && /приложен|joy\s*pick|app/i.test(bundleLower))
+  );
+}
+
 function shouldPinStageActionsKnowledge(bundleLower) {
   const asksNextAction =
     /что\s+дальше|что\s+теперь|какой\s+следующ|что\s+делать\s+дальше|next\s+step|what\s+next|what\s+should\s+i\s+do\s+next|what\s+to\s+do\s+now/i.test(
@@ -1629,6 +1686,11 @@ function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
     ids.unshift('help_synonyms_tree_planting_icon');
     ids.unshift('product_plant_tree_icon_not_request_type_waste');
   }
+  if (shouldPinHowToWorkWithAppKnowledge(bundle)) {
+    ids.unshift(PINNED_HOW_TO_WORK_WITH_APP_CHUNK_ID);
+    ids.unshift('intent_what_is_app_for_beginners');
+    ids.unshift(PINNED_TYPES_FLOW_CHUNK_ID);
+  }
   return ids.slice(0, MAX_PINNED_KNOWLEDGE_CHUNKS);
 }
 
@@ -1697,8 +1759,16 @@ function buildSystemInstruction(answerLanguage) {
       : 'Volunteer hours are a personal time tally; the printer icon in Profile gives a PDF certificate of trash-cleanup participation for third parties. Never tie hours tracking to donations or payout privileges.';
   const supportInAppFirstRule =
     answerLanguage === 'ru'
-      ? 'Это поддержка Joy Pick: сначала ищи ответ в Knowledge про приложение (заявки, карта, иконки, Event, Waste, донаты). Вопросы вроде «как посадить дерево», «вывоз мусора», «что за значок» — про функции и метки Joy Pick, НЕ про садоводство и не про бытовые советы из интернета. ЗАПРЕЩЕНО: инструкции по выкапыванию ям, поливу, мульче, выбору солнечного места для посадки деревьев — если пользователь не описал явный оффтоп без связи с приложением. Если в Knowledge есть релевантные чанки — отвечай только ими. Если вопрос явно не про Joy Pick и в Knowledge нет связи — кратко: не относится к приложению; не подставляй общий энциклопедический ответ.'
-      : 'This is Joy Pick support: answer from Knowledge about the app first (requests, map, icons, Event, Waste, donations). Questions like “how to plant a tree”, haul-away, “what does this icon mean” are about Joy Pick features, NOT gardening blogs or generic life advice. FORBIDDEN: horticulture tutorials (digging holes, watering, mulching, sunny spot) unless clearly off-topic with no app link. If Knowledge has relevant snippets, use only those. If truly unrelated with no Knowledge match, say it is not about Joy Pick—do not substitute a generic encyclopedia answer.';
+      ? 'Это поддержка Joy Pick: ответ только по приложению из Knowledge — кнопки, экраны, типы заявок. «Как посадить дерево», «вывоз», «что за значок» — сразу шаги в Joy Pick (Event, Waste, Help). Не давай садоводство/бытовые советы (ямa, полив, мульча). Если вопрос явно не про приложение — одна фраза «не относится к Joy Pick», без лекции.'
+      : 'Joy Pick support only: answer from Knowledge with app steps. “How to plant a tree”, haul-away, icons — give in-app actions (Event, Waste, Help). No horticulture or generic life advice. If truly off-topic, one short line—not about Joy Pick.';
+  const conciseDirectAnswerRule =
+    answerLanguage === 'ru'
+      ? 'Стиль ответа пользователю: коротко, по существу, 2–5 предложений. ЗАПРЕЩЕНО в тексте для пользователя: «это не …», «не является», «не садоводческая инструкция», «не про садоводство», оправдания и отвлечения. Не объясняй, чем вопрос НЕ является — сразу что делать в приложении. Без воды и markdown.'
+      : 'User reply style: short, concrete, 2–5 sentences. FORBIDDEN in the user-visible text: “this is not…”, “not a gardening guide”, disclaimers about what the question is NOT. No lecturing—only what to do in the app. Plain text.';
+  const noHelpDeferralRule =
+    answerLanguage === 'ru'
+      ? 'НИКОГДА не отправляй пользователя «откройте Help», «Подробнее в Help», «см. Руководство по интерфейсу» — ответ должен быть полным здесь. Текст из чанков Help пересказывай своими словами в ответе. Раздел Help упоминай только если явно спросили, где он в приложении (кнопка справки на главной).'
+      : 'NEVER tell the user “see Help”, “open Help”, “UI Guide for details”—give the full answer in this chat. Paraphrase Help chunk content in your reply. Mention the Help screen only if they explicitly ask where to find it.';
   return [
     'You are Joy Pick support assistant.',
     languageInstruction,
@@ -1708,6 +1778,8 @@ function buildSystemInstruction(answerLanguage) {
     joyCoinsVsDonationsRule,
     volunteerHoursVsDonationsRule,
     supportInAppFirstRule,
+    conciseDirectAnswerRule,
+    noHelpDeferralRule,
     'For in-app questions, rely on the provided Knowledge snippets; do not contradict them.',
     'Do not use Markdown (no **bold**, no *italics*, no backticks). Plain text only so chat UI shows no asterisks.',
     'Ask for request type (waste vs speed vs event) ONLY when the user clearly wants to CREATE a new request but did not name a type.',
@@ -1733,10 +1805,15 @@ function buildSystemInstruction(answerLanguage) {
     answerLanguage === 'ru'
       ? 'Если спрашивают «присоединился к уборке мусора и забыл / не пришёл»: по Knowledge — автоматическое снятие исполнителя после дедлайна с join (на сервере 24 часа), заявка снова new и снова в выдаче; создатель может снять исполнителя вручную; отдельно есть долгий сценарий 7+1 суток от created_at для зависшего inProgress. Не утверждайте, что «участие ни на что не влияет». Не предлагайте донат как замену физической уборки.'
       : 'If the user joined a Waste Location then forgot or did not show: per Knowledge/backend automation the executor slot is released after the join-based deadline (24 hours from join_date), request returns to new and becomes available again; creator may clear the executor manually; a separate long-stall path warns around 7 days from created_at. Do not claim joining «does not affect» the request. Never suggest donating instead of physically doing the cleanup.',
-    'When the user asks what map colors, donation chips, wallet/news buttons, or incomplete banners mean, use the Help/UI Guide chunks and suggest opening Help in the app for the illustrated reference.',
     answerLanguage === 'ru'
-      ? 'Значок дерева по Help — это индикатор «Посадка дерева» для события (Event / субботник) и опции при создании события; это не тип заявки «Уборка мусора» (Waste Location). Не утверждай, что дерево означает именно мусорную заявку. На «как посадить дерево» не давай садоводческих шагов — объясни опцию в Event и иконку на карточке; организатор субботника с посадкой создаёт заявку типа Event и включает «Посадка дерева».'
-      : 'Per Help, the tree icon is the Plant Tree indicator for Events—not Waste Location. For “how to plant a tree” do not give horticulture steps—explain the in-app Event option and card icon; organizers create an Event with Plant tree enabled.',
+      ? 'На вопросы «что значит значок/цвет рамки/чип» — объясни прямо в ответе по тексту Help из Knowledge (без «откройте Help»).'
+      : 'For “what does this icon/border/chip mean” questions, explain directly in the reply using Help Knowledge—do not send the user to open Help.',
+    answerLanguage === 'ru'
+      ? 'На «как посадить дерево»: сразу шаги — «+» → Event → «Посадка дерева»; иконка дерева на карточке субботника. Без фраз «не садоводство/не инструкция». Не путай с Waste Location — только если пользователь спрашивает про тип заявки.'
+      : 'For “how to plant a tree”: give steps—+ → Event → Plant tree; tree icon on the Event card. No “not gardening” disclaimers.',
+    answerLanguage === 'ru'
+      ? 'На «как работать с приложением» / «как пользоваться»: вход, профиль (язык, данные), главная карта/список, «+» и типы заявок, Присоединиться и фото, донаты/Stripe, Новости, Поделиться, справка волонтёрских часов — конкретно, без общих «ознакомьтесь с функциями».'
+      : 'For “how to work with the app”: sign-in, profile, home map/list, + and request types, Join and photos, donations/Stripe, News, Share, volunteer-hours PDF—concrete steps, not vague “explore features”.',
     answerLanguage === 'ru'
       ? 'Зелёная рамка карточки заявки по Help означает «ваши заявки — созданные вами» (вы автор). Не говори, что зелёная рамка сама по себе означает «донатную» или «платную» заявку. Признак донатов на карте — зелёный знак доллара под иконкой маркера; жёлтая рамка — вы задонатили в эту заявку.'
       : 'Per Help, a green card border means requests you created (you are the creator). Do not claim the green border alone means a donation/paid request. Donations on the map are shown by the green $ under the marker; yellow border means you donated to that request.',
@@ -1822,9 +1899,9 @@ function buildOpenRouterSystemInstruction(modelLanguage) {
 /** Укороченный system после prompt overflow у OpenRouter (их счётчик строже encodeChat). */
 function buildCompactOpenRouterSystemInstruction(modelLanguage) {
   if (modelLanguage === 'ru') {
-    return 'Поддержка Joy Pick. Ответ по-русски, без markdown, кратко. Только факты приложения.';
+    return 'Поддержка Joy Pick. По-русски, без markdown, 2–5 предложений. Только шаги в приложении; без «это не …», без «откройте Help».';
   }
-  return 'Joy Pick support. English, plain text, brief.';
+  return 'Joy Pick support. English, plain text, in-app steps only; no disclaimers, no “see Help”.';
 }
 
 /** Минимальный prompt под жёсткий лимит ключа OpenRouter (~382 токена). */
@@ -2307,17 +2384,15 @@ function isPlantTreeInAppQuestion(question) {
 function buildPlantTreeInAppAnswer(answerLanguage) {
   if (answerLanguage === 'ru') {
     return (
-      'В Joy Pick «посадка дерева» — это не садоводческая инструкция, а метка в приложении. ' +
-      'Иконка дерева в белом круге на карточке заявки значит, что в субботнике (Event) запланирована посадка деревьев (см. Help → Руководство по интерфейсу). ' +
-      'Чтобы организовать такое событие: на главной вкладке «+» → тип Event (субботник), укажите место и время и включите опцию «Посадка дерева». ' +
-      'Это не тип заявки «Уборка мусора» (Waste Location). Участники находят событие на карте или в списке и присоединяются из карточки.'
+      'Создайте субботник (Event): главная вкладка → «+» → Event, укажите место и время и включите «Посадка дерева». ' +
+      'На карточке такого события на карте и в списке будет иконка дерева в белом круге. ' +
+      'Участники открывают заявку и нажимают «Присоединиться».'
     );
   }
   return (
-    'In Joy Pick, “planting trees” is an in-app label, not a gardening guide. ' +
-    'The tree icon in a white circle on a request card means the Event (subbotnik) includes tree planting—see Help → UI Guide. ' +
-    'To organize it: home tab → + → Event, set place and time, enable Plant tree. ' +
-    'This is not a Waste Location trash-cleanup request. Participants find it on the map or list and join from the card.'
+    'Create an Event: home tab → + → Event, set place and time, enable Plant tree. ' +
+    'The request card shows a tree icon in a white circle on the map and list. ' +
+    'Participants open the card and tap Join.'
   );
 }
 
@@ -2345,8 +2420,19 @@ function buildWasteHaulTerritoryHelpAnswer(answerLanguage) {
   );
 }
 
+function isHowToWorkWithAppQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /как\s+работать\s+(с|в)\s+приложен|как\s+работать\s+в\s+joy|how\s+to\s+work\s+with\s+(the\s+)?app|how\s+do\s+i\s+work\s+with\s+(the\s+)?app/i.test(
+      q
+    ) ||
+    (/как\s+работать|how\s+to\s+work/i.test(q) && /приложен|joy\s*pick|\bapp\b/i.test(q))
+  );
+}
+
 function isAppOverviewQuestion(question) {
   const q = normalizeText(question).toLowerCase();
+  if (isHowToWorkWithAppQuestion(q)) return false;
   return (
     (/о\s*ч[её]м\s+(приложен|это|joy)|что\s+это\s+за\s+приложен|зачем\s+(нужно\s+)?(это\s+)?приложен|what\s+is\s+(this\s+)?(app|joy\s*pick)|what\s+is\s+joy\s*pick\s+for|about\s+(the\s+)?app/i.test(
       q
@@ -2355,6 +2441,177 @@ function isAppOverviewQuestion(question) {
         q
       )) &&
     !/stripe|донат|выплат|заработ/i.test(q)
+  );
+}
+
+function buildHowToWorkWithAppAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Войдите или зарегистрируйтесь. В профиле (четвёртая вкладка) выберите язык, имя, при необходимости страну и ссылки на соцсети. ' +
+      'На главной — карта и список заявок Joy Pick. Три типа: Waste Location (точка с мусором, приходит один исполнитель), Speed Cleanup (быстрая уборка силами создателя), Event (субботник, несколько участников). ' +
+      'Своё экодействие: «+» → тип → фото, место на карте, название и описание. ' +
+      'Участие в чужой заявке: карточка → «Присоединиться» → работа на месте → фото территории и отходов. ' +
+      'Донатная заявка: при создании вы задаёте сумму для мотивации; после проверок деньги получает исполнитель или участники, которые убрали, а не вы «просто за создание». Получателю нужен Stripe в профиле. ' +
+      'Поддержать чужую уборку донатом — с карточки на карте или во вкладке «Новости». «Поделиться» — ссылка на заявку. Справку о волонтёрских часах печатают из профиля.'
+    );
+  }
+  return (
+    'Sign in or register. In Profile (fourth tab) set language, name, and optionally country and social links. ' +
+    'Home shows a map and list of Joy Pick requests: Waste Location (one executor per spot), Speed Cleanup (you clean yourself), Event (group subbotnik). ' +
+    'Create: + → type → photo, map pin, title, description. Join others: card → Join → on-site work → proof photos. ' +
+    'Paid request: set donations when creating to motivate helpers; after review, payouts go to executors or participants who did the work—not just for creating the pin. Recipients need Stripe in Profile. ' +
+    'Donate to others from the map or News tab. Share links from the card. Print volunteer-hours proof from Profile.'
+  );
+}
+
+function isAppAudienceQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /для\s+кого\s+(даннoe\s+)?(это\s+)?приложен|кому\s+подходит\s+(это\s+)?приложен|who\s+is\s+(this\s+)?app\s+for/i.test(q) ||
+    (/для\s+кого/i.test(q) && /для\s+чего|зачем/i.test(q) && /приложен|joy/i.test(q))
+  );
+}
+
+function buildAppAudienceAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Joy Pick для тех, кому не безразлична природа: любителей природы, экоактивистов и волонтёров, которые убирают территории или участвуют в субботниках. ' +
+      'Нуждающимся в дополнительном заработке — выполнять уборки и получать донаты при подключённом Stripe. ' +
+      'Заботящиеся о природе могут поддержать волонтёров донатами по заявкам. Студентам и другим — вести учёт волонтёрских часов и печатать справку из профиля.'
+    );
+  }
+  return (
+    'Joy Pick is for people who care about nature—eco volunteers and activists joining cleanups. ' +
+    'Those who need extra income can perform cleanups and receive donations with Stripe connected. ' +
+    'Supporters can donate to requests on the map. Students and others can track volunteer hours and print proof from Profile.'
+  );
+}
+
+function isCreatableRequestTypesQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /какие\s+заявк|каких\s+заявк|какой\s+тип\s+заявк|какие\s+типы\s+заявк/i.test(q) &&
+    /создат|можно|create|make/i.test(q)
+  );
+}
+
+function buildCreatableRequestTypesAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'В Joy Pick можно создать три типа заявок. Waste Location — отметить замусоренное место; убирает один присоединившийся исполнитель, донаты получает он. ' +
+      'Speed Cleanup — быстрая уборка, которую выполняете вы сами на своей точке. ' +
+      'Event — субботник или посадка деревьев: несколько участников, дата и место; донаты после проверок делятся между участниками.'
+    );
+  }
+  return (
+    'In Joy Pick you can create three request types. Waste Location marks a litter spot—one joining executor cleans; donations go to them. ' +
+    'Speed Cleanup is a quick cleanup you perform yourself. ' +
+    'Event is a group cleanup or tree planting with several participants; donations are shared after review.'
+  );
+}
+
+function parseRequestTypeDefinitionKind(question) {
+  const q = normalizeText(question).toLowerCase().replace(/&/g, '');
+  if (/waste\s*location|waste\s+cleanup|уборк[а-яё]*\s+мусор/i.test(q)) return 'waste';
+  if (/speed\s*cleanup|быстр[а-яё]*\s+уборк/i.test(q)) return 'speed';
+  if (/\bevent\b|субботник|ивент|мероприят/i.test(q)) return 'event';
+  return null;
+}
+
+function isRequestTypeDefinitionQuestion(question) {
+  const q = normalizeText(question).toLowerCase().replace(/&/g, '');
+  const kind = parseRequestTypeDefinitionKind(q);
+  if (!kind) return false;
+  if (isWasteCreateCleanupOrHaulQuestion(question)) return false;
+  return (
+    /что\s+за\s+заявк|что\s+такое\s+заявк|что\s+это\s+за|что\s+за\s+тип|объясни.*заявк|what\s+is\s+(a\s+)?(waste|speed|event)|what\s+.*\s+request\s+type/i.test(q) ||
+    (/что\s+за/i.test(q) && /заявк|request|cleanup/i.test(q))
+  );
+}
+
+function buildRequestTypeDefinitionAnswer(kind, answerLanguage) {
+  if (kind === 'waste') {
+    if (answerLanguage === 'ru') {
+      return (
+        'Waste Location — заявка, где на карте отмечают замусоренное место: фото и описание проблемы. ' +
+        'Присоединяется один исполнитель, убирает территорию и прикладывает фото подтверждения. ' +
+        'Спонсоры могут отправить донат; его получает исполнитель, который выполнил уборку и прошёл проверку, а не автор только за создание точки.'
+      );
+    }
+    return (
+      'Waste Location marks a littered spot on the map with a photo and description. ' +
+      'One executor joins, cleans, and submits proof. Sponsors may donate; the payout goes to the executor who did the cleanup after review.'
+    );
+  }
+  if (kind === 'speed') {
+    if (answerLanguage === 'ru') {
+      return (
+        'Speed Cleanup — быстрая уборка в Joy Pick: создатель сам отмечает точку, выполняет работу и отправляет результат на модерацию. ' +
+        'Донаты после проверок получает тот же человек, который убрал, при подключённом Stripe.'
+      );
+    }
+    return (
+      'Speed Cleanup is a quick cleanup in Joy Pick: you pin the spot, do the work yourself, and submit for moderation. ' +
+      'Donations after review go to you as creator/performer with Stripe connected.'
+    );
+  }
+  if (kind === 'event') {
+    if (answerLanguage === 'ru') {
+      return (
+        'Event — экомероприятие в Joy Pick: уборка территории или посадка деревьев в назначенное время. ' +
+        'Указывают место, дату и описание; участники присоединяются через Join. ' +
+        'Пользователи могут отправлять донаты, которые после проверок распределяются между участниками с принятой работой.'
+      );
+    }
+    return (
+      'Event is an eco activity in Joy Pick—area cleanup or tree planting at a set time and place. ' +
+      'Participants join via Join. Donors can support the event; after review, donations are shared among participants with accepted work.'
+    );
+  }
+  return '';
+}
+
+function isMapContentQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    (/что\s+(можно\s+)?видеть\s+на\s+карт|что\s+(отобража|показыва)\w*\s+на\s+карт|что\s+на\s+карт/i.test(q) &&
+      /приложен|joy/i.test(q)) ||
+    /what\s+.*(on|in)\s+the\s+map/i.test(q)
+  );
+}
+
+function buildMapContentAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'На карте приложения видны заявки Joy Pick: места, где нужна уборка территории (Waste Location), запланированные экомероприятия и субботники (Event), а также активные и завершённые экоактивности. ' +
+      'Нажмите на значок — откроется карточка: можно прочитать описание, присоединиться к уборке или поддержать волонтёров донатом.'
+    );
+  }
+  return (
+    'The app map shows Joy Pick requests: spots needing cleanup (Waste Location), scheduled eco events and subbotniks (Event), and active or completed cleanups. ' +
+    'Tap a marker to open the card—read details, join the cleanup, or donate to support volunteers.'
+  );
+}
+
+function isCreateRequestHowToQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return /как\s+создать\s+(заявк|субботник)|how\s+to\s+create\s+(a\s+)?(new\s+)?(request|cleanup|event)/i.test(q);
+}
+
+function buildCreateRequestHowToAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'На главной вкладке нажмите «+», выберите тип: уборка мусора (Waste Location), быстрая уборка (Speed Cleanup) или Event. ' +
+      'Добавьте фото и точку на карте, название и описание по подсказкам формы. ' +
+      'Для донатной заявки укажите сумму при создании — выплату получит исполнитель или участники, которые выполнили работу, при подключённом Stripe у них. ' +
+      'Опубликуйте — заявка появится на карте и в списке.'
+    );
+  }
+  return (
+    'On the home tab tap +, choose Waste Location, Speed Cleanup, or Event. ' +
+    'Add a photo, map pin, title, and description per the form. ' +
+    'For a paid request set donations when creating—payouts go to executors or participants who do the work, with their Stripe connected. ' +
+    'Publish to show it on the map and list.'
   );
 }
 
@@ -3247,9 +3504,33 @@ async function getSupportAiAnswer({
   const deterministicWasteHaulTerritoryHelpAnswer = isWasteHaulTerritoryHelpQuestion(questionForModel)
     ? buildWasteHaulTerritoryHelpAnswer(modelLanguage)
     : null;
-  const deterministicAppOverviewAnswer = isAppOverviewQuestion(questionForModel)
-    ? buildAppOverviewAnswer(modelLanguage)
+  const deterministicHowToWorkWithAppAnswer = isHowToWorkWithAppQuestion(questionForModel)
+    ? buildHowToWorkWithAppAnswer(modelLanguage)
     : null;
+  const deterministicAppAudienceAnswer = isAppAudienceQuestion(questionForModel)
+    ? buildAppAudienceAnswer(modelLanguage)
+    : null;
+  const deterministicCreatableRequestTypesAnswer = isCreatableRequestTypesQuestion(questionForModel)
+    ? buildCreatableRequestTypesAnswer(modelLanguage)
+    : null;
+  const requestTypeDefKind = isRequestTypeDefinitionQuestion(questionForModel)
+    ? parseRequestTypeDefinitionKind(questionForModel)
+    : null;
+  const deterministicRequestTypeDefinitionAnswer = requestTypeDefKind
+    ? buildRequestTypeDefinitionAnswer(requestTypeDefKind, modelLanguage)
+    : null;
+  const deterministicMapContentAnswer = isMapContentQuestion(questionForModel)
+    ? buildMapContentAnswer(modelLanguage)
+    : null;
+  const deterministicCreateRequestHowToAnswer = isCreateRequestHowToQuestion(questionForModel)
+    ? buildCreateRequestHowToAnswer(modelLanguage)
+    : null;
+  const deterministicAppOverviewAnswer =
+    !deterministicHowToWorkWithAppAnswer &&
+    !deterministicAppAudienceAnswer &&
+    isAppOverviewQuestion(questionForModel)
+      ? buildAppOverviewAnswer(modelLanguage)
+      : null;
   const deterministicWasteCreateCleanupOrHaulAnswer = isWasteCreateCleanupOrHaulQuestion(questionForModel)
     ? buildWasteCreateCleanupOrHaulAnswer(modelLanguage)
     : null;
@@ -3289,6 +3570,12 @@ async function getSupportAiAnswer({
     deterministicPlantTreeInAppAnswer ||
     deterministicSupportedLanguagesAnswer ||
     deterministicWasteHaulTerritoryHelpAnswer ||
+    deterministicCreateRequestHowToAnswer ||
+    deterministicHowToWorkWithAppAnswer ||
+    deterministicAppAudienceAnswer ||
+    deterministicCreatableRequestTypesAnswer ||
+    deterministicRequestTypeDefinitionAnswer ||
+    deterministicMapContentAnswer ||
     deterministicAppOverviewAnswer ||
     deterministicNewsSectionAnswer ||
     deterministicMonetizationAnswer ||
@@ -3307,7 +3594,7 @@ async function getSupportAiAnswer({
     deterministicExistingRequestActionsAnswer ||
     deterministicStageAnswer;
   if (deterministicAnswer) {
-    const plainDeterministic = stripSupportAnswerMarkdown(deterministicAnswer);
+    const plainDeterministic = finalizeSupportAnswer(deterministicAnswer, modelLanguage);
     return {
       answer: plainDeterministic,
       answer_en: modelLanguage === 'en' ? plainDeterministic : null,
@@ -3320,9 +3607,21 @@ async function getSupportAiAnswer({
           ? 'deterministic_supported_languages_router'
           : deterministicWasteHaulTerritoryHelpAnswer
             ? 'deterministic_waste_haul_territory_help_router'
-            : deterministicAppOverviewAnswer
-              ? 'deterministic_app_overview_router'
-              : deterministicNewsSectionAnswer
+            : deterministicCreateRequestHowToAnswer
+              ? 'deterministic_create_request_howto_router'
+              : deterministicHowToWorkWithAppAnswer
+              ? 'deterministic_how_to_work_with_app_router'
+              : deterministicAppAudienceAnswer
+                ? 'deterministic_app_audience_router'
+                : deterministicCreatableRequestTypesAnswer
+                  ? 'deterministic_creatable_request_types_router'
+                  : deterministicRequestTypeDefinitionAnswer
+                    ? 'deterministic_request_type_definition_router'
+                    : deterministicMapContentAnswer
+                      ? 'deterministic_map_content_router'
+                      : deterministicAppOverviewAnswer
+                        ? 'deterministic_app_overview_router'
+                        : deterministicNewsSectionAnswer
                 ? 'deterministic_news_section_router'
                 : deterministicMonetizationAnswer
                   ? 'deterministic_monetization_router'
@@ -3495,11 +3794,11 @@ async function getSupportAiAnswer({
       const aiResult = await callOpenRouterAnswer(llmArgs);
 
       const { answer, model } = aiResult;
-      const plainEn = stripSupportAnswerMarkdown(answer);
+      const plainEn = finalizeSupportAnswer(answer, 'en');
 
       if (answerLocale === 'ru') {
         return {
-          answer: stripSupportAnswerMarkdown(answer),
+          answer: finalizeSupportAnswer(answer, 'ru'),
           answer_en: null,
           locale: 'ru',
           model,
@@ -3511,7 +3810,7 @@ async function getSupportAiAnswer({
       const localized = await localizeAnswer(answer, answerLocale);
 
       return {
-        answer: stripSupportAnswerMarkdown(localized.answer),
+        answer: finalizeSupportAnswer(localized.answer, localized.locale === 'en' ? 'en' : answerLocale),
         answer_en: plainEn,
         locale: localized.locale,
         model,

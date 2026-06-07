@@ -25,7 +25,7 @@ const MAX_IMAGE_BYTES = 1024 * 1024;
 const IMAGE_REUSE_DAYS = Math.max(1, parseInt(process.env.EARTHDAY_IMAGE_REUSE_DAYS, 10) || 8);
 const WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES = Math.min(
   30,
-  Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 15)
+  Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 5)
 );
 
 const SELECT_ROW_COLUMNS = `
@@ -296,19 +296,13 @@ async function downloadFirstSuccessfulWikimediaImageToGallery(pool, userId, item
     const url = item.full_url || item.thumb_url;
     if (!url || !isAllowedWikimediaImageUrl(url)) continue;
 
-    const previewUrl = item.thumb_url || item.full_url;
     try {
-      if (isEarthdayVisionEnabled() && previewUrl) {
-        const pre = await classifyEarthdayCoverImage({ imageUrl: previewUrl });
-        if (pre.verdict === 'reject') continue;
-      }
-
       const buf = await fetchImageBuffer(url);
       const jpeg = await compressToJpegMaxBytes(buf, MAX_IMAGE_BYTES);
 
       if (isEarthdayVisionEnabled()) {
-        const post = await classifyEarthdayCoverImage({ imageBuffer: jpeg });
-        if (post.verdict === 'reject' || post.verdict === 'uncertain') continue;
+        const vision = await classifyEarthdayCoverImage({ imageBuffer: jpeg });
+        if (vision.verdict === 'reject' || vision.verdict === 'uncertain') continue;
       }
 
       return await saveJpegToGallery(pool, userId, jpeg);

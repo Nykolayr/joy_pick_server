@@ -19,7 +19,9 @@ async function main() {
   const limit = limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10) || 100) : 200;
 
   if (!isEarthdayVisionEnabled()) {
-    console.error('Vision off: set OPENROUTER_API_KEY and do not set EARTHDAY_VISION_FILTER=0');
+    console.error(
+      'Vision off: set OPENROUTER_VISION_API_KEY (or OPENROUTER_API_KEY) and do not set EARTHDAY_VISION_FILTER=0'
+    );
     process.exit(1);
   }
 

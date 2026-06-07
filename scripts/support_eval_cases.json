@@ -486,10 +486,65 @@
     "answerMustNotContain": []
   },
   {
+    "id": "how_to_work_with_app_ru",
+    "message": "как работать с приложением?",
+    "locale": "ru",
+    "sourcesMustIncludeAny": ["product_how_to_work_with_app"],
+    "answerMustContain": ["Присоединиться", "профил", "«+»"],
+    "answerMustNotContain": ["Help", "Подробнее", "ознакомьтесь с функциями", "доступными функциями"]
+  },
+  {
     "id": "plant_tree_not_gardening_ru",
     "message": "как посадить дерево",
     "locale": "ru",
     "sourcesMustIncludeAny": ["product_qa_plant_tree_how_in_app_not_gardening"],
-    "answerMustNotContain": ["яму", "мульч", "полейте", "освещен", "корневой"]
+    "answerMustNotContain": [
+      "садовод",
+      "инструкция",
+      "это не",
+      "не является",
+      "яму",
+      "мульч",
+      "полейте",
+      "корневой",
+      "Help",
+      "Подробнее",
+      "Руководство по интерфейсу"
+    ]
+  },
+  {
+    "id": "review_app_audience_ru",
+    "message": "для кого данное приложение и для чего?",
+    "locale": "ru",
+    "answerMustContain": ["природ", "волонт"],
+    "answerMustNotContain": ["техническая поддержка", "исследовател", "различных задач"]
+  },
+  {
+    "id": "review_creatable_types_ru",
+    "message": "какие заявки можно создать?",
+    "locale": "ru",
+    "answerMustContain": ["Waste", "Speed", "Event"],
+    "answerMustNotContain": ["техническая поддержка", "оборудован", "товар"]
+  },
+  {
+    "id": "review_speed_type_ru",
+    "message": "что за заявка speed cleanup?",
+    "locale": "ru",
+    "answerMustContain": ["Speed", "уборк"],
+    "answerMustNotContain": ["диск", "временных файлов", "оптимизац"]
+  },
+  {
+    "id": "review_map_content_ru",
+    "message": "что можно видеть на карте приложения?",
+    "locale": "ru",
+    "answerMustContain": ["заявк", "донат"],
+    "answerMustNotContain": ["улиц", "водоём", "географическ"]
+  },
+  {
+    "id": "review_create_request_ru",
+    "message": "Как создать заявку самому?",
+    "locale": "ru",
+    "answerMustContain": ["«+»", "Waste"],
+    "answerMustNotContain": ["товар", "услуг", "контактная информация"]
   }
 ]

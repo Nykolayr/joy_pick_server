@@ -40,3 +40,6 @@ garbagedev-*.json
 # Локальные черновики и проверки
 tmp/
 
+# Runtime vision verdict cache (SHA-256)
+data/vision_verdict_cache.json
+

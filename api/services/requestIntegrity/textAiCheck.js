@@ -1,5 +1,6 @@
 const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
 const { isAiEnabled } = require('./openRouterVision');
+const { getOpenRouterVisionApiKey } = require('../../utils/openRouterVisionClient');
 const { normalizeLocale } = require('./integrityTranslate');
 
 const DEFAULT_MODEL = process.env.INTEGRITY_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
@@ -69,7 +70,7 @@ async function checkTextWithAi({ name, description, locale, category, phase }) {
   const d = String(description || '').trim();
   if (!n && !d) return [];
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = getOpenRouterVisionApiKey();
   const prompt = buildPrompt({ name: n, description: d, locale, category });
 
   const controller = new AbortController();

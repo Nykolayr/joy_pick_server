@@ -1,6 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
+const {
+  getOpenRouterVisionApiKey,
+  isOpenRouterVisionConfigured,
+  getVisionMaxEdge,
+  resolveVisionSourceBuffer,
+  resolveVisionImageDataUrl,
+  sha256Buffer,
+} = require('../utils/openRouterVisionClient');
+const { getCachedVerdict, setCachedVerdict } = require('./requestIntegrity/visionVerdictCache');
 
 const DEFAULT_MODEL = process.env.EARTHDAY_VISION_MODEL
   || process.env.INTEGRITY_OPENROUTER_MODEL
@@ -10,30 +16,15 @@ const TIMEOUT_MS = Math.min(
   20000,
   Math.max(4000, parseInt(process.env.EARTHDAY_VISION_TIMEOUT_MS || '12000', 10) || 12000)
 );
-const VISION_MAX_EDGE = Math.min(
-  1024,
-  Math.max(384, parseInt(process.env.EARTHDAY_VISION_MAX_EDGE || '640', 10) || 640)
+const VISION_MAX_EDGE = getVisionMaxEdge(
+  process.env.EARTHDAY_VISION_MAX_EDGE || process.env.OPENROUTER_VISION_MAX_EDGE || '512'
 );
 
 function isEarthdayVisionEnabled() {
   if (process.env.EARTHDAY_VISION_FILTER === '0' || process.env.EARTHDAY_VISION_FILTER === 'false') {
     return false;
   }
-  return Boolean(process.env.OPENROUTER_API_KEY);
-}
-
-async function bufferToJpegDataUrl(inputBuf) {
-  const jpeg = await sharp(inputBuf)
-    .rotate()
-    .resize({ width: VISION_MAX_EDGE, height: VISION_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 72, mozjpeg: true })
-    .toBuffer();
-  return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
-}
-
-async function fileToJpegDataUrl(filePath) {
-  const buf = await fs.promises.readFile(filePath);
-  return bufferToJpegDataUrl(buf);
+  return isOpenRouterVisionConfigured();
 }
 
 function parseVisionJson(raw) {
@@ -46,6 +37,28 @@ function parseVisionJson(raw) {
   } catch {
     return null;
   }
+}
+
+function parseEarthdayVerdict(raw) {
+  const parsed = parseVisionJson(raw);
+  if (parsed && String(parsed.decision).toLowerCase() === 'accept') {
+    return { verdict: 'accept', raw };
+  }
+  if (parsed && String(parsed.decision).toLowerCase() === 'reject') {
+    return {
+      verdict: 'reject',
+      reason: parsed.reason ? String(parsed.reason) : 'rejected',
+      raw,
+    };
+  }
+  const lower = String(raw || '').toLowerCase();
+  if (lower.includes('"reject"') || lower.includes('reject')) {
+    return { verdict: 'reject', reason: 'heuristic', raw };
+  }
+  if (lower.includes('"accept"') || lower.includes('accept')) {
+    return { verdict: 'accept', raw };
+  }
+  return { verdict: 'uncertain', raw };
 }
 
 const VISION_PROMPT = `You pick cover photos for outdoor cleanup / volunteer events in a mobile app.
@@ -66,30 +79,33 @@ or
 {"decision":"reject","reason":"short_code"}`;
 
 /**
- * @returns {Promise<{ verdict: 'accept'|'reject'|'uncertain'|'skip', reason?: string, raw?: string }>}
+ * @returns {Promise<{ verdict: 'accept'|'reject'|'uncertain'|'skip', reason?: string, raw?: string, cached?: boolean }>}
  */
 async function classifyEarthdayCoverImage({ imageUrl, filePath, imageBuffer }) {
   if (!isEarthdayVisionEnabled()) return { verdict: 'skip' };
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  let imagePart;
-
+  const apiKey = getOpenRouterVisionApiKey();
+  const model = DEFAULT_MODEL;
+  let sourceBuffer;
   try {
-    if (imageBuffer && Buffer.isBuffer(imageBuffer)) {
-      imagePart = {
-        type: 'image_url',
-        image_url: { url: await bufferToJpegDataUrl(imageBuffer) },
-      };
-    } else if (filePath && fs.existsSync(filePath)) {
-      imagePart = {
-        type: 'image_url',
-        image_url: { url: await fileToJpegDataUrl(filePath) },
-      };
-    } else if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
-      imagePart = { type: 'image_url', image_url: { url: imageUrl } };
-    } else {
-      return { verdict: 'skip' };
-    }
+    sourceBuffer = await resolveVisionSourceBuffer({ imageUrl, filePath, imageBuffer });
+    if (!sourceBuffer) return { verdict: 'skip' };
+  } catch (e) {
+    return { verdict: 'uncertain', raw: e.message };
+  }
+
+  const contentSha = sha256Buffer(sourceBuffer);
+  const cached = getCachedVerdict('earthday', model, contentSha);
+  if (cached) return { ...cached, cached: true };
+
+  let imagePart;
+  try {
+    const dataUrl = await resolveVisionImageDataUrl({
+      sourceBuffer,
+      maxEdge: VISION_MAX_EDGE,
+    });
+    if (!dataUrl) return { verdict: 'skip' };
+    imagePart = { type: 'image_url', image_url: { url: dataUrl } };
   } catch (e) {
     return { verdict: 'uncertain', raw: e.message };
   }
@@ -104,7 +120,7 @@ async function classifyEarthdayCoverImage({ imageUrl, filePath, imageBuffer }) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: DEFAULT_MODEL,
+        model,
         max_tokens: 80,
         temperature: 0,
         messages: [
@@ -122,26 +138,9 @@ async function classifyEarthdayCoverImage({ imageUrl, filePath, imageBuffer }) {
       console.warn('[earthdayImageVision] OpenRouter error:', json?.error?.message || res.status);
       return { verdict: 'uncertain', raw: json?.error?.message };
     }
-    const raw = json?.choices?.[0]?.message?.content;
-    const parsed = parseVisionJson(raw);
-    if (parsed && String(parsed.decision).toLowerCase() === 'accept') {
-      return { verdict: 'accept', raw };
-    }
-    if (parsed && String(parsed.decision).toLowerCase() === 'reject') {
-      return {
-        verdict: 'reject',
-        reason: parsed.reason ? String(parsed.reason) : 'rejected',
-        raw,
-      };
-    }
-    const lower = String(raw || '').toLowerCase();
-    if (lower.includes('"reject"') || lower.includes('reject')) {
-      return { verdict: 'reject', reason: 'heuristic', raw };
-    }
-    if (lower.includes('"accept"') || lower.includes('accept')) {
-      return { verdict: 'accept', raw };
-    }
-    return { verdict: 'uncertain', raw };
+    const result = parseEarthdayVerdict(json?.choices?.[0]?.message?.content);
+    setCachedVerdict('earthday', model, contentSha, result);
+    return result;
   } catch (e) {
     clearTimeout(timer);
     console.warn('[earthdayImageVision]', e.message);

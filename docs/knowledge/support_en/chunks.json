@@ -2593,8 +2593,8 @@
   },
   {
     "chunk_id": "product_qa_plant_tree_how_in_app_not_gardening",
-    "title": "How to plant a tree: Joy Pick app only, not gardening",
-    "text": "“How to plant a tree” in Joy Pick Support AI is about the app, not horticulture. Do not answer with digging holes, watering, mulch, or picking a sunny yard spot. In Joy Pick: tree icon in a white circle on a card = the Event (subbotnik) includes tree planting (Help → UI Guide). Organizer: home tab → + → Event, place, time, enable Plant tree. Participants find it on map/list and join. Not Waste Location. Pure gardening with no app link: briefly say you only help with Joy Pick.",
+    "title": "How to plant a tree in Joy Pick (Event)",
+    "text": "Answer fully in chat: home tab → + → Event, place and time, Plant tree on. Card: tree icon in white circle. Participants join from map/list. Do not defer to Help or mention holes/watering/mulch.",
     "tags": [
       "how to plant a tree",
       "plant a tree",
@@ -2652,6 +2652,20 @@
     ]
   },
   {
+    "chunk_id": "product_how_to_work_with_app",
+    "title": "How to work with the Joy Pick app",
+    "text": "Sign in or register. Profile (4th tab): language, name, country, social links, Stripe for payout recipients, My requests, notifications, volunteer-hours PDF. Home: map and list — Waste Location (one executor), Speed Cleanup (creator cleans), Event (group subbotnik). Create: + → type → photo, place, title, description. Join: card → Join → work → proof photos. Paid request: set donations when creating to motivate helpers; after review, payouts go to whoever did the cleanup, not just for creating the pin. Donate to others on the map and in News. Share sends a request link.",
+    "tags": [
+      "how to work with the app",
+      "how to use the app",
+      "how to use joy pick",
+      "getting started",
+      "onboarding",
+      "app guide",
+      "как работать с приложением"
+    ]
+  },
+  {
     "chunk_id": "intent_what_is_app_for_beginners",
     "title": "What Joy Pick is for and what you can do in the app",
     "text": "Joy Pick helps organize and join environmental cleanups: mark polluted areas, report litter, find volunteers, and send donations. The home tab shows requests on a map and list (trash cleanup, quick cleanup, events) with chats to talk to participants. The second tab is recycling stations and partners. The third is good-news stories. The fourth is your profile with tracked cleanup time and a volunteer-hours PDF, JoyCoins, Stripe for donations and payouts, My requests, notifications, language, and human support. You can donate and receive donations for cleanups per app rules. Support AI on the home screen answers app questions.",
@@ -2661,6 +2675,7 @@
       "what is this application",
       "what to do in the app",
       "how to use",
+      "how to work with the app",
       "getting started",
       "onboarding",
       "purpose",
@@ -3085,6 +3100,43 @@
       "stripe",
       "moderation",
       "pending approved"
+    ]
+  },
+  {
+    "chunk_id": "product_app_target_audience",
+    "title": "Who Joy Pick is for",
+    "text": "Joy Pick is for nature lovers, eco activists, and volunteers who clean areas and join subbotniks. Those who need extra income can perform cleanups and receive donations with Stripe. Supporters donate to requests on the map. Students and others track volunteer hours and print a PDF proof from Profile.",
+    "tags": [
+      "who is the app for",
+      "target audience",
+      "volunteers",
+      "eco activists",
+      "extra income",
+      "student volunteer hours",
+      "для кого приложение"
+    ]
+  },
+  {
+    "chunk_id": "product_map_requests_visible",
+    "title": "What you see on the app map",
+    "text": "The Joy Pick map shows requests: spots needing cleanup (Waste Location), scheduled eco events and subbotniks (Event), and active or completed cleanups. Tap a marker to open the card—read details, join the cleanup, or donate to volunteers.",
+    "tags": [
+      "what is on the map",
+      "map in the app",
+      "map markers",
+      "что на карте"
+    ]
+  },
+  {
+    "chunk_id": "product_three_request_types_creatable",
+    "title": "Which requests you can create",
+    "text": "Joy Pick has three request types: Waste Location (litter spot, one executor), Speed Cleanup (quick cleanup you do yourself), Event (group cleanup or tree planting). Create from Home: +, pick type, photo, map pin, title, and description.",
+    "tags": [
+      "what requests can i create",
+      "which requests to create",
+      "create request types",
+      "how to create a request",
+      "какие заявки можно создать"
     ]
   }
 ]

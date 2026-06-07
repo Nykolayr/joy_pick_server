@@ -11,6 +11,9 @@ try {
     if (_parsed.OPENROUTER_API_KEY != null && String(_parsed.OPENROUTER_API_KEY).trim()) {
       process.env.OPENROUTER_API_KEY = String(_parsed.OPENROUTER_API_KEY).trim();
     }
+    if (_parsed.OPENROUTER_VISION_API_KEY != null && String(_parsed.OPENROUTER_VISION_API_KEY).trim()) {
+      process.env.OPENROUTER_VISION_API_KEY = String(_parsed.OPENROUTER_VISION_API_KEY).trim();
+    }
   }
 } catch {
   // ignore
