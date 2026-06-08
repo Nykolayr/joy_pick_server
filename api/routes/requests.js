@@ -1091,6 +1091,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       updates.push('reward_amount = ?');
       params.push(parseMultipartScalar(reward_amount, 'number'));
     }
+    let eventStartRescheduledToFuture = false;
     if (start_date !== undefined) {
       const normalizedStartDate = formatDateTimeForMySql(start_date);
       if (start_date !== null && start_date !== '' && !normalizedStartDate) {
@@ -1115,6 +1116,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
       } else {
         updates.push('start_date = ?');
         params.push(normalizedStartDate);
+        if (
+          catNorm === 'event' &&
+          normalizedStartDate &&
+          new Date(normalizedStartDate).getTime() > Date.now()
+        ) {
+          eventStartRescheduledToFuture = true;
+        }
       }
     }
     if (end_date !== undefined) {
@@ -1442,6 +1450,14 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         `UPDATE requests SET ${updates.join(', ')} WHERE id = ?`,
         params
       );
+
+      if (eventStartRescheduledToFuture) {
+        await pool.execute(
+          `DELETE FROM cron_actions
+           WHERE request_id = ? AND action_type = 'checkEventAfterStartDate'`,
+          [id]
+        );
+      }
     }
 
     // ========== ОБРАБОТКА ИЗМЕНЕНИЯ СТАТУСА ==========

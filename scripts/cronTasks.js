@@ -394,8 +394,7 @@ async function notifyInactiveWasteRequests() {
 }
 
 /**
- * Исполнитель не закрыл работу в срок: waste/speed — отчёт от created_at; event — от start_date
- * (перенос даты = новое значение start_date в БД). День 7 — пуш создателю; день 8 — архив.
+ * Исполнитель не закрыл работу в срок: waste/speed — от created_at (7+1 суток). Event — checkEventAfterStartDate.
  */
 async function checkExecutorStaleness() {
   const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
@@ -427,26 +426,7 @@ async function checkExecutorStaleness() {
          AND created_at <= DATE_SUB(NOW(), INTERVAL 8 DAY)`
     );
 
-    const [warnEv] = await pool.execute(
-      `SELECT id, created_by, category, joined_user_id, name FROM requests
-       WHERE category = 'event'
-         AND status = 'inProgress'
-         AND start_date IS NOT NULL
-         AND start_date <= NOW()
-         AND start_date <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-         AND start_date > DATE_SUB(NOW(), INTERVAL 8 DAY)`
-    );
-
-    const [archEv] = await pool.execute(
-      `SELECT id, created_by, category, joined_user_id, name FROM requests
-       WHERE category = 'event'
-         AND status = 'inProgress'
-         AND start_date IS NOT NULL
-         AND start_date <= NOW()
-         AND start_date <= DATE_SUB(NOW(), INTERVAL 8 DAY)`
-    );
-
-    for (const request of [...warnWs, ...warnEv]) {
+    for (const request of warnWs) {
       try {
         const [done] = await pool.execute(
           `SELECT id FROM cron_actions WHERE action_type = 'executorStaleWarnCreator' AND request_id = ? AND status = 'completed' LIMIT 1`,
@@ -530,13 +510,6 @@ async function checkExecutorStaleness() {
     for (const request of archWs) {
       try {
         await doArchive(request, 'waste/speed от created_at');
-      } catch (e) {
-        errors++;
-      }
-    }
-    for (const request of archEv) {
-      try {
-        await doArchive(request, 'event от start_date');
       } catch (e) {
         errors++;
       }
@@ -688,7 +661,7 @@ async function checkModerationReviewStale() {
  * Архивирование/снятие неактивных заявок.
  * Waste: new без исполнителя — сутки после expires_at (как раньше).
  * Исполнитель не сдал работу 7+1 суток — в checkExecutorStaleness; модерация pending 7+1 — в checkModerationReviewStale.
- * Speed/Event «зависли в new/inProgress» без ухода на модерацию — 8 дней с создания → handleRequestRejection (pending исключён).
+ * Speed «завис в new/inProgress» без ухода на модерацию — 8 дней с created_at → handleRequestRejection (event — только checkEventAfterStartDate от start_date).
  * @param {Object} [options] - skipSpeedEventReject: true при вызове из GET /api/requests
  */
 async function deleteInactiveRequests(options = {}) {
@@ -704,11 +677,11 @@ async function deleteInactiveRequests(options = {}) {
          AND expires_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)`
     );
 
-    // 2. Speed/Event: 8 дней с создания, ещё не ушли на модерацию — отклоняем (рефанды). pending → checkModerationReviewStale
+    // 2. Speed: 8 дней с created_at, ещё не ушёл на модерацию — отклоняем (рефанды). Event не трогаем (см. checkEventAfterStartDate).
     const [speedEventToReject] = await pool.execute(
       `SELECT id, created_by, category, name
        FROM requests 
-       WHERE category IN ('speedCleanup', 'event')
+       WHERE category = 'speedCleanup'
          AND status IN ('new', 'inProgress')
          AND created_at <= DATE_SUB(NOW(), INTERVAL 8 DAY)`
     );
@@ -797,7 +770,7 @@ async function deleteInactiveRequests(options = {}) {
       }
     }
 
-    // Speed/Event: отклонение без одобрения (рефанды, пуши, status=rejected). Пропускаем при вызове из списка заявок (skipSpeedEventReject), чтобы не таймаутить и не давать 502.
+    // Speed: отклонение без одобрения (рефанды, пуши, status=rejected). Пропускаем при вызове из GET /api/requests (skipSpeedEventReject).
     if (!options.skipSpeedEventReject) {
       const { handleRequestRejection } = require('../api/routes/requests');
       for (const request of speedEventToReject) {
@@ -842,28 +815,17 @@ async function deleteInactiveRequests(options = {}) {
 }
 
 /**
- * Уведомление суперадминов: speed/event 7 дней с создания, заявка не одобрена — «нужно закрыть».
- * Вызывается каждый запуск крона; по каждой заявке шлём пуш один раз (по логу cron_actions).
+ * Уведомление суперадминов: speed 7 дней с created_at без закрытия (event — отдельно checkEventAfterStartDate).
  */
 async function notifySuperadminsRequestNotClosed() {
   try {
     const [requests] = await pool.execute(
       `SELECT id, name, category, created_by, created_at, start_date
        FROM requests 
-       WHERE category IN ('speedCleanup', 'event')
+       WHERE category = 'speedCleanup'
          AND status IN ('new', 'inProgress', 'pending')
-         AND (
-           (
-             start_date IS NOT NULL
-             AND start_date <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-             AND start_date > DATE_SUB(NOW(), INTERVAL 8 DAY)
-           )
-           OR (
-             start_date IS NULL
-             AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
-             AND created_at > DATE_SUB(NOW(), INTERVAL 8 DAY)
-           )
-         )`
+         AND created_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
+         AND created_at > DATE_SUB(NOW(), INTERVAL 8 DAY)`
     );
     if (requests.length === 0) {
       return { processed: 0, errors: 0 };
@@ -1159,157 +1121,135 @@ async function checkEventTimes() {
 }
 
 /**
- * Проверка event заявок после даты события
- * - Через 24 часа после start_date: предупреждение (если не на модерации и не в архиве)
- * - Через 48 часов после start_date: удаление (если не на модерации и не в архиве)
- * 
- * ВАЖНО: Не проверяем заявки, которые:
- * - pendingApproval (на модерации)
- * - approved, rejected, archived (в архиве)
+ * Event (субботник) после start_date: created_at не учитывается.
+ * - start_date прошла, < 24 ч: напоминание закрыть (pendingApproval) или перенести дату.
+ * - start_date + 24 ч, всё ещё new/inProgress: archived (не delete, не rejected).
+ * Закрыто = pendingApproval / approved / archived / rejected — не трогаем.
  */
 async function checkEventAfterStartDate() {
   try {
     const { sendEventCompletionReminderNotification } = require('../api/services/pushNotification');
-    
-    // Находим event заявки, которые прошли более 24 часов после start_date
-    // и НЕ на модерации и НЕ в архиве
-    // Архивные статусы: approved, rejected, archived
-    const [requests] = await pool.execute(
+
+    const eventOpenWhere = `
+      category = 'event'
+      AND status IN ('new', 'inProgress')
+      AND start_date IS NOT NULL
+    `;
+
+    const [toArchive] = await pool.execute(
       `SELECT id, created_by, start_date, status, name
-       FROM requests 
-       WHERE category = 'event'
-         AND status NOT IN ('pendingApproval', 'approved', 'rejected', 'archived')
-         AND start_date IS NOT NULL
+       FROM requests
+       WHERE ${eventOpenWhere}
          AND start_date <= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
     );
 
-    if (requests.length === 0) {
-      return { processed: 0, warnings: 0, errors: 0 };
-    }
+    const [toRemind] = await pool.execute(
+      `SELECT id, created_by, start_date, status, name
+       FROM requests
+       WHERE ${eventOpenWhere}
+         AND start_date <= NOW()
+         AND start_date > DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    );
 
-    let processed = 0; // Удалено заявок
-    let warnings = 0;  // Отправлено предупреждений
+    let archived = 0;
+    let warnings = 0;
     let errors = 0;
 
-    for (const request of requests) {
+    for (const request of toArchive) {
       try {
-        const startDate = new Date(request.start_date);
-        const hoursSinceStart = (Date.now() - startDate.getTime()) / (1000 * 60 * 60);
-
-        // Проверяем, было ли уже отправлено предупреждение
-        const [warningActions] = await pool.execute(
-          `SELECT id FROM cron_actions 
-           WHERE action_type = 'checkEventAfterStartDate' 
-             AND request_id = ? 
-             AND status = 'completed'
-             AND action_description LIKE '%предупреждение%'
-           LIMIT 1`,
+        const [donations] = await pool.execute(
+          'SELECT DISTINCT user_id FROM donations WHERE request_id = ?',
           [request.id]
         );
+        const donorUserIds = donations.map((d) => d.user_id).filter(Boolean);
 
-        const warningAlreadySent = warningActions.length > 0;
+        await sendRequestRejectedNotification({
+          userIds: [request.created_by],
+          requestId: request.id,
+          messageType: 'creator',
+          rejectionMessage:
+            'Событие отправлено в архив: в течение суток после даты уборки не было отправлено на модерацию и дата не перенесена.',
+          requestCategory: 'event',
+        }).catch(() => {});
 
-        if (hoursSinceStart >= 48) {
-          // Прошло 48 часов - удаляем заявку
-          
-          // Возвращаем деньги всем донатерам (включая создателя, если он делал донат)
-          // ВАЖНО: Теперь все платежи идут через донаты, включая платеж создателя
-          const [donations] = await pool.execute(
-            'SELECT payment_intent_id FROM donations WHERE request_id = ?',
-            [request.id]
-          );
-
-          for (const donation of donations) {
-            if (donation.payment_intent_id) {
-              try {
-                const donationPI = await stripe.paymentIntents.retrieve(donation.payment_intent_id);
-                
-                if (donationPI.status === 'succeeded' || donationPI.status === 'requires_capture') {
-                  await stripe.refunds.create({
-                    payment_intent: donation.payment_intent_id,
-                  });
-                } else if (donationPI.status !== 'canceled') {
-                  await stripe.paymentIntents.cancel(donation.payment_intent_id);
-                }
-              } catch (donationStripeErr) {
-                // Игнорируем ошибки отдельных донатов
-              }
-            }
-          }
-
-          await releaseEarthdayCleanupOnRequestDelete(pool, request.id);
-
-          // Удаляем все чаты заявки
-          await deleteAllChatsForRequest(request.id);
-
-          // Удаляем заявку
-          await pool.execute('DELETE FROM requests WHERE id = ?', [request.id]);
-
-          // Отправляем уведомление создателю
-          const { sendRequestRejectedNotification } = require('../api/services/pushNotification');
+        if (donorUserIds.length > 0) {
           await sendRequestRejectedNotification({
-            userIds: [request.created_by],
+            userIds: donorUserIds,
             requestId: request.id,
-            messageType: 'creator',
-            rejectionMessage: 'Ваше событие было удалено, так как не было отправлено на модерацию в течение 48 часов после даты проведения. Средства возвращены.',
+            messageType: 'donor',
+            rejectionMessage: 'Event archived: not submitted for review within 24 hours after the scheduled date.',
             requestCategory: 'event',
-          });
-
-          // Логируем действие
-          await logCronAction(
-            'checkEventAfterStartDate',
-            request.id,
-            'event',
-            `Удаление event заявки "${request.name}" через 48 часов после start_date (не отправлена на модерацию)`,
-            'completed',
-            { start_date: request.start_date, hours_since_start: Math.round(hoursSinceStart) }
-          );
-
-          processed++;
-
-        } else if (hoursSinceStart >= 24 && !warningAlreadySent) {
-          // Прошло 24 часа - отправляем предупреждение (только если еще не отправляли)
-          
-          await sendEventCompletionReminderNotification({
-            userIds: [request.created_by],
-            requestId: request.id,
-            eventName: request.name || 'Событие',
-            hoursRemaining: 24,
-          });
-
-          // Логируем действие
-          await logCronAction(
-            'checkEventAfterStartDate',
-            request.id,
-            'event',
-            `Отправка предупреждения для event заявки "${request.name}" (через 24 часа после start_date, не на модерации)`,
-            'completed',
-            { start_date: request.start_date, hours_since_start: Math.round(hoursSinceStart) }
-          );
-
-          warnings++;
+          }).catch(() => {});
         }
 
+        await pool.execute(
+          'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
+          ['archived', request.id]
+        );
+
+        await logCronAction(
+          'checkEventAfterStartDate',
+          request.id,
+          'event',
+          `Архив event "${request.name}" через 24ч после start_date (не отправлено на модерацию)`,
+          'completed',
+          { start_date: request.start_date }
+        );
+        archived++;
       } catch (err) {
         errors++;
         await logCronAction(
           'checkEventAfterStartDate',
           request.id,
           'event',
-          `Ошибка при обработке event заявки ${request.id}: ${err.message || 'Неизвестная ошибка'}`,
+          `Ошибка архива event ${request.id}: ${err.message || 'Неизвестная ошибка'}`,
           'error',
-          {
-            error: err.message || 'Неизвестная ошибка',
-            errorName: err.name || 'Error',
-            errorStack: err.stack,
-            requestId: request.id
-          }
+          { error: err.message }
         );
       }
     }
 
-    return { processed, warnings, errors, total: requests.length };
+    for (const request of toRemind) {
+      try {
+        const [warningActions] = await pool.execute(
+          `SELECT id FROM cron_actions
+           WHERE action_type = 'checkEventAfterStartDate'
+             AND request_id = ?
+             AND status = 'completed'
+             AND action_description LIKE '%предупреждение%'
+           LIMIT 1`,
+          [request.id]
+        );
+        if (warningActions.length > 0) continue;
 
+        await sendEventCompletionReminderNotification({
+          userIds: [request.created_by],
+          requestId: request.id,
+          eventName: request.name || 'Событие',
+          hoursRemaining: 24,
+        });
+
+        await logCronAction(
+          'checkEventAfterStartDate',
+          request.id,
+          'event',
+          `Отправка предупреждения для event "${request.name}" после start_date (закройте или перенесите дату)`,
+          'completed',
+          { start_date: request.start_date }
+        );
+        warnings++;
+      } catch (err) {
+        errors++;
+      }
+    }
+
+    return {
+      processed: archived,
+      archived,
+      warnings,
+      errors,
+      total: toArchive.length + toRemind.length,
+    };
   } catch (error) {
     throw error;
   }
