@@ -1,0 +1,49 @@
+---
+description: Автобэкап VPS joypick (MySQL + uploads + .env), cron и восстановление
+alwaysApply: false
+---
+
+# Бэкап joypick на VPS
+
+## Где
+
+- Скрипт: `scripts/joypick_vps_backup.sh` → на проде `/opt/joypick/scripts/joypick_vps_backup.sh`
+- Восстановление: `scripts/joypick_vps_restore.sh`
+- Архивы: `/opt/joypick/backups/joypick-YYYY-MM-DD-HHMMSS-autobackup.tar.gz`
+- Лог: `/opt/joypick/backups/backup.log`
+- Cron (UTC): `10 0 * * *` — ежедневно ~03:10 МСК
+- Хранение на диске VPS: **14 дней** (`RETENTION_DAYS`)
+
+## Содержимое архива
+
+- `dump.sql` — полный mysqldump
+- `uploads/` — весь каталог (photos, general, logos)
+- `dotenv` — копия `.env`
+- `MANIFEST.txt` — дата, `upload_photos_files`, размеры
+
+## Ручной бэкап
+
+```bash
+ssh root@45.84.225.22 'bash /opt/joypick/scripts/joypick_vps_backup.sh'
+```
+
+## Восстановление uploads (после apply / потери файлов)
+
+```bash
+bash /opt/joypick/scripts/joypick_vps_restore.sh \
+  /opt/joypick/backups/joypick-2026-06-24-001001-autobackup.tar.gz --uploads-only
+```
+
+Полное (БД + uploads): без второго аргумента или `all`. БД — только осознанно.
+
+## Внешняя копия (опционально)
+
+В `.env` на VPS: `YANDEX_WEBDAV_USER`, `YANDEX_WEBDAV_PASS` → загрузка в `https://webdav.yandex.ru/joypick-backups/`.
+
+## Локальный архив danilagames (не на VPS)
+
+Полный снимок uploads до миграции: `D:\Projects\joy_pick\3b28a89aacc6233a6f3dbdbe2b670f24\...\uploads\` (~2419 photos). Не заменяет ежедневный VPS-бэкап, но полезен для старых файлов вне retention.
+
+## После правок скриптов
+
+`scp` оба `.sh` на прод, `chmod +x`, при необходимости один ручной прогон бэкапа.

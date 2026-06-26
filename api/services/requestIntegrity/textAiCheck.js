@@ -2,6 +2,7 @@ const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes')
 const { isAiEnabled } = require('./openRouterVision');
 const { getOpenRouterVisionApiKey } = require('../../utils/openRouterVisionClient');
 const { normalizeLocale } = require('./integrityTranslate');
+const { postProcessTextAiIssues, aiIssue } = require('./textIntegrityPostProcess');
 
 const DEFAULT_MODEL = process.env.INTEGRITY_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 const TIMEOUT_MS = Math.min(20000, Math.max(4000, parseInt(process.env.INTEGRITY_TEXT_AI_TIMEOUT_MS || '8000', 10) || 8000));
@@ -11,19 +12,6 @@ function isTextAiEnabled() {
     return false;
   }
   return isAiEnabled();
-}
-
-function aiIssue(code, field, phase, extra = {}) {
-  const severity = phase === 'create' ? 'block' : 'reject';
-  return {
-    code,
-    field,
-    severity,
-    source: 'ai',
-    message_key: messageKeyForCode(code),
-    message_en: messageEnForCode(code),
-    ...extra,
-  };
 }
 
 /** Один промпт для всех locale: текст как есть, язык указываем явно (ru, zh, en, …). */
@@ -36,6 +24,13 @@ User app locale: ${loc}
 The title and description below are written by the user in their language (same as or related to locale ${loc}). Read them as-is — do NOT require English.
 
 Decide: is this a genuine outdoor cleanup / volunteer task (clear place or action), or gibberish / random characters / spam / placeholder?
+
+Important — payment / payout instructions:
+- Users in countries without in-app Stripe may put donation or payout details in the DESCRIPTION only: phone numbers, Pix keys, bank accounts, cards, mobile money (M-Pesa, etc.), CPF, IBAN, emails used as payment keys, and similar.
+- Do NOT reject a request just because the description contains payment details, digits, or account numbers.
+- Reject only if there is NO genuine cleanup/volunteer task, or the text is gibberish/spam.
+- Payment details must NOT be in the title. If the title contains phone/card/bank details, reject the title field only.
+- If you reject, prefer field "description" over "name" when the title clearly names a place or cleanup task.
 
 Title: ${JSON.stringify(name)}
 Description: ${JSON.stringify(description)}
@@ -62,8 +57,33 @@ function parseAiJson(raw) {
   }
 }
 
+function rawAiIssuesFromParsed(parsed, phase, locale) {
+  if (!parsed || parsed.ok === true) return [];
+
+  const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
+  const issues = [];
+  if (fields.includes('name')) {
+    issues.push(aiIssue(REASON.GIBBERISH_NAME, 'name', phase, locale));
+  }
+  if (fields.includes('description')) {
+    issues.push(aiIssue(REASON.GIBBERISH_DESCRIPTION, 'description', phase, locale));
+  }
+  if (issues.length === 0 && parsed.ok === false) {
+    issues.push(aiIssue(REASON.GIBBERISH_DESCRIPTION, 'description', phase, locale));
+  }
+  return issues;
+}
+
 /** @returns {Promise<Array|null>} issues, или null если AI недоступен — fallback на rules */
-async function checkTextWithAi({ name, description, locale, category, phase }) {
+async function checkTextWithAi({
+  name,
+  description,
+  locale,
+  category,
+  phase,
+  nameGibberish = false,
+  descriptionGibberish = false,
+}) {
   if (!isTextAiEnabled()) return null;
 
   const n = String(name || '').trim();
@@ -98,20 +118,17 @@ async function checkTextWithAi({ name, description, locale, category, phase }) {
     }
     const raw = json?.choices?.[0]?.message?.content;
     const parsed = parseAiJson(raw);
-    if (!parsed || parsed.ok === true) return [];
+    const rawIssues = rawAiIssuesFromParsed(parsed, phase, locale);
 
-    const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
-    const issues = [];
-    if (fields.includes('name')) {
-      issues.push(aiIssue(REASON.GIBBERISH_NAME, 'name', phase));
-    }
-    if (fields.includes('description')) {
-      issues.push(aiIssue(REASON.GIBBERISH_DESCRIPTION, 'description', phase));
-    }
-    if (issues.length === 0 && parsed.ok === false) {
-      issues.push(aiIssue(REASON.GIBBERISH_DESCRIPTION, 'description', phase));
-    }
-    return issues;
+    return postProcessTextAiIssues({
+      name: n,
+      description: d,
+      nameGibberish: Boolean(nameGibberish),
+      descriptionGibberish: Boolean(descriptionGibberish),
+      aiIssues: rawIssues,
+      phase,
+      locale,
+    });
   } catch (e) {
     clearTimeout(timer);
     console.warn('[textAiCheck]', e.message);
@@ -119,4 +136,4 @@ async function checkTextWithAi({ name, description, locale, category, phase }) {
   }
 }
 
-module.exports = { isTextAiEnabled, checkTextWithAi };
+module.exports = { isTextAiEnabled, checkTextWithAi, buildPrompt };

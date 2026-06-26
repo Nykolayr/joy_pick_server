@@ -4,6 +4,7 @@ const REASON = {
   MISSING_DESCRIPTION: 'MISSING_DESCRIPTION',
   GIBBERISH_NAME: 'GIBBERISH_NAME',
   GIBBERISH_DESCRIPTION: 'GIBBERISH_DESCRIPTION',
+  PAYMENT_IN_TITLE: 'PAYMENT_IN_TITLE',
   MISSING_COORDS: 'MISSING_COORDS',
   INVALID_COORDS: 'INVALID_COORDS',
   GEO_NOT_LAND: 'GEO_NOT_LAND',
@@ -24,8 +25,9 @@ const REASON = {
 const MESSAGE_KEYS = {
   [REASON.MISSING_NAME]: 'integrity_missing_name',
   [REASON.MISSING_DESCRIPTION]: 'integrity_missing_description',
-  [REASON.GIBBERISH_NAME]: 'integrity_gibberish_name',
-  [REASON.GIBBERISH_DESCRIPTION]: 'integrity_gibberish_description',
+  [REASON.GIBBERISH_NAME]: 'integrity_create_title_cleanup_only',
+  [REASON.GIBBERISH_DESCRIPTION]: 'integrity_create_description_with_payment',
+  [REASON.PAYMENT_IN_TITLE]: 'integrity_payment_in_title',
   [REASON.MISSING_COORDS]: 'integrity_missing_coords',
   [REASON.INVALID_COORDS]: 'integrity_invalid_coords',
   [REASON.GEO_NOT_LAND]: 'integrity_geo_not_land',
@@ -44,8 +46,12 @@ const MESSAGE_KEYS = {
 const MESSAGE_EN = {
   [REASON.MISSING_NAME]: 'Please enter a clear request title.',
   [REASON.MISSING_DESCRIPTION]: 'Please describe the cleanup or event.',
-  [REASON.GIBBERISH_NAME]: 'The title looks like random characters. Use a real title.',
-  [REASON.GIBBERISH_DESCRIPTION]: 'The description must explain the request in normal words.',
+  [REASON.GIBBERISH_NAME]:
+    'The title should name the place or cleanup task only. Do not put phone numbers, card numbers, or bank details in the title — add payout or donation instructions at the end of the description.',
+  [REASON.GIBBERISH_DESCRIPTION]:
+    'First describe where and what volunteers should clean up. If you need payout details (phone, Pix, bank account, card), add them after the cleanup text in this description — not in the title.',
+  [REASON.PAYMENT_IN_TITLE]:
+    'Payment or payout details belong in the description, not the title. Write the cleanup task in the title, then add phone, Pix, bank account or card details at the end of the description.',
   [REASON.MISSING_COORDS]: 'Set a location on the map.',
   [REASON.INVALID_COORDS]: 'The map location is invalid. Choose another point.',
   [REASON.GEO_NOT_LAND]: 'The location appears to be in water or an invalid area. Pick a point on land.',

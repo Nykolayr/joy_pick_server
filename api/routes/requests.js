@@ -470,6 +470,40 @@ async function buildRequestDetailForApi(pool, id) {
  * GET /api/requests/:id
  * Получение заявки по ID
  */
+router.post('/:id/social-share', authenticate, async (req, res) => {
+  try {
+    const requestId = String(req.params.id || '').trim();
+    const userId = req.user?.userId;
+    if (!userId) {
+      return error(res, 'Unauthorized', 401);
+    }
+
+    const locale = req.body?.locale || req.query?.locale || null;
+    const { ensureSocialSharePage } = require('../services/requestSocialShareService');
+    const result = await ensureSocialSharePage(requestId, userId, { locale });
+
+    return success(res, {
+      social_share_url: result.social_share_url,
+      created: result.created,
+      ...(result.social_share_og_image_url
+        ? { social_share_og_image_url: result.social_share_og_image_url }
+        : {}),
+    });
+  } catch (err) {
+    const status = err.statusCode || 500;
+    const payload = {
+      errorCode: err.errorCode || 'SOCIAL_SHARE_FAILED',
+      message: err.message || 'Social share failed',
+    };
+    return res.status(status).json({
+      success: false,
+      message: payload.message,
+      errorCode: payload.errorCode,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const result = await buildRequestDetailForApi(pool, req.params.id);
@@ -1141,6 +1175,7 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
     let statusChangedToPending = false;
     let statusChangedToApproved = false;
     let statusChangedToRejected = false;
+    let statusChangedToArchived = false;
     let speedCleanupEarnedCoin = false;
 
     if (status !== undefined && status !== null && status !== '') {
@@ -1187,6 +1222,10 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         // Проверяем изменение статуса на rejected (отклонение)
         if (statusNormalized === 'rejected' && oldStatus !== 'rejected') {
           statusChangedToRejected = true;
+        }
+
+        if (statusNormalized === 'archived' && oldStatus !== 'archived') {
+          statusChangedToArchived = true;
         }
 
         if (
@@ -1451,6 +1490,13 @@ router.put('/:id', authenticate, uploadRequestPhotos, async (req, res) => {
         params
       );
 
+      if (statusChangedToArchived) {
+        const { clearSocialShareForRequest } = require('../services/requestSocialShareService');
+        await clearSocialShareForRequest(id).catch((e) => {
+          console.warn('[requests] clearSocialShare on archive:', id, e.message);
+        });
+      }
+
       if (eventStartRescheduledToFuture) {
         await pool.execute(
           `DELETE FROM cron_actions
@@ -1694,6 +1740,11 @@ router.delete('/:id', authenticate, async (req, res) => {
     // Удаляем ВСЕ чаты заявки (group и private) перед удалением заявки
     const { deleteAllChatsForRequest } = require('../utils/chatHelpers');
     await deleteAllChatsForRequest(id);
+
+    const { clearSocialShareForRequest } = require('../services/requestSocialShareService');
+    await clearSocialShareForRequest(id).catch((e) => {
+      console.warn('[requests] clearSocialShare on delete:', id, e.message);
+    });
 
     await pool.execute('DELETE FROM requests WHERE id = ?', [id]);
 
@@ -2848,6 +2899,11 @@ async function archivePendingModerationTimeout(requestId, category, creatorId) {
     'UPDATE requests SET status = ?, submitted_for_review_at = NULL, updated_at = NOW() WHERE id = ?',
     ['archived', requestId]
   );
+
+  const { clearSocialShareForRequest } = require('../services/requestSocialShareService');
+  await clearSocialShareForRequest(requestId).catch((e) => {
+    console.warn('[requests] clearSocialShare moderation archive:', requestId, e.message);
+  });
 }
 
 /**

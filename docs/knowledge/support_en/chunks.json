@@ -220,7 +220,7 @@
   {
     "chunk_id": "request_create_speed_cleanup",
     "title": "How to create a speed cleanup",
-    "text": "Open Speed Cleanup creation and fill required fields, including location and cleanup details. Add required cleanup photos in the flow. Submit and wait for creation success message.",
+    "text": "Open My eco-cleanup creation and fill required fields, including location and cleanup details. Add required cleanup photos in the flow. Submit and wait for creation success message.",
     "tags": [
       "speed cleanup",
       "create",
@@ -456,7 +456,7 @@
   {
     "chunk_id": "payments_fees_stripe_first_joypick_infra_not_profit",
     "title": "Fees: Stripe processing first, then Joy Pick infra share (not app “profit”)",
-    "text": "When donations are split, **Stripe’s processing fee is taken first** (percentage plus a **per-donation** fixed component per Stripe rules). **After that**, Joy Pick retains **about 7%**—this is **not described as founders’ profit**, but **infrastructure**: servers, hosting, related services, including **AI token** costs to run the product. Do **not** phrase this as “the app earns 7%” without that clarification; on follow-ups, mention **Stripe first**, then the Joy Pick infrastructure fee.",
+    "text": "When donations are split, **Stripe’s processing fee is taken first** (percentage plus a **per-donation** fixed component per Stripe rules). **After that**, Joy Pick retains **about 7%** for **infrastructure**: servers, hosting, related services, including **AI token** costs. For “what commission does the app take”, answer briefly: **about 7% Joy Pick for infrastructure** (after Stripe). **Do not** mention commission in “how to earn” answers unless the user asked about fees.",
     "tags": [
       "7 percent fee",
       "stripe 2.9",
@@ -471,7 +471,7 @@
   {
     "chunk_id": "request_cancel_delete_creator_own_support_other",
     "title": "Cancel/delete requests: your own vs support/admin for edge cases",
-    "text": "For **Waste Location**, **Speed Cleanup**, and **Event**: the creator can **delete/cancel their own request** in the app when status and the details screen allow it. **Manually removing a joined executor** is **not** something to promise as a universal self-serve button for every case: for Waste, the reliable mechanism is the **24-hour** auto-release after Join without completion (see the dedicated chunk); unusual cases go to **operator support chat** from Profile or **admin** actions on the service side.",
+    "text": "For **Waste Location**, **My eco-cleanup**, and **Event**: the creator can **delete/cancel their own request** in the app when status and the details screen allow it. **Manually removing a joined executor** is **not** something to promise as a universal self-serve button for every case: for Waste, the reliable mechanism is the **24-hour** auto-release after Join without completion (see the dedicated chunk); unusual cases go to **operator support chat** from Profile or **admin** actions on the service side.",
     "tags": [
       "cancel my request",
       "delete my request",
@@ -487,7 +487,7 @@
   {
     "chunk_id": "visibility_paid_cleanups_coins_map_list_news_speed",
     "title": "Paid requests, completed work, News tab, Speed: coin markers, amounts, post-cleanup donations",
-    "text": "**Paid (donation) Waste Location and Event** requests with collected funds are marked with a **coin icon** on the **map and list** (see the in-app Help / UI guide; some Help strings mention a green **$** under the marker—same intent: monetary donations). The **net amount after payment fees** is shown **inside the request card**. After cleanup, **completed** work stays visible on the **map** and in the **list** (including the ~7-day window where people can still donate—see the completed/map chunk) and appears in **News / Good News** eco-activity posts; **sponsors may donate later**, so totals can **grow**. **Speed Cleanup** completed runs are also visible on the map and in **News**; others may **donate** to the volunteer per app rules.",
+    "text": "**Paid (donation) Waste Location and Event** requests with collected funds are marked with a **coin icon** on the **map and list** (see the in-app Help / UI guide; some Help strings mention a green **$** under the marker—same intent: monetary donations). The **net amount after payment fees** is shown **inside the request card**. After cleanup, **completed** work stays visible on the **map** and in the **list** (including the ~7-day window where people can still donate—see the completed/map chunk) and appears in **News / Good News** eco-activity posts; **sponsors may donate later**, so totals can **grow**. **My eco-cleanup** completed runs are also visible on the map and in **News**; others may **donate** to the volunteer per app rules.",
     "tags": [
       "where are completed cleanups",
       "good news section",
@@ -1739,7 +1739,7 @@
   {
     "chunk_id": "requests_what_types_and_how_to_browse",
     "title": "What request types exist and where to browse them",
-    "text": "If the user asks what requests exist, what request types there are, or what those pins on the map are—this is about catalog/types, not creating a new request. Answer immediately without the create-flow question \"which type do you want to create?\": Joy Pick has three request types—(1) Waste Location: mark a polluted spot; (2) Speed Cleanup: your own quick cleanup with before/after photos; (3) Event: a scheduled cleanup or gathering with time and participants. Other people's live requests show on the main map and in lists; users can scroll, search, and filter. Use a type-clarifying question only when the user clearly wants to create a new request and did not name a type.",
+    "text": "If the user asks what requests exist, what request types there are, or what those pins on the map are—this is about catalog/types, not creating a new request. Answer immediately without the create-flow question \"which type do you want to create?\": Joy Pick has three request types—(1) Waste Location: mark a polluted spot; (2) My eco-cleanup: your own quick cleanup with before/after photos; (3) Event: a scheduled cleanup or gathering with time and participants. Other people's live requests show on the main map and in lists; users can scroll, search, and filter. Use a type-clarifying question only when the user clearly wants to create a new request and did not name a type.",
     "tags": [
       "what requests",
       "what requests are there",
@@ -1950,7 +1950,7 @@
   {
     "chunk_id": "product_onboarding_map_three_types",
     "title": "First launch: language, account, map, three eco request types",
-    "text": "If you have no account yet, **register** first (email/Google/Apple) and **sign in**. Stripe for inbound donations is **not** required on day one—connect it in **Profile** when you need payouts. Then decide your goal: **create your own request** (center **+** on the Map tab) or **join/participate** in someone else's from the map/list. Choose language after install. Four bottom tabs: (1) map + request list, (2) recycling stations and partners, (3) **News** (its own tab), (4) profile. Bottom-left psychology FAB opens Support AI—not human support under Profile. From **+** choose Waste Location (pollution pin), Speed Cleanup (quick cleanup), or Event (scheduled activity). To have **someone else** pick up trash for you, create a **Waste Location** request.",
+    "text": "If you have no account yet, **register** first (email/Google/Apple) and **sign in**. Stripe for inbound donations is **not** required on day one—connect it in **Profile** when you need payouts. Then decide your goal: **create your own request** (center **+** on the Map tab) or **join/participate** in someone else's from the map/list. Choose language after install. Four bottom tabs: (1) map + request list, (2) recycling stations and partners, (3) **News** (its own tab), (4) profile. Bottom-left psychology FAB opens Support AI—not human support under Profile. From **+** choose Waste Location (pollution pin), My eco-cleanup (quick cleanup), or Event (scheduled activity). To have **someone else** pick up trash for you, create a **Waste Location** request.",
     "tags": [
       "onboarding",
       "first launch",
@@ -1984,7 +1984,7 @@
   {
     "chunk_id": "donations_who_receives_waste_vs_speed_event",
     "title": "Who receives donation money: Waste Location vs Speed vs Event creator",
-    "text": "Waste Location: after review and moderation, cash donations go to the executor who joined, actually cleaned, passed checks, and has a fully connected Stripe Connect profile in the app. Speed Cleanup: creator and performer are the same person; donations can reach them after approval per app rules with Stripe set up in Profile. Event / subbotnik: the organizer participates; donations are split among **eligible participants** (see split/hold chunks). For questions like «how much will I get», answer with a clear formula: user gets the donation amount assigned to their role by request type (for Event, their participant share), **minus Stripe processing fees and the Joy Pick infrastructure fee**—see the «fees: Stripe first» chunk. Do not answer with vague «depends on cases» when the user asks for the base payout principle. **Do not use the word «volunteer» as a role**—use **executor** and **participant**.",
+    "text": "Waste Location: after review and moderation, cash donations go to the executor who joined, actually cleaned, passed checks, and has a fully connected Stripe Connect profile in the app. My eco-cleanup: creator and performer are the same person; donations can reach them after approval per app rules with Stripe set up in Profile. Event / subbotnik: the organizer participates; donations are split among **eligible participants** (see split/hold chunks). For questions like «how much will I get», answer with a clear formula: user gets the donation amount assigned to their role by request type (for Event, their participant share), **minus Stripe processing fees and the Joy Pick infrastructure fee**—see the «fees: Stripe first» chunk. Do not answer with vague «depends on cases» when the user asks for the base payout principle. **Do not use the word «volunteer» as a role**—use **executor** and **participant**.",
     "tags": [
       "waste location creator",
       "who gets donations",
@@ -2000,8 +2000,8 @@
   },
   {
     "chunk_id": "product_speed_cleanup_before_after_coins_hours",
-    "title": "Speed Cleanup: before/after photos, coins, volunteer hours letter",
-    "text": "Speed Cleanup: you mark the place on the map, take a before photo, do the cleanup, then an after photo. Others see the result on the map and in good-news style feeds and can donate to you directly. You earn JoyCoins even without donations; coins can be redeemed with partners (list grows). Cleanup time is tracked; you can print an official-style letter about volunteer hours.",
+    "title": "My eco-cleanup: before/after photos, coins, volunteer hours letter",
+    "text": "My eco-cleanup: you mark the place on the map, take a before photo, do the cleanup, then an after photo. Others see the result on the map and in good-news style feeds and can donate to you directly. You earn JoyCoins even without donations; coins can be redeemed with partners (list grows). Cleanup time is tracked; you can print an official-style letter about volunteer hours.",
     "tags": [
       "speed cleanup",
       "before after",
@@ -2202,7 +2202,7 @@
   {
     "chunk_id": "rewards_volunteer_earn_donations_payouts",
     "title": "Donations and payouts: executor / participant—do not say «volunteer» as a role",
-    "text": "Lead with **request type**—see Waste vs Speed vs Event. Use **executor** and **participant**; **do not** call users «volunteers» as a role. If the user already says **they finished someone else’s request**, do **not** interrogate whether they were «really a volunteer»—explain **moderation + ~7-day window + Stripe** and **profile payouts**. Waste: payouts go to the **executor** who cleaned and passed moderation, not the pin-only creator. Event: chain is submission → creator Review when applicable → **Joy Pick moderation** → donations → Stripe splits. Withdraw via **Profile / payouts**. JoyCoins and printed hours letters are separate from cash.",
+    "text": "Lead with **request type**—see Waste vs Speed vs Event. Use **executor** and **participant**; **do not** call users «volunteers» as a role. If the user already says **they finished someone else’s request**, do **not** interrogate whether they were «really a volunteer»—explain **moderation + ~7-day window + Stripe** and **profile payouts**. Waste: payouts go to the **executor** who cleaned and passed moderation, not the pin-only creator. Event: chain is submission → creator Review when applicable → **Joy Pick moderation** → donations → Stripe splits. **My eco-cleanup** and other completed work appear on the **map**, **list**, and **Good News** feed—others can send **additional donations**. Withdraw via **Profile / payouts**. JoyCoins and printed hours letters are separate from cash.",
     "tags": [
       "earn",
       "earn money",
@@ -2345,7 +2345,7 @@
   {
     "chunk_id": "help_map_border_colors_and_gray_circle",
     "title": "Help: map card border colors and gray circle",
-    "text": "The in-app Help (UI Guide) explains map markers. Border color on the request card: green—requests you created; orange—requests you joined/participate in; yellow—requests you donated to; purple—approved Event or Speed Cleanup within 7 days of creation where donations are still accepted; black—other requests. A gray circle around the map icon means the request is overdue, approved, or completed. A green dollar sign under the icon marks a donation-backed request.",
+    "text": "The in-app Help (UI Guide) explains map markers. Border color on the request card: green—requests you created; orange—requests you joined/participate in; yellow—requests you donated to; purple—approved Event or My eco-cleanup within 7 days of creation where donations are still accepted; black—other requests. A gray circle around the map icon means the request is overdue, approved, or completed. A green dollar sign under the icon marks a donation-backed request.",
     "tags": [
       "help",
       "ui guide",
@@ -2396,7 +2396,7 @@
   {
     "chunk_id": "help_ui_guide_sections_outline",
     "title": "Help: section outline (same as in the app)",
-    "text": "Joy Pick UI Guide (Help) sections match the UiGuide screen: (1) Request type icons — three markers: Event, Waste Location, Speed Cleanup. (2) Dollar sign on map — green $ under the marker: donations enabled. (3) Gray circle on map — ring around the marker: overdue, approved, or completed. (4) Border colors — green: you created the request; orange: you participate; yellow: you donated; purple/black — see Help; border color is not the same as the green $ under the icon. (5) Chips & indicators — donation chips (orange/yellow), distance, Plant Tree, Trash pickup only. (6) Distance — km chip under Chips & indicators. (7) Plant Tree — tree in white circle. (8) Trash pickup only — truck in white circle. (9) Top bar — chat, refresh, news, wallet. (10) Profile block — list, QR exchange, payouts. Open Help in-app for illustrations.",
+    "text": "Joy Pick UI Guide (Help) sections match the UiGuide screen: (1) Request type icons — three markers: Event, Waste Location, My eco-cleanup. (2) Dollar sign on map — green $ under the marker: donations enabled. (3) Gray circle on map — ring around the marker: overdue, approved, or completed. (4) Border colors — green: you created the request; orange: you participate; yellow: you donated; purple/black — see Help; border color is not the same as the green $ under the icon. (5) Chips & indicators — donation chips (orange/yellow), distance, Plant Tree, Trash pickup only. (6) Distance — km chip under Chips & indicators. (7) Plant Tree — tree in white circle. (8) Trash pickup only — truck in white circle. (9) Top bar — chat, refresh, news, wallet. (10) Profile block — list, QR exchange, payouts. Open Help in-app for illustrations.",
     "tags": [
       "ui guide",
       "help sections",
@@ -2471,7 +2471,7 @@
   {
     "chunk_id": "help_synonyms_request_type_map_icons",
     "title": "Synonyms: three request types—map marker icons (Help)",
-    "text": "Help shows three types: Event (community cleanup, multiple participants); Waste Location (single spot, one executor after join); Speed Cleanup (solo quick cleanup). Synonyms: what icon means, three map markers, trash pin icon, speed broom icon, event calendar icon, tell waste speed event apart by marker.",
+    "text": "Help shows three types: Event (community cleanup, multiple participants); Waste Location (single spot, one executor after join); My eco-cleanup (solo quick cleanup). Synonyms: what icon means, three map markers, trash pin icon, speed broom icon, event calendar icon, tell waste speed event apart by marker.",
     "tags": [
       "request type icon",
       "three types map",
@@ -2654,11 +2654,12 @@
   {
     "chunk_id": "product_how_to_work_with_app",
     "title": "How to work with the Joy Pick app",
-    "text": "Sign in or register. Profile (4th tab): language, name, country, social links, Stripe for payout recipients, My requests, notifications, volunteer-hours PDF. Home: map and list — Waste Location (one executor), Speed Cleanup (creator cleans), Event (group subbotnik). Create: + → type → photo, place, title, description. Join: card → Join → work → proof photos. Paid request: set donations when creating to motivate helpers; after review, payouts go to whoever did the cleanup, not just for creating the pin. Donate to others on the map and in News. Share sends a request link.",
+    "text": "Sign in or register. Profile (4th tab): language, name, country, social links, Stripe for payout recipients, My requests, notifications, volunteer-hours PDF. Home: map and list — Waste Location (one executor), My eco-cleanup (creator cleans), Event (group subbotnik). Create: + → type → photo, place, title, description. Join: card → Join → work → proof photos. Paid request: set donations when creating to motivate helpers; after review, payouts go to whoever did the cleanup, not just for creating the pin. Donate to others on the map and in News. Share sends a request link.",
     "tags": [
       "how to work with the app",
       "how to use the app",
       "how to use joy pick",
+      "how to use application",
       "getting started",
       "onboarding",
       "app guide",
@@ -2668,7 +2669,7 @@
   {
     "chunk_id": "intent_what_is_app_for_beginners",
     "title": "What Joy Pick is for and what you can do in the app",
-    "text": "Joy Pick helps organize and join environmental cleanups: mark polluted areas, report litter, find volunteers, and send donations. The home tab shows requests on a map and list (trash cleanup, quick cleanup, events) with chats to talk to participants. The second tab is recycling stations and partners. The third is good-news stories. The fourth is your profile with tracked cleanup time and a volunteer-hours PDF, JoyCoins, Stripe for donations and payouts, My requests, notifications, language, and human support. You can donate and receive donations for cleanups per app rules. Support AI on the home screen answers app questions.",
+    "text": "Joy Pick has three eco-activity paths. (1) **Waste Location**: mark a littered spot on the map (photo, description); optionally add a donation to attract an executor; volunteers and services see it on the map and list. (2) **My eco-cleanup**: your own cleanup with before/after photos and a map pin; work appears on the map, request list, and **Good News** feed; volunteer hours and JoyCoins accrue; others may donate to you. (3) **Event / subbotnik**: a scheduled group cleanup—place, date/time, participants; after submission—hours tracking and donations to participants per request rules. Tabs: map/requests, recycling & partners, News, Profile (hours, JoyCoins, Stripe). **Do not** mention reviews of events/organizers unless the user asked.",
     "tags": [
       "what is joy pick",
       "what is the app for",
@@ -2676,10 +2677,41 @@
       "what to do in the app",
       "how to use",
       "how to work with the app",
+      "how does the app work",
+      "how the app works",
+      "more about the app",
       "getting started",
       "onboarding",
       "purpose",
       "beginner"
+    ]
+  },
+  {
+    "text": "To clean litter in your park, yard, or another place you know: open Joy Pick → home tab → **+** → choose **My eco-cleanup** (you clean yourself) **or** **Event / subbotnik** (scheduled group cleanup). Follow the form: set the **map location**, for an Event add **date and time**, plus **description** and **photos**. After publishing, others see it on the map and list; they can join an Event or send a donation.",
+    "tags": [
+      "clean park",
+      "cleanup in my park",
+      "trash in park",
+      "my park",
+      "want to clean up",
+      "organize cleanup",
+      "my eco-cleanup",
+      "subbotnik",
+      "create cleanup"
+    ]
+  },
+  {
+    "chunk_id": "donation_sponsor_volunteers_map_news",
+    "title": "How to support and sponsor volunteers and cleanups",
+    "text": "You can support others **without** creating your own cleanup: open the **map**, **request list**, or **News / Good News** tab to browse eco-cleanups and completed work. Open a request card and tap **Donate** (Stripe). That rewards executors or participants on **Waste Location**, **My eco-cleanup**, and **Event** requests—including **extra donations** after work appears in the feed. You can also find other users’ planned subbotniks on the map and donate before or after the event.",
+    "tags": [
+      "sponsor",
+      "sponsor cleanups",
+      "support volunteers",
+      "reward volunteers",
+      "donate to volunteers",
+      "good news donate",
+      "спонсировать"
     ]
   },
   {
@@ -2787,7 +2819,7 @@
   },
   {
     "chunk_id": "app_flow_speed_cleanup_start_timer_moderation",
-    "title": "Speed Cleanup: Start, timer, moderation",
+    "title": "My eco-cleanup: Start, timer, moderation",
     "text": "On Speed details while status is new, creator, assigned taker, or an allowed user sees a green Start button. Start is blocked without location enabled/warned. After Start the request becomes inProgress and SpeedCleanupTimerPage opens for photos and submission; finishing sends the request to **pending**—**waiting for admin moderation**, not «fully closed» yet. Everyone else on details only gets Donate (UI enforces at least $1 for that donation path). Donation timing and payouts after approval—see the chunk «moderation for all requests and the ~7-day donation window».",
     "tags": [
       "speed cleanup",
@@ -2908,7 +2940,7 @@
   {
     "chunk_id": "qa_when_money_cleaning_profile_your_payouts_joycoins",
     "title": "When payout for cleanups: 7-day window, Your payouts block, JoyCoins",
-    "text": "For «when do I get money for the cleanup» and «why payout did not arrive» questions, **always** provide the correct chain by request type. For **Waste Location** and **Event**: **participant/executor submits result -> creator accepts the submitted work -> Joy Pick moderation -> 7-calendar-day window and payout by Stripe rules**. For **Speed Cleanup** (creator and performer are the same person): **submit result -> moderation -> 7-day window and payout by Stripe rules**. Do not say the flow goes «submission straight to moderation» for Waste/Event — creator acceptance is mandatory there. For «payout missing» cases, answer with a short blockers checklist: result not submitted, no creator acceptance (Waste/Event), still pending / not moderated, 7-day window not elapsed from first submission, Stripe not connected, or no available amount in **Your payouts -> Available**. **Where to see money:** in **Profile**, the **Your payouts** block shows **how much** is available to withdraw and **when** it becomes available. Separately, **JoyCoins** are awarded for verified work; they can be spent with **partner shops** (coins/QR area in Profile). For money-timing answers, still include **7 days**, **Your payouts**, and **coins**.",
+    "text": "For «when do I get money for the cleanup» and «why payout did not arrive» questions, **always** provide the correct chain by request type. For **Waste Location** and **Event**: **participant/executor submits result -> creator accepts the submitted work -> Joy Pick moderation -> 7-calendar-day window and payout by Stripe rules**. For **My eco-cleanup** (creator and performer are the same person): **submit result -> moderation -> 7-day window and payout by Stripe rules**. Do not say the flow goes «submission straight to moderation» for Waste/Event — creator acceptance is mandatory there. For «payout missing» cases, answer with a short blockers checklist: result not submitted, no creator acceptance (Waste/Event), still pending / not moderated, 7-day window not elapsed from first submission, Stripe not connected, or no available amount in **Your payouts -> Available**. **Where to see money:** in **Profile**, the **Your payouts** block shows **how much** is available to withdraw and **when** it becomes available. Separately, **JoyCoins** are awarded for verified work; they can be spent with **partner shops** (coins/QR area in Profile). For money-timing answers, still include **7 days**, **Your payouts**, and **coins**.",
     "tags": [
       "when money",
       "how soon",
@@ -2931,9 +2963,11 @@
   {
     "chunk_id": "joycoins_purpose_partner_shops_only_not_donations",
     "title": "JoyCoins: partner shops only—not donations or cash «privileges»",
-    "text": "For **why coins**, **what are JoyCoins**, **where to spend coins**: JoyCoins are earned for verified activity and **can only be redeemed with Joy Pick partners in special partner shops** (discounts/purchases per partner rules; Profile has the coins card, history, and partner QR). **Do not** say coins are for «receiving donations» or vague in-app «privileges» meaning money from donors: **cash donations** are separate (balance and withdrawal via **Stripe**, **Your payouts**). JoyCoins **do not** replace donations and are **not** described as how you receive donor money. If the user asks **«what does using coins for donations mean»** or challenges that wording—explain they are different: **donations are money**, **coins are partner-shop redemption only**; answer the follow-up directly without repeating the prior paragraph verbatim.",
+    "text": "For **why coins**, **what are JoyCoins**, **what is JoyCoin**, **where to spend coins**: JoyCoins are earned for verified activity and **can only be redeemed with Joy Pick partners in special partner shops** (discounts/purchases per partner rules; Profile has the coins card, history, and partner QR). **Do not** say coins are for «receiving donations», «in-app bonuses», or vague in-app «privileges» meaning money from donors: **cash donations** are separate (balance and withdrawal via **Stripe**, **Your payouts**). JoyCoins **do not** replace donations and are **not** described as how you receive donor money. If the user asks **«what does using coins for donations mean»** or challenges that wording—explain they are different: **donations are money**, **coins are partner-shop redemption only**; answer the follow-up directly without repeating the prior paragraph verbatim.",
     "tags": [
       "joycoins",
+      "what is joycoin",
+      "what are joycoins",
       "coins",
       "why coins",
       "partner shops",
@@ -2948,9 +2982,11 @@
   {
     "chunk_id": "qa_volunteer_hours_self_tracking_pdf_printer",
     "title": "Why volunteer hours: personal tally; printer icon PDF—not donations",
-    "text": "For **why track volunteer hours** / **what hours are for**: verified cleanup time is **your personal tally**—not donations or payouts (Stripe is separate). On the **Volunteer hours card in Profile**, tap the **printer icon** for a **PDF certificate** of **trash-cleanup participation** for schools, employers, etc. **Do not** say hours exist «to get donations».",
+    "text": "For **why track volunteer hours**, **how to get volunteer hours**, **what hours are for**: hours are credited after eco events and cleanups in the app pass review. You can also clean on your own via **My eco-cleanup** requests. Verified cleanup time is **your personal tally**—not donations or payouts (Stripe is separate). On the **Volunteer hours card in Profile**, tap the **printer icon** for a **PDF certificate** for schools, employers, etc. **Do not** say hours exist «to get donations».",
     "tags": [
       "volunteer hours",
+      "how to get volunteer hours",
+      "get volunteer hours",
       "why hours",
       "track hours",
       "printer icon",
@@ -3090,7 +3126,7 @@
   {
     "chunk_id": "flow_types_waste_speed_event_roles_and_lifecycle",
     "title": "Request types: roles, lifecycle, and payouts (Waste / Speed / Event)",
-    "text": "Canonical type-by-type flow to avoid mixing scenarios. Waste Location: creator publishes request and waits for an executor; after Join, only one executor slot is occupied. If executor does not finish within 24 hours from join_date, the slot is auto-released and request returns to new; creator can also remove executor manually. When executor submits result, request enters review/pending flow (some scenarios may wait for creator confirmation), then moderation. Donation payouts go to the executor after review/moderation rules, with a fully connected Stripe Connect profile in the executor’s app account. Speed Cleanup: creator and performer are the same user; they perform cleanup, submit result, then moderation; donation payouts go to that performer with connected Stripe. Event: creator is also a participant, sets date/time, other participants join via Join; after start, participants submit results, creator accepts/rejects participant work, then closes event and sends to moderation. After approval, donations are distributed among participants with accepted work per request rules and connected Stripe. For all types: donations remain available within the server donation window per rules, then distribution/payouts run after moderation/approval.",
+    "text": "Canonical type-by-type flow to avoid mixing scenarios. Waste Location: creator publishes request and waits for an executor; after Join, only one executor slot is occupied. If executor does not finish within 24 hours from join_date, the slot is auto-released and request returns to new; creator can also remove executor manually. When executor submits result, request enters review/pending flow (some scenarios may wait for creator confirmation), then moderation. Donation payouts go to the executor after review/moderation rules, with a fully connected Stripe Connect profile in the executor’s app account. My eco-cleanup: creator and performer are the same user; they perform cleanup, submit result, then moderation; donation payouts go to that performer with connected Stripe. Event: creator is also a participant, sets date/time, other participants join via Join; after start, participants submit results, creator accepts/rejects participant work, then closes event and sends to moderation. After approval, donations are distributed among participants with accepted work per request rules and connected Stripe. For all types: donations remain available within the server donation window per rules, then distribution/payouts run after moderation/approval.",
     "tags": [
       "request types",
       "waste speed event",
@@ -3130,13 +3166,63 @@
   {
     "chunk_id": "product_three_request_types_creatable",
     "title": "Which requests you can create",
-    "text": "Joy Pick has three request types: Waste Location (litter spot, one executor), Speed Cleanup (quick cleanup you do yourself), Event (group cleanup or tree planting). Create from Home: +, pick type, photo, map pin, title, and description.",
+    "text": "Joy Pick has three request types: Waste Location (litter spot, one executor), My eco-cleanup (personal cleanup you do yourself), Event (group cleanup or tree planting). Create from Home: +, pick type, photo, map pin, title, and description.",
     "tags": [
       "what requests can i create",
       "which requests to create",
       "create request types",
       "how to create a request",
       "какие заявки можно создать"
+    ]
+  },
+  {
+    "chunk_id": "product_request_type_ui_labels",
+    "title": "Request type labels as shown in the app (+ menu)",
+    "text": "In user-facing answers use the same labels as the Joy Pick + creation menu and Help (UiGuide): Waste Location, My eco-cleanup, Event. In Russian answers use «Уборка мусора», «Моя экоуборка», «Субботник» — never English code names in Russian text.",
+    "tags": [
+      "request type labels",
+      "waste location",
+      "my eco-cleanup",
+      "speed cleanup",
+      "event",
+      "ui labels",
+      "уборка мусора",
+      "моя экоуборка",
+      "субботник"
+    ]
+  },
+  {
+    "chunk_id": "product_app_available_countries_worldwide",
+    "title": "Which countries Joy Pick works in",
+    "text": "Joy Pick is available **worldwide**. In some countries **Stripe** payments may be limited—contact **support** from Profile and we can help find alternatives for donations or payouts. **Do not** claim the app works only in Russia, CIS, or a fixed country list without noting Stripe limits.",
+    "tags": [
+      "which countries",
+      "where available",
+      "where does the app work",
+      "worldwide",
+      "russia cis",
+      "в каких странах"
+    ]
+  },
+  {
+    "chunk_id": "product_fraud_protection_geo_photos_moderation_feedback",
+    "title": "Fraud protection: on-site geo, in-app photos, moderation, feedback",
+    "text": "For **scammers taking donations**, **fraud protection measures**, **just tap that they cleaned**: monetary donations stay **on hold** until work is verified. An executor **cannot start or finish** until **at the map pin**—the app **checks geolocation** and **warns** if coordinates do not match (see location/completion chunks). Completion needs **after photos via the in-app camera**, **not the gallery**. Results go through **moderation**: if **approved**, funds go to the executor via Stripe; if **rejected**, the user gets a **message with the reason**. **Do not** answer vaguely with “reviews” or “monitoring” without these steps. Report **suspicious behavior** via Profile → **Support** (operator chat) or **Help & support** (email).",
+    "tags": [
+      "fraud",
+      "scam",
+      "fraud protection",
+      "scammers",
+      "fake cleanup",
+      "cheat donation",
+      "won't clean",
+      "take the money",
+      "geolocation on site",
+      "photo proof",
+      "moderation",
+      "donation hold",
+      "feedback",
+      "мошенничество"
     ]
   }
 ]

@@ -1,5 +1,6 @@
 const { SUPPORTED_LOCALES } = require('../translateNews');
-const { SUMMARY_EN, SUMMARY_CLOSE_EN, messageKeyForCode } = require('./reasonCodes');
+const { SUMMARY_EN, SUMMARY_CLOSE_EN, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
+const { messageForCodeAndLocale } = require('./integrityLocalizedMessages');
 
 function normalizeLocale(locale) {
   const l = String(locale || 'en')
@@ -25,12 +26,19 @@ function localizeIntegrityResult(result, locale) {
     phase === 'close' ? 'integrity_check_failed_close_summary' : 'integrity_check_failed_summary';
   const summaryEn = result.summary_en || (phase === 'close' ? SUMMARY_CLOSE_EN : SUMMARY_EN);
 
-  const issues = (result.issues || []).map((issue) => ({
-    ...issue,
-    message_key: issue.message_key || messageKeyForCode(issue.code),
-    message_en: issue.message_en || issue.message || '',
-    message: issue.message_en || issue.message || '',
-  }));
+  const issues = (result.issues || []).map((issue) => {
+    const localized =
+      messageForCodeAndLocale(issue.code, loc) ||
+      issue.message_en ||
+      issue.message ||
+      messageEnForCode(issue.code);
+    return {
+      ...issue,
+      message_key: issue.message_key || messageKeyForCode(issue.code),
+      message_en: localized,
+      message: localized,
+    };
+  });
 
   return {
     ...result,

@@ -106,6 +106,10 @@ app.use('/api', apiApp);
 const stripeCallbackRoutes = require('./api/routes/stripeCallback');
 app.use('/stripeCallback', stripeCallbackRoutes);
 
+// Публичные share-страницы для соцсетей (OG + HTML)
+const socialSharePublicRoutes = require('./api/routes/socialSharePublic');
+app.use('/', socialSharePublicRoutes);
+
 // Соглашения — статичная отдача HTML по запросу (файлы в legal/)
 const legalDir = path.join(__dirname, 'legal');
 app.get('/terms-of-service', (req, res) => {
@@ -248,6 +252,7 @@ app.get('*', (req, res, next) => {
     p.startsWith('/socket.io') ||
     p.startsWith('/uploads') ||
     p.startsWith('/stripeCallback') ||
+    p.startsWith('/social/') ||
     p.startsWith('/admin') ||
     p.startsWith('/news/') ||
     p.startsWith('/terms-of-service') ||

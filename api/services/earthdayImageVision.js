@@ -64,14 +64,21 @@ function parseEarthdayVerdict(raw) {
 const VISION_PROMPT = `You pick cover photos for outdoor cleanup / volunteer events in a mobile app.
 
 REJECT (decision reject) if the image is mainly:
-- indoor room, museum, aquarium, zoo exhibit, taxidermy, diorama, display case
-- close-up specimen, bird banding, ring on leg, lab, microscope, herbarium sheet
+- indoor room, museum, aquarium, zoo exhibit, taxidermy, diorama, display case, shop interior
+- close-up animal, bird, fish, wildlife feeding, specimen in hand, bird banding, lab bench
+- seafood market, fish counter, restaurant, food on plate, dishes, kitchen, grocery store
+- portrait, selfie, sports game, basketball, climbing gym / artificial wall
+- city street, storefront, commercial sign, fish store sign, urban buildings as main subject
+- map, topographic chart, scanned document, book page, newspaper, infographic
+- ferry, ship, boat in harbor (unless wide coastal cleanup scene dominates)
 - portrait/selfie, food, document, map, satellite/orbit view, unrelated meme
 
-ACCEPT (decision accept) if it works as an outdoor event cover:
-- park, beach, shore, trail, forest, preserve, river/lake shore, landscape
-- outdoor cleanup, litter/trash bags, volunteers outside, coastal area
-- generic pleasant outdoor nature at the location (even without visible trash)
+ACCEPT (decision accept) ONLY if it works as an outdoor event cover:
+- wide outdoor scene: park, beach, shore, trail, forest, preserve, river/lake shore, landscape
+- outdoor cleanup, litter/trash bags, volunteers outside at a site, coastal area
+- generic pleasant outdoor nature at the location (wide shot, not animal close-up)
+
+Prefer landscape / place over animals or food. When unsure, reject.
 
 Reply ONLY valid JSON, no markdown:
 {"decision":"accept"}

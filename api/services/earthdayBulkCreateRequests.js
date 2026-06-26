@@ -18,11 +18,16 @@ const {
   localFilePathFromUploadUrl,
   purgeBadEarthdayImage,
 } = require('./earthdayImagePurge');
+const { saveJpegPhotoWithContentDedup } = require('../utils/uploadPhotoDedup');
 
 /** Ожидаемые чанки с фронта (по умолчанию 5); переопределение: EARTHDAY_BULK_CHUNK_MAX */
 const CHUNK_MAX = parseInt(process.env.EARTHDAY_BULK_CHUNK_MAX, 10) || 5;
 const MAX_IMAGE_BYTES = 1024 * 1024;
-const IMAGE_REUSE_DAYS = Math.max(1, parseInt(process.env.EARTHDAY_IMAGE_REUSE_DAYS, 10) || 8);
+/** Мягкий приоритет: сначала кэш с меньшим use_count и давно не использованный (не жёсткий запрет). */
+const IMAGE_REUSE_COOLDOWN_DAYS = Math.max(
+  0,
+  parseInt(process.env.EARTHDAY_IMAGE_REUSE_DAYS, 10) || 8
+);
 const WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES = Math.min(
   30,
   Math.max(1, parseInt(process.env.EARTHDAY_WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES, 10) || 5)
@@ -277,21 +282,26 @@ async function fetchImageBuffer(url) {
 }
 
 async function saveJpegToGallery(pool, userId, jpegBuf) {
-  ensurePhotosDir();
-  const filename = `${generateId()}.jpg`;
-  const filePath = path.join(uploadsDir, 'photos', filename);
-  await fs.promises.writeFile(filePath, jpegBuf);
-  const imageUrl = getFileUrl(filename, 'photos');
-  await pool.execute(
-    'INSERT INTO request_creation_gallery (image_url, uploaded_by) VALUES (?, ?)',
-    [imageUrl, userId]
+  const photosDir = ensurePhotosDir();
+  const { filename, deduplicated } = await saveJpegPhotoWithContentDedup(
+    photosDir,
+    jpegBuf,
+    () => `${generateId()}.jpg`
   );
+  const imageUrl = getFileUrl(filename, 'photos');
+  if (!deduplicated) {
+    await pool.execute(
+      'INSERT INTO request_creation_gallery (image_url, uploaded_by) VALUES (?, ?)',
+      [imageUrl, userId]
+    );
+  }
   return imageUrl;
 }
 
-/** Кандидаты уже отсортированы по score; скачиваем и сохраняем первый, прошедший vision. */
+/** Кандидаты по score; порядок перемешиваем и берём первый успешный после vision. */
 async function downloadFirstSuccessfulWikimediaImageToGallery(pool, userId, items, maxCandidates) {
   const slice = items.slice(0, Math.min(items.length, maxCandidates));
+  shuffleArrayInPlace(slice);
   for (const item of slice) {
     const url = item.full_url || item.thumb_url;
     if (!url || !isAllowedWikimediaImageUrl(url)) continue;
@@ -321,21 +331,21 @@ async function markCleanupAsUsed(pool, objectid) {
   return (result && result.affectedRows ? Number(result.affectedRows) : 0) > 0;
 }
 
-/** Кэш уже чистится скриптом purge + vision при скачивании; при reuse — только проверка, что файл на диске есть. */
-async function pickReusableCachedImageUrl(pool, cacheMatch, reuseDays) {
+/** Кэш: reuse сразу в bulk; приоритет — меньший use_count, затем давно не использованные. */
+async function pickReusableCachedImageUrl(pool, cacheMatch, reuseCooldownDays) {
+  const cooldown = Number.isFinite(reuseCooldownDays) ? reuseCooldownDays : 0;
   const [rows] = await pool.execute(
     `SELECT id, image_url
      FROM earthday_image_cache
      WHERE country = ?
        AND region_key = ?
        AND image_url LIKE '/uploads/%'
-       AND (
-         last_used_at IS NULL
-         OR last_used_at <= (UTC_TIMESTAMP() - INTERVAL ? DAY)
-       )
-     ORDER BY use_count ASC, id ASC
+     ORDER BY use_count ASC,
+       (last_used_at IS NOT NULL AND last_used_at > (UTC_TIMESTAMP() - INTERVAL ${cooldown} DAY)) ASC,
+       COALESCE(last_used_at, '1970-01-01') ASC,
+       id ASC
      LIMIT 20`,
-    [cacheMatch.country, cacheMatch.regionKey, reuseDays]
+    [cacheMatch.country, cacheMatch.regionKey]
   );
   if (!rows || rows.length === 0) return null;
 
@@ -428,6 +438,87 @@ function buildErrorDiagnostics(err) {
  * @param {string} userId
  * @param {object} body
  */
+/**
+ * Обложка для строки Earth Day: кэш региона или Wikimedia.
+ * preferFresh: true — пропустить кэш (восстановление после подмены survivor-фото).
+ */
+async function resolveEarthdayCoverImageUrl(pool, userId, row, options = {}) {
+  const preferFresh = Boolean(options.preferFresh);
+  const wikiLimitSingle = Math.min(
+    30,
+    Math.max(1, parseInt(options.wikiLimitSingle, 10) || 8)
+  );
+  const cacheMatch = buildCacheMatch(row);
+  let selectedImageUrl = null;
+  let selectedCacheId = null;
+  let source = null;
+
+  if (!preferFresh && cacheMatch) {
+    try {
+      const cached = await pickReusableCachedImageUrl(pool, cacheMatch, IMAGE_REUSE_COOLDOWN_DAYS);
+      if (cached) {
+        selectedImageUrl = cached.image_url;
+        selectedCacheId = cached.id;
+        source = 'cache';
+      }
+    } catch {
+      // fallback to Wikimedia
+    }
+  }
+
+  if (!selectedImageUrl) {
+    const attempts = buildWikimediaSearchAttempts(row);
+    if (attempts.length === 0) {
+      return {
+        error: true,
+        code: 'NO_SEARCH',
+        message: 'Недостаточно данных для поиска изображений (нет координат и текстовых полей места)',
+      };
+    }
+
+    const wiki = await fetchWikimediaPreviewByAttempts(attempts, wikiLimitSingle);
+    if (wiki.error) {
+      return { error: true, code: 'WIKIMEDIA', message: wiki.error };
+    }
+
+    const items = wiki.items || [];
+    if (items.length === 0) {
+      return {
+        error: true,
+        code: 'NO_COMMONS_IMAGES',
+        message: 'Wikimedia не вернул подходящих изображений',
+      };
+    }
+
+    const maxCandidates = Math.min(items.length, WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES);
+    selectedImageUrl = await downloadFirstSuccessfulWikimediaImageToGallery(pool, userId, items, maxCandidates);
+    if (!selectedImageUrl) {
+      return {
+        error: true,
+        code: 'IMAGE_PIPELINE',
+        message: 'Не удалось сжать и сохранить изображения из Wikimedia',
+      };
+    }
+
+    source = 'wikimedia';
+    if (cacheMatch) {
+      try {
+        await upsertCachedImage(pool, cacheMatch, selectedImageUrl);
+      } catch {
+        // non-fatal
+      }
+    }
+  }
+
+  return {
+    error: false,
+    imageUrl: selectedImageUrl,
+    cacheId: selectedCacheId,
+    source,
+    cacheMatch,
+  };
+}
+
 async function runEarthdayBulkCreateRequests(pool, userId, body) {
   const parsed = parseObjectIds(body);
   if (parsed.error) {
@@ -478,72 +569,18 @@ async function runEarthdayBulkCreateRequests(pool, userId, body) {
   const wikiLimitSingle = Math.max(18, WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES + 3);
 
   for (const j of validJobs) {
-    const cacheMatch = buildCacheMatch(j.row);
-    let selectedImageUrl = null;
-    let selectedCacheId = null;
-
-    if (cacheMatch) {
-      try {
-        const cached = await pickReusableCachedImageUrl(pool, cacheMatch, IMAGE_REUSE_DAYS);
-        if (cached) {
-          selectedImageUrl = cached.image_url;
-          selectedCacheId = cached.id;
-        }
-      } catch {
-        // Не прерываем батч на ошибке чтения кэша; просто идем в Wikimedia pipeline.
-      }
+    const resolved = await resolveEarthdayCoverImageUrl(pool, userId, j.row, { wikiLimitSingle });
+    if (resolved.error) {
+      errors.push({
+        objectid: j.objectid,
+        code: resolved.code,
+        message: resolved.message,
+      });
+      continue;
     }
-
-    if (!selectedImageUrl) {
-      const attempts = buildWikimediaSearchAttempts(j.row);
-      if (attempts.length === 0) {
-        errors.push({
-          objectid: j.objectid,
-          code: 'NO_SEARCH',
-          message: 'Недостаточно данных для поиска изображений (нет координат и текстовых полей места)'
-        });
-        continue;
-      }
-
-      const wiki = await fetchWikimediaPreviewByAttempts(attempts, wikiLimitSingle);
-      if (wiki.error) {
-        errors.push({
-          objectid: j.objectid,
-          code: 'WIKIMEDIA',
-          message: wiki.error
-        });
-        continue;
-      }
-
-      const items = wiki.items || [];
-      if (items.length === 0) {
-        errors.push({
-          objectid: j.objectid,
-          code: 'NO_COMMONS_IMAGES',
-          message: 'Wikimedia не вернул подходящих изображений'
-        });
-        continue;
-      }
-
-      const maxCandidates = Math.min(items.length, WIKIMEDIA_DOWNLOAD_MAX_CANDIDATES);
-      selectedImageUrl = await downloadFirstSuccessfulWikimediaImageToGallery(pool, userId, items, maxCandidates);
-      if (!selectedImageUrl) {
-        errors.push({
-          objectid: j.objectid,
-          code: 'IMAGE_PIPELINE',
-          message: 'Не удалось сжать и сохранить изображения из Wikimedia'
-        });
-        continue;
-      }
-
-      if (cacheMatch) {
-        try {
-          await upsertCachedImage(pool, cacheMatch, selectedImageUrl);
-        } catch {
-          // Ошибка кэширования не должна срывать создание заявок.
-        }
-      }
-    }
+    const selectedImageUrl = resolved.imageUrl;
+    const selectedCacheId = resolved.cacheId;
+    const cacheMatch = resolved.cacheMatch;
 
     try {
       const requestId = await createEventRequestFromExternalSource(pool, {
@@ -600,5 +637,7 @@ async function runEarthdayBulkCreateRequests(pool, userId, body) {
 
 module.exports = {
   runEarthdayBulkCreateRequests,
-  CHUNK_MAX
+  resolveEarthdayCoverImageUrl,
+  SELECT_ROW_COLUMNS,
+  CHUNK_MAX,
 };

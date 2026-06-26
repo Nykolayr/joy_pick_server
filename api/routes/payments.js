@@ -306,6 +306,11 @@ router.post('/complete-request', authenticate, [
       ['archived', performer_user_id, request_id]
     );
 
+    const { clearSocialShareForRequest } = require('../services/requestSocialShareService');
+    await clearSocialShareForRequest(request_id).catch((e) => {
+      console.warn('[payments] clearSocialShare on archive:', request_id, e.message);
+    });
+
     return success(res, {
       captured_payment_intents: capturedPaymentIntents,
       capture_errors: captureErrors.length > 0 ? captureErrors : undefined,

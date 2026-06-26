@@ -523,15 +523,15 @@
     "id": "review_creatable_types_ru",
     "message": "какие заявки можно создать?",
     "locale": "ru",
-    "answerMustContain": ["Waste", "Speed", "Event"],
-    "answerMustNotContain": ["техническая поддержка", "оборудован", "товар"]
+    "answerMustContain": ["Уборка мусора", "Моя экоуборка", "Субботник"],
+    "answerMustNotContain": ["техническая поддержка", "оборудован", "товар", "Waste", "Speed Cleanup"]
   },
   {
     "id": "review_speed_type_ru",
     "message": "что за заявка speed cleanup?",
     "locale": "ru",
-    "answerMustContain": ["Speed", "уборк"],
-    "answerMustNotContain": ["диск", "временных файлов", "оптимизац"]
+    "answerMustContain": ["Моя экоуборка", "уборк"],
+    "answerMustNotContain": ["диск", "временных файлов", "оптимизац", "Speed Cleanup"]
   },
   {
     "id": "review_map_content_ru",
@@ -544,7 +544,98 @@
     "id": "review_create_request_ru",
     "message": "Как создать заявку самому?",
     "locale": "ru",
-    "answerMustContain": ["«+»", "Waste"],
-    "answerMustNotContain": ["товар", "услуг", "контактная информация"]
+    "answerMustContain": ["«+»", "Уборка мусора"],
+    "answerMustNotContain": ["товар", "услуг", "контактная информация", "Waste Location"]
+  },
+  {
+    "id": "review_requests_purpose_ru",
+    "message": "Для чего заявки?",
+    "locale": "ru",
+    "answerMustContain": ["Уборка мусора", "Моя экоуборка", "Субботник"],
+    "answerMustNotContain": ["Waste", "Speed Cleanup", "Event", "флоу"]
+  },
+  {
+    "id": "review_app_purpose_types_ru",
+    "message": "Для чего это приложение?",
+    "locale": "ru",
+    "answerMustContain": ["Joy Pick", "уборк", "донат", "JoyCoins"],
+    "answerMustNotContain": ["Waste, Speed", "Waste Location", "не относится"]
+  },
+  {
+    "id": "review_request_work_meaning_ru",
+    "message": "Какую работу, какое выполнение?",
+    "locale": "ru",
+    "answerMustContain": ["Уборка мусора", "Моя экоуборка"],
+    "answerMustNotContain": ["Waste", "Speed Cleanup", "Event", "флоу", "Join"]
+  },
+  {
+    "id": "review_joycoin_definition_ru",
+    "message": "что такое joycoin",
+    "locale": "ru",
+    "answerMustContain": ["партнёр", "JoyCoins"],
+    "answerMustNotContain": ["бонус", "привилеги"]
+  },
+  {
+    "id": "review_volunteer_hours_how_ru",
+    "message": "как получать волонтерские часы?",
+    "locale": "ru",
+    "answerMustContain": ["Моя экоуборка", "принтер"],
+    "answerMustNotContain": ["не относится"]
+  },
+  {
+    "id": "review_commission_app_ru",
+    "message": "какую комиссию берет приложение?",
+    "locale": "ru",
+    "answerMustContain": ["7%", "инфраструктур"],
+    "answerMustNotContain": ["прибыль приложения"]
+  },
+  {
+    "id": "review_countries_worldwide_ru",
+    "message": "в каких странах работает приложение?",
+    "locale": "ru",
+    "answerMustContain": ["по всему миру", "Stripe"],
+    "answerMustNotContain": ["Россия и СНГ", "только Россия"]
+  },
+  {
+    "id": "review_how_to_use_app_ru",
+    "message": "как использовать приложение?",
+    "locale": "ru",
+    "answerMustContain": ["Профиль", "JoyCoins"],
+    "answerMustNotContain": ["не относится"]
+  },
+  {
+    "id": "review_create_requests_ru",
+    "message": "как создавать заявки?",
+    "locale": "ru",
+    "answerMustContain": ["Уборка мусора", "Присоединиться"],
+    "answerMustNotContain": ["не относится"]
+  },
+  {
+    "id": "review_reward_volunteer_park_ru",
+    "message": "как вознаградить волонтера в парке",
+    "locale": "ru",
+    "answerMustContain": ["донат", "Уборка мусора"],
+    "answerMustNotContain": ["JoyCoin"]
+  },
+  {
+    "id": "review_earn_no_commission_ru",
+    "message": "как зарабатывать деньги?",
+    "locale": "ru",
+    "answerMustContain": ["Stripe"],
+    "answerMustNotContain": ["7%"]
+  },
+  {
+    "id": "review_fraud_donation_scenario_ru",
+    "message": "что если я создам заявку на уборку территории, отправлю донейшен, а мошенники не уберутся, а просто кликнут что убрались и заберут деньги?",
+    "locale": "ru",
+    "answerMustContain": ["геолокац", "фото", "модерац"],
+    "answerMustNotContain": ["отзыв", "мониторинг активности"]
+  },
+  {
+    "id": "review_fraud_protection_measures_ru",
+    "message": "какие меры защиты от мошенничества есть в приложении?",
+    "locale": "ru",
+    "answerMustContain": ["геолокац", "фото", "модерац"],
+    "answerMustNotContain": ["отзыв", "мониторинг активности"]
   }
 ]

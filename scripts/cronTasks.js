@@ -13,6 +13,16 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
+async function clearSocialShareOnArchive(requestId) {
+  if (!requestId) return;
+  try {
+    const { clearSocialShareForRequest } = require('../api/services/requestSocialShareService');
+    await clearSocialShareForRequest(requestId);
+  } catch (e) {
+    console.warn('[cron] clearSocialShare:', requestId, e.message);
+  }
+}
+
 const pool = require('../api/config/database');
 const stripe = require('../api/config/stripe');
 const { 
@@ -87,6 +97,7 @@ async function autoCompleteSpeedCleanup() {
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
           ['archived', requestId]
         );
+        await clearSocialShareOnArchive(requestId);
 
         if (request.created_by) {
           try {
@@ -495,6 +506,7 @@ async function checkExecutorStaleness() {
         'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
         ['archived', request.id]
       );
+      await clearSocialShareOnArchive(request.id);
       await logCronAction(
         'executorStaleArchive',
         request.id,
@@ -747,6 +759,7 @@ async function deleteInactiveRequests(options = {}) {
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
           ['archived', request.id]
         );
+        await clearSocialShareOnArchive(request.id);
         await logCronAction(
           'deleteInactiveRequests',
           request.id,
@@ -1186,6 +1199,7 @@ async function checkEventAfterStartDate() {
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
           ['archived', request.id]
         );
+        await clearSocialShareOnArchive(request.id);
 
         await logCronAction(
           'checkEventAfterStartDate',
@@ -1302,6 +1316,7 @@ async function cleanupUnpaidRequests() {
           'UPDATE requests SET status = ?, updated_at = NOW() WHERE id = ?',
           ['archived', request.id]
         );
+        await clearSocialShareOnArchive(request.id);
 
         await logCronAction(
           'cleanupUnpaidRequests',

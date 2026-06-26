@@ -1,13 +1,17 @@
 const { REASON, messageKeyForCode, messageEnForCode } = require('./reasonCodes');
+const { messageForCodeAndLocale } = require('./integrityLocalizedMessages');
+const { looksLikePaymentInTitle } = require('./paymentInstructionsHeuristic');
 
-function issue(code, field, source = 'rules', extra = {}) {
+function issue(code, field, source = 'rules', extra = {}, locale) {
+  const localized = locale ? messageForCodeAndLocale(code, locale) : null;
   return {
     code,
     field,
     severity: 'block',
     source,
     message_key: messageKeyForCode(code),
-    message_en: messageEnForCode(code),
+    message_en: localized || messageEnForCode(code),
+    message: localized || messageEnForCode(code),
     ...extra,
   };
 }
@@ -70,27 +74,31 @@ function isGibberish(text, { isDescription = false } = {}) {
   return false;
 }
 
-function checkTextRequired({ name, description }) {
+function checkTextRequired({ name, description, locale }) {
   const issues = [];
   const n = String(name || '').trim();
   const d = String(description || '').trim();
 
-  if (!n) issues.push(issue(REASON.MISSING_NAME, 'name'));
-  if (!d) issues.push(issue(REASON.MISSING_DESCRIPTION, 'description'));
+  if (!n) issues.push(issue(REASON.MISSING_NAME, 'name', 'rules', {}, locale));
+  if (!d) issues.push(issue(REASON.MISSING_DESCRIPTION, 'description', 'rules', {}, locale));
 
   return issues;
 }
 
-function checkTextGibberishRules({ name, description }) {
+function checkTextGibberishRules({ name, description, locale }) {
   const issues = [];
   const n = String(name || '').trim();
   const d = String(description || '').trim();
 
-  if (n && isGibberish(n, { isDescription: false })) {
-    issues.push(issue(REASON.GIBBERISH_NAME, 'name'));
+  if (n) {
+    if (looksLikePaymentInTitle(n)) {
+      issues.push(issue(REASON.PAYMENT_IN_TITLE, 'name', 'rules', {}, locale));
+    } else if (isGibberish(n, { isDescription: false })) {
+      issues.push(issue(REASON.GIBBERISH_NAME, 'name', 'rules', {}, locale));
+    }
   }
   if (d && isGibberish(d, { isDescription: true })) {
-    issues.push(issue(REASON.GIBBERISH_DESCRIPTION, 'description'));
+    issues.push(issue(REASON.GIBBERISH_DESCRIPTION, 'description', 'rules', {}, locale));
   }
 
   return issues;
@@ -100,16 +108,21 @@ function checkTextGibberishRules({ name, description }) {
 async function checkText({ name, description, phase, locale, category }) {
   if (phase !== 'create') return [];
 
-  const issues = checkTextRequired({ name, description });
+  const issues = checkTextRequired({ name, description, locale });
   if (issues.some((i) => i.code === REASON.MISSING_NAME || i.code === REASON.MISSING_DESCRIPTION)) {
     return issues;
   }
 
-  issues.push(...checkTextGibberishRules({ name, description }));
+  issues.push(...checkTextGibberishRules({ name, description, locale }));
   if (issues.length > 0) return issues;
 
   const { isTextAiEnabled, checkTextWithAi } = require('./textAiCheck');
   if (!isTextAiEnabled()) return issues;
+
+  const n = String(name || '').trim();
+  const d = String(description || '').trim();
+  const nameGibberish = n ? isGibberish(n, { isDescription: false }) : false;
+  const descriptionGibberish = d ? isGibberish(d, { isDescription: true }) : false;
 
   const aiIssues = await checkTextWithAi({
     name,
@@ -117,6 +130,8 @@ async function checkText({ name, description, phase, locale, category }) {
     locale,
     category,
     phase,
+    nameGibberish,
+    descriptionGibberish,
   });
   if (aiIssues === null) {
     return issues;

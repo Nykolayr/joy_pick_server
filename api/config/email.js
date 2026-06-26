@@ -217,8 +217,41 @@ async function sendVerificationCode(email, code, options = {}) {
   }
 }
 
+/**
+ * Простое письмо (уведомления админу и т.п.).
+ * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
+ */
+async function sendPlainEmail({ to, subject, html, text, replyTo = null }) {
+  if (!transporter) {
+    return { success: false, error: 'Email transporter not configured' };
+  }
+  const recipients = (Array.isArray(to) ? to : [to])
+    .map((x) => String(x || '').trim())
+    .filter(Boolean);
+  if (!recipients.length) {
+    return { success: false, error: 'No recipients' };
+  }
+  const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@joypick.com';
+  const appName = process.env.APP_NAME || 'Joy Pick';
+  try {
+    const info = await transporter.sendMail({
+      from: `"${appName}" <${fromEmail}>`,
+      to: recipients.join(', '),
+      replyTo: replyTo || undefined,
+      subject: String(subject || '').trim() || appName,
+      html,
+      text
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('[email] sendPlainEmail failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   sendVerificationCode,
+  sendPlainEmail,
   getEmailLogoUrl,
   transporter,
 };

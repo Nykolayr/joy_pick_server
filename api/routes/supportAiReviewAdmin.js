@@ -16,6 +16,9 @@ const {
   listAgentQueue,
   agentCompleteTicket
 } = require('../services/supportAiReviewService');
+const { fetchOpenRouterKeyStatus } = require('../utils/openRouterKeyStatus');
+
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 
 const router = express.Router();
 
@@ -121,6 +124,40 @@ router.get(
     }
   }
 );
+
+/**
+ * GET /api/admin/support-ai-reviews/runtime-status
+ * Модель Support AI, баланс OpenRouter, флаги деградации (для шапки админки).
+ */
+router.get('/runtime-status', async (req, res) => {
+  try {
+    const openrouter = await fetchOpenRouterKeyStatus();
+    const lowBalance =
+      openrouter.limit_remaining != null &&
+      openrouter.limit != null &&
+      Number(openrouter.limit_remaining) < Math.max(1, Number(openrouter.limit) * 0.15);
+    return success(
+      res,
+      {
+        ai_support_enabled: String(process.env.AI_SUPPORT_ENABLED || '').trim() === '1',
+        openrouter_model: DEFAULT_OPENROUTER_MODEL,
+        openrouter_provider_only: String(process.env.OPENROUTER_PROVIDER_ONLY || '').trim() || null,
+        openrouter_provider_allow_fallbacks:
+          String(process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS || '').trim() || null,
+        openrouter,
+        warnings: [
+          !openrouter.configured ? 'OPENROUTER_API_KEY не задан' : null,
+          openrouter.error ? `OpenRouter: ${openrouter.error}` : null,
+          lowBalance ? 'Мало средств на ключе OpenRouter' : null
+        ].filter(Boolean),
+        checked_at: new Date().toISOString()
+      },
+      'Support AI runtime status'
+    );
+  } catch (err) {
+    return handleServiceError(res, err);
+  }
+});
 
 /**
  * GET /api/admin/support-ai-reviews/:id

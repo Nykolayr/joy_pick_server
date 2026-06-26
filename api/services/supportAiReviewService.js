@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { generateId } = require('../utils/uuid');
+const { maybeNotifySupportAiReviewPending, resetSupportAiReviewNotifyBatchIfEmpty } = require('./supportAiReviewNotify');
 
 const STATUSES = ['draft', 'pending_review', 'fixed'];
 
@@ -234,7 +235,11 @@ async function submitForReview(id, adminId, adminRemark) {
      WHERE id = ?`,
     [JSON.stringify(history), id]
   );
-  return getTicketById(id);
+  const detail = await getTicketById(id);
+  maybeNotifySupportAiReviewPending(detail, { reason: 'submitted' }).catch((e) => {
+    console.warn('[supportAiReview] notify submit failed:', e.message);
+  });
+  return detail;
 }
 
 async function reopenTicket(id, adminId, payload) {
@@ -283,7 +288,11 @@ async function reopenTicket(id, adminId, payload) {
      WHERE id = ?`,
     [JSON.stringify(history), id]
   );
-  return getTicketById(id);
+  const detail = await getTicketById(id);
+  maybeNotifySupportAiReviewPending(detail, { reason: 'reopened' }).catch((e) => {
+    console.warn('[supportAiReview] notify reopen failed:', e.message);
+  });
+  return detail;
 }
 
 async function deleteDraftTicket(id) {
@@ -367,6 +376,7 @@ async function agentCompleteTicket(id, payload) {
      WHERE id = ?`,
     [JSON.stringify(history), id]
   );
+  await resetSupportAiReviewNotifyBatchIfEmpty();
   return getTicketById(id);
 }
 

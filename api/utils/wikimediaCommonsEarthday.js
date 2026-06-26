@@ -24,10 +24,13 @@ function appendBitmapFiletypeFilter(srsearch) {
 const COMMONS_SEARCHABLE_MAX = 290;
 
 const COMMONS_AUGMENT_COMPACT =
-  ' (cleanup OR litter OR trash OR beach OR shore OR volunteer OR park OR trail OR landscape OR forest OR river OR lake OR nature OR wildlife)'
+  ' (cleanup OR litter OR trash OR beach OR shore OR park OR trail OR landscape OR forest OR river OR lake OR wetland OR coastline)'
   + ' -satellite -NASA -ISS -Landsat -MODIS -orthophoto -"View of Earth"'
   + ' -church -museum -hospital -Depot -Plaza -"Historic District" -Episcopal'
-  + ' -taxidermy -aquarium -specimen -indoor -diorama -banding';
+  + ' -taxidermy -aquarium -specimen -indoor -diorama -banding'
+  + ' -fish -fishing -fisherman -seafood -restaurant -market -food -dish -cuisine'
+  + ' -bird -pelican -duck -wildlife -zoo -animal'
+  + ' -map -topographic -document -scan -newspaper -basketball -sport -ferry -ship -boat -sign -storefront';
 
 function finalizeCommonsImageSearch(srsearch) {
   const raw = String(srsearch).trim();
@@ -53,7 +56,21 @@ function finalizeCommonsImageSearch(srsearch) {
     core = core.trim();
   }
 
-  const searchable = `${core}${aug}`.trim();
+  let searchable;
+  if (!core && nearPart) {
+    searchable = '';
+  } else {
+    searchable = `${core}${aug}`.trim();
+    if (searchable.length > COMMONS_SEARCHABLE_MAX) {
+      if (core.length >= COMMONS_SEARCHABLE_MAX) {
+        searchable = core.slice(0, COMMONS_SEARCHABLE_MAX).trim();
+      } else {
+        const augRoom = Math.max(0, COMMONS_SEARCHABLE_MAX - core.length);
+        searchable = `${core}${aug.slice(0, augRoom)}`.trim();
+      }
+    }
+  }
+
   const joined = [nearPart, searchable].filter(Boolean).join(' ');
   return appendBitmapFiletypeFilter(joined);
 }
@@ -130,6 +147,40 @@ function validEarthdayCoords(lat, lng) {
   return true;
 }
 
+function isLikelyWildlifeFoodSportsDocOrIrrelevantTitle(title) {
+  if (title == null || typeof title !== 'string') return false;
+  const t = title.replace(/^File:/i, '');
+
+  if (/\b(fish|fishes|fishing|fisherman|fishermen|angler|fly[\s_-]?fish|seafood|salmon|trout|bass|crab|shrimp|oyster|sardine|herring|mackerel|pelican|duckling|duck|goose|heron|egret|anhinga|cormorant|gull|seagull|bird|birds|ornithol|banding)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(restaurant|café|cafe|food|dish|dishes|meal|cuisine|kitchen|bakery|fish[\s_-]?and[\s_-]?chips|market|seafood\s+market|grocery|butcher|deli)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(basketball|nba|soccer|football|baseball|volleyball|athlete|sports)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(map|topographic|topo\s+map|chart|atlas|diagram|document|scan|newspaper|page\s+\d+|division\s+of\s+wildlife)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(ferry|catamaran|cruise\s+ship|cargo\s+ship|vessel|warship|yacht|harbor\s+sign|fish\s+store|storefront|signage)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(portrait|selfie|headshot|wedding|graduation)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(hand\s+holding|held\s+in\s+hand|in\s+palm|specimen\s+in\s+hand)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(climbing\s+wall|bouldering|artificial\s+rock)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(lab|laboratory|workbench|specimen\s+tray|catalog\s+number)\b/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 function isLikelyIndoorOrIrrelevantTitle(title) {
   if (title == null || typeof title !== 'string') return false;
   const t = title.replace(/^File:/i, '');
@@ -154,7 +205,8 @@ function scoreCommonsTitle(title) {
   if (/\b(volunteer|beach|shore|coast|park|trail|forest|river|lake|preserve|refuge|wetland)\b/.test(t)) {
     score += 25;
   }
-  if (/\b(landscape|nature|wildlife|habitat|outdoor)\b/.test(t)) score += 10;
+  if (/\b(landscape|habitat|outdoor|coastline|shoreline|meadow|prairie)\b/.test(t)) score += 15;
+  if (isLikelyWildlifeFoodSportsDocOrIrrelevantTitle(title)) score -= 110;
   if (isLikelySatelliteOrOrthoTitle(title)) score -= 120;
   if (isLikelyBuildingOrUrbanTitle(title)) score -= 80;
   if (isLikelyIndoorOrIrrelevantTitle(title)) score -= 100;
@@ -339,7 +391,8 @@ async function fetchWikimediaPreviewByAttempts(attempts, limit) {
         .filter(isRasterPhotoCommonsTitle)
         .filter((t) => !isLikelySatelliteOrOrthoTitle(t))
         .filter((t) => !isLikelyBuildingOrUrbanTitle(t))
-        .filter((t) => !isLikelyIndoorOrIrrelevantTitle(t));
+        .filter((t) => !isLikelyIndoorOrIrrelevantTitle(t))
+        .filter((t) => !isLikelyWildlifeFoodSportsDocOrIrrelevantTitle(t));
 
       if (titles.length === 0) continue;
 

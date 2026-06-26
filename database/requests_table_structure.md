@@ -50,6 +50,9 @@
 42. `participant_completions` - json
 43. `group_chat_id` - varchar(36)
 44. `private_chats` - json
+45. `social_share_url` - varchar(512) NULL — публичный URL share-страницы
+46. `social_share_created_at` - datetime NULL
+47. `social_share_og_image_url` - varchar(512) NULL — OG JPG 1200×630
 
 ## Порядок колонок в INSERT запросе
 

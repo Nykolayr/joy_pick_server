@@ -4,6 +4,43 @@ const { encodeChat } = require('gpt-tokenizer');
 const { SUPPORTED_LOCALES, translateOne } = require('./translateNews');
 
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+
+/** Подписи типов заявок как в joy_pick: меню «+» и Help (assets/l10n). */
+const REQUEST_TYPE_UI = {
+  ru: { waste: 'Уборка мусора', speed: 'Моя экоуборка', event: 'Субботник' },
+  en: { waste: 'Waste Location', speed: 'My eco-cleanup', event: 'Event' }
+};
+
+function supportLocaleKey(answerLanguage) {
+  return answerLanguage === 'ru' ? 'ru' : 'en';
+}
+
+function requestTypeUiLabel(kind, answerLanguage, { quoted = false } = {}) {
+  const label = REQUEST_TYPE_UI[supportLocaleKey(answerLanguage)][kind];
+  if (!label) return '';
+  return quoted && answerLanguage === 'ru' ? `«${label}»` : label;
+}
+
+function requestTypeUiLabelsList(answerLanguage) {
+  const quoted = answerLanguage === 'ru';
+  return {
+    waste: requestTypeUiLabel('waste', answerLanguage, { quoted }),
+    speed: requestTypeUiLabel('speed', answerLanguage, { quoted }),
+    event: requestTypeUiLabel('event', answerLanguage, { quoted })
+  };
+}
+
+/** Подписи кнопок как в joy_pick assets/l10n (request_join, request_start, request_review_title). */
+const SUPPORT_UI_BUTTONS = {
+  ru: { join: 'Присоединиться', unjoin: 'Отменить участие', start: 'Старт', review: 'Проверка' },
+  en: { join: 'Join', unjoin: 'Unjoin', start: 'Start', review: 'Review' }
+};
+
+function supportUiButton(key, answerLanguage) {
+  const locale = supportLocaleKey(answerLanguage);
+  const label = SUPPORT_UI_BUTTONS[locale][key];
+  return answerLanguage === 'ru' ? `«${label}»` : label;
+}
 const DEFAULT_TOP_K = Number(process.env.AI_SUPPORT_TOP_K || 5);
 // Держим таймаут заметно ниже клиентского (обычно 30s), чтобы вернуть fallback до обрыва запроса в приложении.
 const DEFAULT_TIMEOUT_MS = Number(process.env.AI_SUPPORT_TIMEOUT_MS || 12000);
@@ -1396,6 +1433,7 @@ const PINNED_PAYOUTS_TABS_CHUNK_ID = 'payout_page_available_and_history_tabs';
 const PINNED_WASTE_CREATOR_FIND_EXECUTOR_CHUNK_ID = 'waste_creator_how_find_executor_one_join';
 const PINNED_PLANT_TREE_APP_CHUNK_ID = 'product_qa_plant_tree_how_in_app_not_gardening';
 const PINNED_HOW_TO_WORK_WITH_APP_CHUNK_ID = 'product_how_to_work_with_app';
+const PINNED_REQUEST_TYPE_UI_LABELS_CHUNK_ID = 'product_request_type_ui_labels';
 const MAX_PINNED_KNOWLEDGE_CHUNKS = 8;
 
 function buildUserContextLinesForPinning(conversationContext) {
@@ -1560,6 +1598,12 @@ function shouldPinTypesFlowKnowledge(bundleLower) {
   );
 }
 
+function shouldPinRequestTypeUiLabelsKnowledge(bundleLower) {
+  return /типы?\s+заяв|какие\s+заявк|виды\s+заяв|для\s+чего\s+заявк|зачем\s+заявк|что\s+за\s+заявк|waste\s+location|speed\s+cleanup|моя\s+экоуборк|субботник|request\s+types?/i.test(
+    bundleLower
+  );
+}
+
 function shouldPinCreatorPaidRequestKnowledge(bundleLower) {
   return /заказать\s+уборк|оплатить\s+уборк|платн.{0,20}заявк|донатн.{0,20}заявк|создать\s+.*(платн|донатн).{0,20}заявк|can\s+i\s+pay\s+for\s+cleanup|paid\s+request|sponsor\s+cleanup|fund\s+cleanup/i.test(
     bundleLower
@@ -1638,6 +1682,10 @@ function collectPinnedKnowledgeChunkIds(mergedRagText, currentMessage) {
   }
   if (shouldPinTypesFlowKnowledge(bundle)) {
     ids.push(PINNED_TYPES_FLOW_CHUNK_ID);
+  }
+  if (shouldPinRequestTypeUiLabelsKnowledge(bundle)) {
+    ids.unshift(PINNED_REQUEST_TYPE_UI_LABELS_CHUNK_ID);
+    ids.unshift('requests_what_types_and_how_to_browse');
   }
   if (shouldPinCompanyKnowledge(bundle)) {
     ids.push(PINNED_COMPANY_ABOUT_CHUNK_ID);
@@ -1759,7 +1807,7 @@ function buildSystemInstruction(answerLanguage) {
       : 'Volunteer hours are a personal time tally; the printer icon in Profile gives a PDF certificate of trash-cleanup participation for third parties. Never tie hours tracking to donations or payout privileges.';
   const supportInAppFirstRule =
     answerLanguage === 'ru'
-      ? 'Это поддержка Joy Pick: ответ только по приложению из Knowledge — кнопки, экраны, типы заявок. «Как посадить дерево», «вывоз», «что за значок» — сразу шаги в Joy Pick (Event, Waste, Help). Не давай садоводство/бытовые советы (ямa, полив, мульча). Если вопрос явно не про приложение — одна фраза «не относится к Joy Pick», без лекции.'
+      ? 'Это поддержка Joy Pick: ответ только по приложению из Knowledge — кнопки, экраны, типы заявок. «Как посадить дерево», «вывоз», «что за значок» — сразу шаги в Joy Pick («Субботник», «Уборка мусора», Help). Не давай садоводство/бытовые советы (ямa, полив, мульча). Если вопрос явно не про приложение — одна фраза «не относится к Joy Pick», без лекции.'
       : 'Joy Pick support only: answer from Knowledge with app steps. “How to plant a tree”, haul-away, icons — give in-app actions (Event, Waste, Help). No horticulture or generic life advice. If truly off-topic, one short line—not about Joy Pick.';
   const conciseDirectAnswerRule =
     answerLanguage === 'ru'
@@ -1791,16 +1839,16 @@ function buildSystemInstruction(answerLanguage) {
     'For money/refund/hold questions, follow Knowledge about donation holds and donor refunds; never replace it with vague «money stays on the platform» or «depends on policy» if Knowledge says otherwise.',
     'Joy Pick does not accumulate user funds as a platform balance: Knowledge describes hold via Stripe and direct distribution after approval. For Event, payout logic follows the chain: participant submits result -> creator approves participant result -> moderation/approval -> split among eligible Stripe-connected participants per Knowledge.',
     answerLanguage === 'ru'
-      ? 'Критично: для Waste Location автор точки не получает донаты «за одно создание», если сам не был исполнителем уборки. Донаты идут исполнителю, который убрал и прошёл проверку. Не называйте роль «волонтёр» — в продукте «исполнитель» и «участник». Speed: создатель = исполнитель своей уборки. Event: организатор участвует; доли по Knowledge.'
+      ? 'Критично: для «Уборка мусора» автор точки не получает донаты «за одно создание», если сам не был исполнителем уборки. Донаты идут исполнителю, который убрал и прошёл проверку. Не называйте роль «волонтёр» — в продукте «исполнитель» и «участник». «Моя экоуборка»: создатель = исполнитель своей уборки. «Субботник»: организатор участвует; доли по Knowledge.'
       : 'Critical: for Waste Location the pin creator does not get donation payouts for creating the pin alone if they did not execute the cleanup. Donations go to the executor who cleaned and passed review. Do not call users «volunteers» as a role—use executor and participant. Speed Cleanup: creator is the performer. For payout timing/conditions, use chain by type: Waste/Event -> submit result -> creator acceptance -> moderation/approval -> payouts by Stripe rules; Speed -> submit own result -> moderation/approval -> payouts by Stripe rules.',
     answerLanguage === 'ru'
-      ? 'Для вопросов про конкретную сумму («какую сумму получу», «сколько денег получу») не отвечай расплывчато «зависит от случаев/факторов». Базовая формула: исполнитель/участник получает всю донатную сумму, которая положена ему по типу заявки, за вычетом **сначала** комиссии **Stripe**, **затем** инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»); для Event с несколькими участниками сумма сначала делится по правилам заявки (равные доли среди участников с подключённым Stripe), затем применяются комиссии.'
+      ? 'Для вопросов про конкретную сумму («какую сумму получу», «сколько денег получу») не отвечай расплывчато «зависит от случаев/факторов». Базовая формула: исполнитель/участник получает всю донатную сумму, которая положена ему по типу заявки, за вычетом **сначала** комиссии **Stripe**, **затем** инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»); для «Субботник» с несколькими участниками сумма сначала делится по правилам заявки (равные доли среди участников с подключённым Stripe), затем применяются комиссии.'
       : 'For concrete amount questions ("how much will I get"), do not answer vaguely with "it depends". Base formula: executor/participant gets the donation amount assigned to them by request type **minus Stripe processing first**, **then** the Joy Pick infrastructure fee (~7%, not “app profit”); for Event with multiple participants, split by request rules first (equal shares among Stripe-connected participants), then fees apply.',
     answerLanguage === 'ru'
-      ? 'Для вопросов «когда придёт выплата» и «почему не пришла выплата» отвечай чеклистом причин, а не общими фразами: (1) сдан ли результат; (2) есть ли подтверждение создателем для Waste/Event; (3) пройдена ли модерация; (4) прошло ли окно 7 дней от первой сдачи; (5) подключён ли Stripe; (6) есть ли сумма в Profile -> Ваши выплаты (Available).'
+      ? 'Для вопросов «когда придёт выплата» и «почему не пришла выплата» отвечай чеклистом причин, а не общими фразами: (1) сдан ли результат; (2) есть ли подтверждение создателем для уборки мусора/субботника; (3) пройдена ли модерация; (4) прошло ли окно 7 дней от первой сдачи; (5) подключён ли Stripe; (6) есть ли сумма в Profile -> Ваши выплаты (Available).'
       : 'For “when payout arrives” and “why payout did not arrive” questions, answer with a concrete checklist, not generic wording: (1) result submitted; (2) creator acceptance for Waste/Event; (3) moderation passed; (4) 7-day window from first submission elapsed; (5) Stripe connected; (6) amount visible in Profile -> Your payouts (Available).',
     answerLanguage === 'ru'
-      ? 'Для вопросов по стадии («что дальше», «я уже присоединился/выполняю/сдал/жду») отвечай только следующим шагом текущей стадии и не предлагай шаги из прошлых стадий. Карта по стадиям: joined_not_started -> начать выполнение; in_progress -> сдать результат; submitted_waiting_creator -> ждать/получить подтверждение создателя (Waste/Event); submitted_waiting_moderation -> ждать модерацию; approved_waiting_payout_window -> ждать окно выплат и смотреть «Ваши выплаты»; rejected -> исправить и пересдать по доступным действиям; timeout_auto_released -> снова присоединиться к доступной заявке.'
+      ? 'Для вопросов по стадии («что дальше», «я уже присоединился/выполняю/сдал/жду») отвечай только следующим шагом текущей стадии и не предлагай шаги из прошлых стадий. Карта по стадиям: joined_not_started -> начать выполнение; in_progress -> сдать результат; submitted_waiting_creator -> ждать/получить подтверждение создателя (уборка мусора/субботник); submitted_waiting_moderation -> ждать модерацию; approved_waiting_payout_window -> ждать окно выплат и смотреть «Ваши выплаты»; rejected -> исправить и пересдать по доступным действиям; timeout_auto_released -> снова присоединиться к доступной заявке.'
       : 'For stage questions ("what next", "I already joined/in progress/submitted/waiting"), answer only with the immediate next step for the current stage and do not suggest earlier-stage actions. Stage map: joined_not_started -> start work; in_progress -> submit result; submitted_waiting_creator -> wait for/get creator acceptance (Waste/Event); submitted_waiting_moderation -> wait for moderation; approved_waiting_payout_window -> wait payout window and check Your payouts; rejected -> fix and resubmit per available actions; timeout_auto_released -> re-join an available request.',
     answerLanguage === 'ru'
       ? 'Если спрашивают «присоединился к уборке мусора и забыл / не пришёл»: по Knowledge — автоматическое снятие исполнителя после дедлайна с join (на сервере 24 часа), заявка снова new и снова в выдаче; создатель может снять исполнителя вручную; отдельно есть долгий сценарий 7+1 суток от created_at для зависшего inProgress. Не утверждайте, что «участие ни на что не влияет». Не предлагайте донат как замену физической уборки.'
@@ -1809,7 +1857,7 @@ function buildSystemInstruction(answerLanguage) {
       ? 'На вопросы «что значит значок/цвет рамки/чип» — объясни прямо в ответе по тексту Help из Knowledge (без «откройте Help»).'
       : 'For “what does this icon/border/chip mean” questions, explain directly in the reply using Help Knowledge—do not send the user to open Help.',
     answerLanguage === 'ru'
-      ? 'На «как посадить дерево»: сразу шаги — «+» → Event → «Посадка дерева»; иконка дерева на карточке субботника. Без фраз «не садоводство/не инструкция». Не путай с Waste Location — только если пользователь спрашивает про тип заявки.'
+      ? 'На «как посадить дерево»: сразу шаги — «+» → «Субботник» → «Посадить дерево»; иконка дерева на карточке субботника. Без фраз «не садоводство/не инструкция». Не путай с «Уборка мусора», если пользователь не спрашивает про тот тип.'
       : 'For “how to plant a tree”: give steps—+ → Event → Plant tree; tree icon on the Event card. No “not gardening” disclaimers.',
     answerLanguage === 'ru'
       ? 'На «как работать с приложением» / «как пользоваться»: вход, профиль (язык, данные), главная карта/список, «+» и типы заявок, Присоединиться и фото, донаты/Stripe, Новости, Поделиться, справка волонтёрских часов — конкретно, без общих «ознакомьтесь с функциями».'
@@ -1826,17 +1874,17 @@ function buildSystemInstruction(answerLanguage) {
       : 'On follow-ups, answer the NEW question first; do not restate the full prior reply. If the new question is only about money/donations/Stripe, do not repeat the «nobody came—finish alone» paragraph; answer payments concisely (conditions in one or two short sentences).',
     'Use Conversation context to resolve short follow-ups (yes/no, «а где?», «через профиль?»): they refer to the previous topic unless the user clearly switches subject.',
     answerLanguage === 'ru'
-      ? 'Если в Conversation уже шли про Event/субботник, а новый короткий вопрос про деньги («получу?», «а деньги?») — отвечайте по цепочке Event: сдача, одобрение создателя, модерация, донаты, Stripe; не начинайте с ответа про Waste Location «не пришёл за 24 часа», если пользователь не переключился на уборку мусора.'
+      ? 'Если в Conversation уже шли про субботник, а новый короткий вопрос про деньги («получу?», «а деньги?») — отвечайте по цепочке субботника: сдача, одобрение создателя, модерация, донаты, Stripe; не начинайте с ответа про «Уборка мусора» «не пришёл за 24 часа», если пользователь не переключился на уборку мусора.'
       : 'If Conversation was about Event/subbotnik and the user asks a short money follow-up, answer with the Event chain (submission, creator approval, moderation, donations, Stripe); do not lead with the Waste Location 24-hour no-show rule unless they clearly switched to trash-pin cleanups.',
     answerLanguage === 'ru'
       ? 'Для Event вопрос «никто не пришёл / не придут участники» не равен «заявка не выполнена — донаты всем вернутся»: создатель может выполнить работу в приложении сам; возврат с холда — про реально невыполненную заявку по правилам, не про низкую явку.'
       : 'For Event questions, «nobody came / no volunteers» is not the same as «unfulfilled—donors get refunded»: the creator can still complete the in-app work alone; donor hold release applies to truly unfulfilled requests per rules, not low attendance.',
     answerLanguage === 'ru'
-      ? 'Если пользователь спрашивает «как зарабатывать / как получать деньги в приложении», отвечай структурно по 3 типам: Waste Location (исполнитель: сдача результата -> подтверждение создателем -> модерация -> выплата при Stripe), Speed Cleanup (исполнитель/создатель в одном лице: сдача -> модерация -> выплата при Stripe), Event (участник: сдача результата -> подтверждение создателем -> модерация -> доля при Stripe). Не пропускай шаг подтверждения создателем для Waste/Event.'
+      ? 'Если пользователь спрашивает «как зарабатывать / как получать деньги в приложении», отвечай структурно по 3 типам: «Уборка мусора» (исполнитель: сдача -> подтверждение создателем -> модерация -> выплата при Stripe), «Моя экоуборка» (создатель и исполнитель в одном лице: сдача -> модерация -> выплата при Stripe), «Субботник» (участник: сдача -> подтверждение создателем -> модерация -> доля при Stripe). Не пропускай шаг подтверждения создателем для уборки мусора и субботника.'
       : 'If the user asks how to earn/get money in the app, answer by all 3 request types: Waste Location (executor: submit result -> creator acceptance -> moderation -> payout with Stripe), Speed Cleanup (creator=performer: submit -> moderation -> payout with Stripe), Event (participant: submit result -> creator acceptance -> moderation -> share with Stripe). Do not omit creator acceptance for Waste/Event.',
     answerLanguage === 'ru'
-      ? 'Если вопрос про различия типов заявок (Waste/Speed/Event), отвечай строго по типам и ролям (создатель/исполнитель/участник), не смешивай шаги между типами. Для Event не подставляй правило Waste «24 часа join», а для Waste не подставляй event-цепочку с групповым закрытием.'
-      : 'If asked about differences between request types (Waste/Speed/Event), answer strictly by type and role (creator/executor/participant), and do not mix steps across types. Do not inject Waste 24h join timeout into Event answers, and do not inject Event group-close chain into Waste answers.',
+      ? 'Если вопрос про различия типов заявок, отвечай строго по типам и ролям (создатель/исполнитель/участник), не смешивай шаги между типами. В русском ответе называй типы только как в меню «+» приложения: «Уборка мусора», «Моя экоуборка», «Субботник» — не пиши Waste, Speed, Event, Waste Location, Speed Cleanup, слово «флоу». Для «Субботник» не подставляй правило «24 часа join» от уборки мусора; для уборки мусора не подставляй цепочку группового закрытия субботника.'
+      : 'If asked about differences between request types, answer strictly by type and role (creator/executor/participant), and do not mix steps across types. Use UI labels: Waste Location, My eco-cleanup, Event. Do not inject Waste 24h join timeout into Event answers, and do not inject Event group-close chain into Waste answers.',
     answerLanguage === 'ru'
       ? 'Если пользователь спрашивает про УЖЕ существующую заявку («по заявке…», «в заявке…», «что можно сделать в этой заявке»), отвечай по действиям на экране деталей этой заявки (доступные кнопки и роли) и НЕ предлагай создание новой заявки, если пользователь явно не спрашивал «как создать».'
       : 'If user asks about an ALREADY existing request ("in this request", "what can be done in this request"), answer with actions available on that request details screen (buttons and roles), and do NOT suggest creating a new request unless the user explicitly asked how to create one.',
@@ -1847,13 +1895,13 @@ function buildSystemInstruction(answerLanguage) {
       ? 'Используй также подсказку стадии из промпта (не взялся / присоединился но не начал / выполняет / сдал и ждёт / одобрено / отклонено и т.д.). Не предлагай действия из предыдущей стадии: если стадия «выполняет», не предлагай «присоединиться»; если стадия «сдал», не предлагай «выполнить задачу заново», если пользователь это явно не просил.'
       : 'Use the stage hint from the prompt as well (not joined / joined not started / in progress / submitted waiting / approved / rejected, etc.). Do not suggest actions from earlier stages: if stage is in_progress, do not suggest joining; if stage is submitted, do not suggest taking/starting again unless explicitly asked.',
     answerLanguage === 'ru'
-      ? 'Если роль в подсказке — «исполнитель_в_процессе», считай, что пользователь уже взял задачу: не предлагай «стать исполнителем», «присоединиться» или «взять заявку». Отвечай следующими шагами этой стадии: завершение, сдача результата, подтверждение создателем (для Waste/Event), модерация, условия выплат.'
+      ? 'Если роль в подсказке — «исполнитель_в_процессе», считай, что пользователь уже взял задачу: не предлагай «стать исполнителем», «присоединиться» или «взять заявку». Отвечай следующими шагами этой стадии: завершение, сдача результата, подтверждение создателем (для уборки мусора/субботника), модерация, условия выплат.'
       : 'If role hint is executor_in_progress, user already took the task: do not suggest becoming executor, joining, or taking the request. Answer with next-stage steps only: completion submission, moderation, payout conditions.',
     answerLanguage === 'ru'
-      ? 'Если пользователь спрашивает «можно ли заказать уборку и заплатить / сделать платную(донатную) заявку», трактуй это как роль создателя: ответ «да, можно создать донатную/платную заявку (обычно Waste/Event)». Затем кратко: донаты выплачиваются исполнителю/участникам по правилам после проверки/модерации и при Stripe. Не уводи ответ в сценарий «как исполнителю получить выплату».'
+      ? 'Если пользователь спрашивает «можно ли заказать уборку и заплатить / сделать платную(донатную) заявку», трактуй это как роль создателя: ответ «да, можно создать донатную/платную заявку (обычно «Уборка мусора» или «Субботник»)». Затем кратко: донаты выплачиваются исполнителю/участникам по правилам после проверки/модерации и при Stripe. Не уводи ответ в сценарий «как исполнителю получить выплату».'
       : 'If the user asks whether they can order cleanup and pay (create a paid/donation request), treat it as creator intent: answer yes, they can create a paid/donation request (typically Waste/Event). Then briefly note donations are paid to executor/participants per review/moderation and Stripe rules. Do not pivot into performer payout instructions.',
     answerLanguage === 'ru'
-      ? 'Уточнение про Stripe в платной/донатной заявке: чтобы создать платёжный донат/донатную заявку, у создателя должен быть подключён Stripe. Выплата донатов после проверки/модерации идёт получателю работы (исполнителю Waste/Speed или участнику Event), и у этого получателя тоже должен быть подключён Stripe. Не путай Stripe создателя (для создания/оплаты) и Stripe получателя (для вывода выплат).'
+      ? 'Уточнение про Stripe в платной/донатной заявке: чтобы создать платёжный донат/донатную заявку, у создателя должен быть подключён Stripe. Выплата донатов после проверки/модерации идёт получателю работы (исполнителю «Уборка мусора»/«Моя экоуборка» или участнику «Субботник»), и у этого получателя тоже должен быть подключён Stripe. Не путай Stripe создателя (для создания/оплаты) и Stripe получателя (для вывода выплат).'
       : 'Stripe rule for paid/donation requests: creator needs connected Stripe to create/pay a donation request. After review/moderation, payouts go to the work recipient (Waste/Speed executor or Event participant), and that recipient also needs connected Stripe. Do not confuse creator Stripe (for creating/paying) with recipient Stripe (for receiving payouts).',
     'Do not invent screens, buttons, or app behavior.',
     answerLanguage === 'ru'
@@ -1866,10 +1914,10 @@ function buildSystemInstruction(answerLanguage) {
       ? 'Закрытие ответа: не используй длинные шаблоны вроде «если у вас есть дополнительные вопросы, пожалуйста, спрашивайте» — максимум очень короткая нейтральная фраза или без неё.'
       : 'Do not end with long templates like «If you have additional questions, please ask»—at most a very short neutral line or omit.',
     answerLanguage === 'ru'
-      ? 'Любой ответ про донаты, кто получит деньги, донейшен или выплату по донату: одним коротким предложением уточни, что выплата на карту возможна только при полностью подключённом Stripe Connect у получателя. Для Event (субботник) получателей несколько: донаты делятся между участниками по правилам заявки; не формулируй ответ так, будто всю сумму получает один человек. Для Waste Location после уборки донаты получает один исполнитель. Если вопрос — простое «кто получит» именно про Waste без спора про создателя, не добавляй отдельное предложение, что автор точки «не получает только за создание» — достаточно исполнителя и Stripe.'
+      ? 'Любой ответ про донаты, кто получит деньги, донейшен или выплату по донату: одним коротким предложением уточни, что выплата на карту возможна только при полностью подключённом Stripe Connect у получателя. Для «Субботник» получателей несколько: донаты делятся между участниками по правилам заявки; не формулируй ответ так, будто всю сумму получает один человек. Для «Уборка мусора» после уборки донаты получает один исполнитель. Если вопрос — простое «кто получит» именно про уборку мусора без спора про создателя, не добавляй отдельное предложение, что автор точки «не получает только за создание» — достаточно исполнителя и Stripe.'
       : 'For any donation, who-gets-paid, or donation-payout question: add one short sentence that card payout requires a fully connected Stripe Connect profile for the recipient. For Event (subbotnik), multiple recipients split donations per app rules—do not phrase it as if one person receives everything. For Waste Location after cleanup, one executor receives the donations. For a plain «who gets it» Waste question with no creator dispute, do not add an extra sentence that the pin creator is not paid just for creating—executor plus Stripe is enough.',
     answerLanguage === 'ru'
-      ? 'Если пользователь явно про вывоз мусора с территории (вывезли, вывезти, вывоз): используй Knowledge про опцию «Только вывоз мусора» / индикатор грузовика при создании Waste Location; не ограничивайся только цепочкой «присоединился — убрал на месте», когда смысл — именно вывоз. Не уводи ответ в «поделиться заявкой», если вопрос только про вывоз.'
+      ? 'Если пользователь явно про вывоз мусора с территории (вывезли, вывезти, вывоз): используй Knowledge про опцию «Только вывоз мусора» / индикатор грузовика при создании «Уборка мусора»; не ограничивайся только цепочкой «присоединился — убрал на месте», когда смысл — именно вывоз. Не уводи ответ в «поделиться заявкой», если вопрос только про вывоз.'
       : 'When the user clearly means hauling trash away (haul, haul-away): use Knowledge about Trash pickup only / truck indicator on Waste Location creation; do not answer only with join-and-clean-on-site if they mean haul-away. Do not pivot to Share request if the question is only about haul-away.',
     answerLanguage === 'ru'
       ? 'Если спрашивают про «нет Stripe / нет Страйп в стране»: отдели невозможность денежных выплат (Stripe Connect в профиле) от участия без денег — уборки, точки на карте, JoyCoins, учёт времени, шаринг заявок. Без морализаторства про сторонние сервисы и без хвостов «если остались вопросы — пишите в поддержку».'
@@ -1932,7 +1980,7 @@ function detectRequestTypeAlias(value, locale) {
   }
   const ruEvent = ['субботник', 'событие', 'ивент', 'мероприятие', 'event'];
   const ruWaste = ['уборка мусора', 'мусор', 'waste', 'waste location'];
-  const ruSpeed = ['быстрая уборка', 'speed cleanup', 'speed', 'быстрая'];
+  const ruSpeed = ['моя экоуборка', 'экоуборк', 'быстрая уборка', 'speed cleanup', 'speed', 'быстрая'];
   const enEvent = ['event', 'cleanup event', 'subbotnik'];
   const enWaste = ['waste cleanup', 'waste', 'garbage', 'trash cleanup'];
   const enSpeed = ['speed cleanup', 'quick cleanup'];
@@ -2182,22 +2230,27 @@ function isExistingRequestActionsQuestion(question) {
 function buildExistingRequestActionsAnswer(roleHint, answerLanguage) {
   const isRu = answerLanguage === 'ru';
   const { role, requestType } = parseRoleHintMeta(roleHint);
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
+  const join = supportUiButton('join', answerLanguage);
+  const unjoin = supportUiButton('unjoin', answerLanguage);
+  const start = supportUiButton('start', answerLanguage);
+  const review = supportUiButton('review', answerLanguage);
 
   if (isRu) {
     if (requestType === 'waste_location') {
       return role === 'создатель заявки'
-        ? 'Для уже существующей Waste Location заявки в карточке доступны действия управления текущей заявкой (например, контроль исполнителя/статуса и донаты). Новую заявку создавать не нужно.'
-        : 'Для уже существующей Waste Location заявки в карточке обычно доступны действия исполнителя: присоединиться/отменить участие, выполнить задачу и сдать результат, а также донат. Это про текущую заявку, не про создание новой.';
+        ? `Для уже существующей заявки ${waste} в карточке доступны действия управления текущей заявкой (например, контроль исполнителя/статуса и донаты). Новую заявку создавать не нужно.`
+        : `Для уже существующей заявки ${waste} в карточке обычно доступны действия исполнителя: ${join}/${unjoin}, выполнить задачу и сдать результат, а также донат. Это про текущую заявку, не про создание новой.`;
     }
     if (requestType === 'speed_cleanup') {
-      return 'Для уже существующей Speed Cleanup заявки действия идут в текущей карточке: Start, выполнение по таймеру, сдача результата и ожидание модерации, плюс донат для остальных ролей. Новую заявку создавать не нужно.';
+      return `Для уже существующей заявки ${speed} действия идут в текущей карточке: ${start}, выполнение по таймеру, сдача результата и ожидание модерации, плюс донат для остальных ролей. Новую заявку создавать не нужно.`;
     }
     if (requestType === 'event') {
       return role === 'создатель заявки'
-        ? 'Для уже существующего Event в карточке создателя доступны действия по текущему событию: Review участников, закрытие события и перевод в модерацию. Это действия в текущей заявке, не создание новой.'
-        : 'Для уже существующего Event в карточке доступны действия участника: Join/Unjoin, выполнить задачу, сдать результат, затем ожидать Review создателя и модерацию. Это про текущую заявку, не про создание новой.';
+        ? `Для уже существующего ${event} в карточке создателя доступны действия по текущему событию: ${review} участников, закрытие события и перевод в модерацию. Это действия в текущей заявке, не создание новой.`
+        : `Для уже существующего ${event} в карточке доступны действия участника: ${join}/${unjoin}, выполнить задачу, сдать результат, затем ждать ${review} создателя и модерацию. Это про текущую заявку, не про создание новой.`;
     }
-    return 'Для уже существующей заявки действия выполняются в карточке этой заявки (доступные кнопки зависят от типа и роли). Если уточните тип (Waste Location / Speed Cleanup / Event), дам точный список действий по текущей заявке без шага создания.';
+    return `Для уже существующей заявки действия выполняются в карточке этой заявки (доступные кнопки зависят от типа и роли). Если уточните тип (${waste}, ${speed} или ${event}), дам точный список действий по текущей заявке без шага создания.`;
   }
 
   if (requestType === 'waste_location') {
@@ -2234,27 +2287,28 @@ function buildDeterministicAmountAnswer(question, roleHint, answerLanguage) {
   const isRu = answerLanguage === 'ru';
   const { role, requestType } = parseRoleHintMeta(roleHint);
   const foreign = isForeignRequestQuestion(question);
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
 
   if (isRu) {
     if (role === 'донатер') {
-      return 'Если вы донатер, вы не получаете выплату по заявке. Выплату получает исполнитель (или участник Event) за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+      return `Если вы донатер, вы не получаете выплату по заявке. Выплату получает исполнитель (или участник ${event}) за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).`;
     }
     if (foreign) {
       if (requestType === 'event') {
-        return 'По чужой Event-заявке вы получаете свою долю донатов (доля делится между участниками, которые выполнили и сдали работу по правилам), за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+        return `По чужой заявке ${event} вы получаете свою долю донатов (доля делится между участниками, которые выполнили и сдали работу по правилам), за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).`;
       }
       if (requestType === 'waste_location') {
-        return 'По чужой Waste Location-заявке исполнитель получает всю донатную сумму по этой заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+        return `По чужой заявке ${waste} исполнитель получает всю донатную сумму по этой заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).`;
       }
-      return 'По чужой заявке возможны только Waste Location или Event: для Waste исполнитель получает всю донатную сумму за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»); для Event участник получает свою долю донатов за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+      return `По чужой заявке возможны только ${waste} или ${event}: для уборки мусора исполнитель получает всю донатную сумму за вычетом комиссий; для субботника участник получает свою долю донатов за вычетом комиссий.`;
     }
     if (requestType === 'speed_cleanup') {
-      return 'Для Speed Cleanup (своя заявка) вы получаете всю донатную сумму по заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+      return `Для ${speed} (своя заявка) вы получаете всю донатную сумму по заявке за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).`;
     }
     if (requestType === 'event') {
-      return 'Для Event вы получаете свою долю донатов за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).';
+      return `Для ${event} вы получаете свою долю донатов за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»).`;
     }
-    return 'Вы получаете всю сумму донатов, положенную вам по типу заявки, за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»). Для Event это доля участника.';
+    return `Вы получаете всю сумму донатов, положенную вам по типу заявки, за вычетом комиссии Stripe и инфраструктурного сбора Joy Pick (~7%, не «прибыль приложения»). Для ${event} это доля участника.`;
   }
 
   if (role === 'donor') {
@@ -2312,7 +2366,8 @@ function isWasteCreateCleanupOrHaulQuestion(question) {
   const createIntent =
     /(можно|можно\s+ли|can\s+i|how\s+to).{0,40}(создат|create|сделать|добавить)/i.test(q) ||
     /создат.{0,40}(заявк|waste)/i.test(q) ||
-    /create.{0,30}(request|waste)/i.test(q);
+    /create.{0,30}(request|waste)/i.test(q) ||
+    /хочу\s+чтобы.{0,48}(убрал|убрали|почистил|прибрал)|want.{0,30}(clean|cleanup)/i.test(q);
   if (!createIntent) return false;
   const cleanup = /убрал|уборк|парк|на\s+месте|clean\s*up|pick\s+up\s+trash/i.test(q);
   const haul = /вывез|вывоз|haul|pickup\s+only|только\s+вывоз|грузовик|trash\s+pickup/i.test(q);
@@ -2320,15 +2375,18 @@ function isWasteCreateCleanupOrHaulQuestion(question) {
 }
 
 function buildWasteCreateCleanupOrHaulAnswer(answerLanguage) {
+  const { waste, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'Да. Создайте заявку Waste Location: отметьте точку на карте (парк подходит) и опишите задачу. ' +
+      `Да. Создайте заявку ${waste}: отметьте точку на карте (парк подходит) и опишите задачу. ` +
       'Обычно это уборка на месте — к заявке может присоединиться один исполнитель. ' +
+      'Чтобы привлечь волонтёров, укажите сумму доната при создании — заявка с вознаграждением заметнее, деньги получит исполнитель после проверки. ' +
+      `Для групповой уборки в назначенное время создайте ${event}. ` +
       'Если нужен только вывоз без уборки, при создании включите «Только вывоз мусора» (индикатор грузовика).'
     );
   }
   return (
-    'Yes. Create a Waste Location request: pin the spot on the map (a park is fine) and describe the task. ' +
+    `Yes. Create a ${waste} request: pin the spot on the map (a park is fine) and describe the task. ` +
     'Usually someone joins and cleans on site (one executor per request). ' +
     'For haul-away only, turn on Trash pickup only (truck indicator) when creating the request.'
   );
@@ -2382,15 +2440,16 @@ function isPlantTreeInAppQuestion(question) {
 }
 
 function buildPlantTreeInAppAnswer(answerLanguage) {
+  const { event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'Создайте субботник (Event): главная вкладка → «+» → Event, укажите место и время и включите «Посадка дерева». ' +
+      `Создайте ${event}: главная вкладка → «+» → ${event}, укажите место и время и включите «Посадить дерево». ` +
       'На карточке такого события на карте и в списке будет иконка дерева в белом круге. ' +
       'Участники открывают заявку и нажимают «Присоединиться».'
     );
   }
   return (
-    'Create an Event: home tab → + → Event, set place and time, enable Plant tree. ' +
+    `Create an ${event}: home tab → + → ${event}, set place and time, enable Plant tree. ` +
     'The request card shows a tree icon in a white circle on the map and list. ' +
     'Participants open the card and tap Join.'
   );
@@ -2408,14 +2467,15 @@ function isWasteHaulTerritoryHelpQuestion(question) {
 }
 
 function buildWasteHaulTerritoryHelpAnswer(answerLanguage) {
+  const { waste } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'Да, приложение может помочь с вывозом мусора с участка. Создайте заявку на уборку мусора (Waste Location) и в форме включите галочку «Только вывоз мусора» — ' +
+      `Да, приложение может помочь с вывозом мусора с участка. Создайте заявку ${waste} и в форме включите галочку «Только вывоз мусора» — ` +
       'тогда к заявке может присоединиться исполнитель именно для вывоза. После проверки и модерации он может получить денежные донаты по правилам приложения.'
     );
   }
   return (
-    'Yes, the app can help with hauling trash from your property. Create a Waste Location request and turn on Trash pickup only — ' +
+    `Yes, the app can help with hauling trash from your property. Create a ${waste} request and turn on Trash pickup only — ` +
     'then an executor can join for haul-away. After review and moderation they may receive monetary donations per app rules.'
   );
 }
@@ -2426,6 +2486,8 @@ function isHowToWorkWithAppQuestion(question) {
     /как\s+работать\s+(с|в)\s+приложен|как\s+работать\s+в\s+joy|how\s+to\s+work\s+with\s+(the\s+)?app|how\s+do\s+i\s+work\s+with\s+(the\s+)?app/i.test(
       q
     ) ||
+    /как\s+пользоваться\s+(приложен|joy|данным)/i.test(q) ||
+    /как\s+использовать\s+(приложен|joy|данн)/i.test(q) ||
     (/как\s+работать|how\s+to\s+work/i.test(q) && /приложен|joy\s*pick|\bapp\b/i.test(q))
   );
 }
@@ -2434,10 +2496,10 @@ function isAppOverviewQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (isHowToWorkWithAppQuestion(q)) return false;
   return (
-    (/о\s*ч[её]м\s+(приложен|это|joy)|что\s+это\s+за\s+приложен|зачем\s+(нужно\s+)?(это\s+)?приложен|what\s+is\s+(this\s+)?(app|joy\s*pick)|what\s+is\s+joy\s*pick\s+for|about\s+(the\s+)?app/i.test(
+    (/о\s*ч[её]м\s+(приложен|это|joy)|что\s+это\s+за\s+приложен|зачем\s+(нужно\s+)?(это\s+)?приложен|для\s+чего\s+(нужно\s+)?(это\s+)?приложен|what\s+is\s+(this\s+)?(app|joy\s*pick)|what\s+is\s+joy\s*pick\s+for|about\s+(the\s+)?app/i.test(
       q
     ) ||
-      /что\s+(можно|могу|умеет|делают|делать)\s+(в\s+)?(приложен|joy)|какие\s+(функци|возможност)|как\s+пользоваться\s+(приложен|joy)|what\s+can\s+(i|you|we)\s+do\s+in\s+(the\s+)?app|what\s+does\s+the\s+app\s+do|app\s+features/i.test(
+      /что\s+(можно|могу|умеет|делают|делать)\s+(в\s+)?(приложен|joy)|какие\s+(функци|возможност)|как\s+пользоваться\s+(приложен|joy)|как\s+работает\s+(приложен|joy|данн)|what\s+can\s+(i|you|we)\s+do\s+in\s+(the\s+)?app|what\s+does\s+the\s+app\s+do|how\s+does\s+(the\s+)?app\s+work|app\s+features/i.test(
         q
       )) &&
     !/stripe|донат|выплат|заработ/i.test(q)
@@ -2445,10 +2507,11 @@ function isAppOverviewQuestion(question) {
 }
 
 function buildHowToWorkWithAppAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
       'Войдите или зарегистрируйтесь. В профиле (четвёртая вкладка) выберите язык, имя, при необходимости страну и ссылки на соцсети. ' +
-      'На главной — карта и список заявок Joy Pick. Три типа: Waste Location (точка с мусором, приходит один исполнитель), Speed Cleanup (быстрая уборка силами создателя), Event (субботник, несколько участников). ' +
+      `На главной — карта и список заявок Joy Pick. Три типа: ${waste} (точка с мусором, приходит один исполнитель), ${speed} (уборку выполняете вы сами), ${event} (несколько участников по расписанию). ` +
       'Своё экодействие: «+» → тип → фото, место на карте, название и описание. ' +
       'Участие в чужой заявке: карточка → «Присоединиться» → работа на месте → фото территории и отходов. ' +
       'Донатная заявка: при создании вы задаёте сумму для мотивации; после проверок деньги получает исполнитель или участники, которые убрали, а не вы «просто за создание». Получателю нужен Stripe в профиле. ' +
@@ -2457,7 +2520,7 @@ function buildHowToWorkWithAppAnswer(answerLanguage) {
   }
   return (
     'Sign in or register. In Profile (fourth tab) set language, name, and optionally country and social links. ' +
-    'Home shows a map and list of Joy Pick requests: Waste Location (one executor per spot), Speed Cleanup (you clean yourself), Event (group subbotnik). ' +
+    `Home shows a map and list of Joy Pick requests: ${waste} (one executor per spot), ${speed} (you clean yourself), ${event} (group cleanup). ` +
     'Create: + → type → photo, map pin, title, description. Join others: card → Join → on-site work → proof photos. ' +
     'Paid request: set donations when creating to motivate helpers; after review, payouts go to executors or participants who did the work—not just for creating the pin. Recipients need Stripe in Profile. ' +
     'Donate to others from the map or News tab. Share links from the card. Print volunteer-hours proof from Profile.'
@@ -2495,25 +2558,208 @@ function isCreatableRequestTypesQuestion(question) {
   );
 }
 
-function buildCreatableRequestTypesAnswer(answerLanguage) {
+function isRequestTypesCatalogQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (isCreatableRequestTypesQuestion(question)) return false;
+  if (isRequestsPurposeQuestion(question)) return false;
+  return /какие\s+(типы\s+)?заявк|каких\s+заявк|виды\s+заявк|типы\s+заявок|what\s+(request\s+)?types/i.test(q);
+}
+
+function isRequestsPurposeQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return /для\s+чего\s+заявк|зачем\s+заявк|что\s+дают\s+заявк|what\s+are\s+requests\s+for/i.test(q);
+}
+
+function buildRequestsPurposeAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'В Joy Pick можно создать три типа заявок. Waste Location — отметить замусоренное место; убирает один присоединившийся исполнитель, донаты получает он. ' +
-      'Speed Cleanup — быстрая уборка, которую выполняете вы сами на своей точке. ' +
-      'Event — субботник или посадка деревьев: несколько участников, дата и место; донаты после проверок делятся между участниками.'
+      'Заявки в Joy Pick — способ организовать экоуборки и участвовать в них. ' +
+      `${waste} — отметить загрязнённое место и привлечь исполнителя; ${speed} — выполнить уборку самому и показать результат; ${event} — совместная акция по расписанию с участниками. ` +
+      'На карте и в списке видны заявки других людей: можно присоединиться, отправить донат или создать свою через «+».'
     );
   }
   return (
-    'In Joy Pick you can create three request types. Waste Location marks a litter spot—one joining executor cleans; donations go to them. ' +
-    'Speed Cleanup is a quick cleanup you perform yourself. ' +
-    'Event is a group cleanup or tree planting with several participants; donations are shared after review.'
+    'Requests in Joy Pick organize and join environmental cleanups. ' +
+    `${waste} marks a litter spot for one executor; ${speed} is your own cleanup with proof photos; ${event} is a scheduled group action. ` +
+    'See others’ requests on the map and list—join, donate, or create your own with +.'
+  );
+}
+
+function buildRequestTypesCatalogAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      `В Joy Pick три типа заявок. ${waste} — отметить загрязнённое место; убирает один присоединившийся исполнитель. Опционально можно отправить донат — его получит тот, кто убрался. ` +
+      `${speed} — уборку выполняете вы сами на своей точке, с фото «до» и «после». ` +
+      `${event} — совместная экоакция или посадка в назначенное время, несколько участников. ` +
+      'Заявки других пользователей видны на главной карте и в списке; недавно выполненные выделены серым.'
+    );
+  }
+  return (
+    `Joy Pick has three request types. ${waste} marks a litter spot—one joining executor cleans it; you can optionally send a donation to whoever performed the cleanup. ` +
+    `${speed} is a cleanup you perform yourself. ` +
+    `${event} is a group cleanup or planting at a set time. Others’ requests appear on the home map and list; recently completed ones are gray.`
+  );
+}
+
+function isThankVolunteersQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /(поблагодар|отблагодар|благодар|вознаград|наград).*(волонт|уборк|убрал|убер|участник|парк)|thank.*volunteer|reward.*volunteer/i.test(
+      q
+    )
+  );
+}
+
+function buildThankVolunteersAnswer(question, answerLanguage) {
+  const q = normalizeText(question).toLowerCase();
+  const futureThanks =
+    /уберут|уберётся|уберется|будут\s+убира|собираюсь|хочу\s+чтобы|want.*clean|will\s+clean|who\s+will\s+clean|который\s+убер/i.test(q);
+  if (answerLanguage === 'ru') {
+    if (futureThanks) {
+      const { waste, event } = requestTypeUiLabelsList(answerLanguage);
+      return (
+        `Создайте донатную заявку ${waste} (например, для парка) или ${event} и укажите сумму доната при создании. ` +
+        'Деньги хранятся до уборки и проверки, затем поступают исполнителю или участникам, которые выполнили работу. ' +
+        'Заявка с вознаграждением заметнее на карте. ' +
+        'Также выполненные уборки около недели видны на карте, в списке и в «Новости» — можно отправить донат за уже завершённую уборку в любой локации.'
+      );
+    }
+    return (
+      'Выполненные уборки около недели видны на карте и в списке заявок (серые карточки), а также в разделе «Новости» / добрых новостей. ' +
+      'Откройте заявку или новость — там кнопка отправить донат и поблагодарить волонтёров любой суммой через Stripe.'
+    );
+  }
+  if (futureThanks) {
+    return (
+      'Create a paid Waste Location or Event request and set a donation amount when creating it. ' +
+      'Funds are held until cleanup and review, then go to the executor or participants. Paid requests are more visible on the map.'
+    );
+  }
+  return (
+    'Completed cleanups stay on the map and request list (gray cards) for about a week, and appear in News / Good News. ' +
+    'Open the request or news item and use the donate button to thank volunteers any amount via Stripe.'
+  );
+}
+
+function isVolunteerHoursQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /волонт[её]рск\w*\s+час|получа(ть|вать)\s+.{0,24}волонт|как\s+.{0,16}волонт[её]рск\w*\s+час|volunteer\s+hours/i.test(q)
+  );
+}
+
+function buildVolunteerHoursAnswer(answerLanguage) {
+  const { speed } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      'Волонтёрские часы начисляются за участие в эко-мероприятиях и за уборки через приложение после завершения и проверки. ' +
+      `Можно также самостоятельно убирать природу, создавая заявки ${speed}. ` +
+      'После завершения задач часы появятся в профиле. Справку в PDF можно сразу распечатать в личном кабинете — иконка принтера в блоке волонтёрских часов.'
+    );
+  }
+  return (
+    'Volunteer hours are credited after eco events and cleanups in the app pass review. ' +
+    `You can also clean on your own via ${speed}. ` +
+    'Hours appear in Profile; print a PDF proof from the volunteer-hours card (printer icon).'
+  );
+}
+
+function isJoycoinDefinitionQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (/донат|stripe|выплат|заработ/i.test(q) && !/joy\s*coin|joycoin|койн|коин|монет/i.test(q)) {
+    return false;
+  }
+  return /что\s+такое\s+joy\s*coin|что\s+за\s+joy\s*coin|что\s+такое\s+койн|что\s+такое\s+коин|что\s+такое\s+монет|what\s+is\s+joy\s*coin|what\s+are\s+joy\s*coins/i.test(
+    q
+  );
+}
+
+function buildJoycoinDefinitionAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'JoyCoins — внутренняя валюта Joy Pick за подтверждённую экоактивность (уборки, заявки и т.п.). ' +
+      'Их можно обменивать у партнёров платформы в специальных магазинах — скидки и покупки по правилам партнёра (блок монет в профиле, QR у партнёра). ' +
+      'JoyCoins не заменяют денежные донаты: выплаты за уборки идут отдельно через Stripe в блоке «Ваши выплаты».'
+    );
+  }
+  return (
+    'JoyCoins are Joy Pick’s in-app currency for verified eco activity. Redeem them at partner shops (Profile → JoyCoins, partner QR)—not cash. ' +
+    'Monetary donations and payouts are separate via Stripe in Your payouts.'
+  );
+}
+
+function isAppCountriesQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return /в\s+каких\s+стран|какие\s+стран|где\s+работает\s+приложен|доступн\w*\s+в\s+стран|which\s+countries|where\s+.*available|works\s+in\s+which/i.test(
+    q
+  );
+}
+
+function buildAppCountriesAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Joy Pick работает по всему миру. В некоторых странах платёжный сервис Stripe может быть ограничен — ' +
+      'тогда напишите в службу поддержки из профиля, поможем найти альтернативные варианты для донатов или выплат.'
+    );
+  }
+  return (
+    'Joy Pick works worldwide. In some countries Stripe payments may be limited—contact support from Profile and we can help find alternatives for donations or payouts.'
+  );
+}
+
+function isFraudProtectionQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /мошенн|обман|fraud|scam|подозрител|защит\w*\s+от\s+мошен|меры\s+защит|не\s+убер(ут|утся|ётся)|кликн\w*\s+.{0,12}убрал|заберут\s+деньг|фейков\w*\s+уборк|fake\s+cleanup|cheat.*donat/i.test(
+      q
+    ) ||
+    (/донат|donat/i.test(q) &&
+      /мошенн|обман|не\s+убер|заберут|кликн|поддел|фейк|fraud|scam/i.test(q))
+  );
+}
+
+function buildFraudProtectionAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'В Joy Pick есть защита от мошенничества при донатных уборках. ' +
+      'Донаты удерживаются в холде до проверки выполнения — просто «отметить уборку» без реальной работы нельзя. ' +
+      'Исполнитель не может начать и завершить заявку, пока не прибудет в точку на карте: приложение сверяет геолокацию и предупреждает, если координаты не совпадают. ' +
+      'Для сдачи работы нужны фото убранной территории через камеру внутри приложения (не из галереи). ' +
+      'После отправки результат проверяется модерацией: при одобрении деньги переводятся исполнителю по правилам Stripe; при отклонении приходит сообщение с причиной отказа. ' +
+      'О подозрительных действиях можно сообщить через «Поддержка» в профиле (чат с оператором) или «Помощь и поддержка» (email).'
+    );
+  }
+  return (
+    'Joy Pick has fraud safeguards for paid cleanups. Donations stay on hold until work is verified—you cannot just tap “done” without real cleanup. ' +
+    'An executor cannot start or finish unless they are at the map pin: the app checks geolocation and warns if coordinates do not match. ' +
+    'Completion requires after photos taken through the in-app camera (not the gallery). ' +
+    'Results are moderated: if approved, funds go to the executor via Stripe; if rejected, you get a message with the reason. ' +
+    'Report suspicious behavior via Profile → Support (operator chat) or Help & support (email).'
+  );
+}
+
+function buildCreatableRequestTypesAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      `В Joy Pick можно создать три типа заявок. ${waste} — отметить замусоренное место; убирает один присоединившийся исполнитель, донаты получает он. ` +
+      `${speed} — уборку выполняете вы сами на своей точке. ` +
+      `${event} — совместная акция или посадка деревьев: несколько участников, дата и место; донаты после проверок делятся между участниками.`
+    );
+  }
+  return (
+    `In Joy Pick you can create three request types. ${waste} marks a litter spot—one joining executor cleans; donations go to them. ` +
+    `${speed} is a cleanup you perform yourself. ` +
+    `${event} is a group cleanup or tree planting with several participants; donations are shared after review.`
   );
 }
 
 function parseRequestTypeDefinitionKind(question) {
   const q = normalizeText(question).toLowerCase().replace(/&/g, '');
   if (/waste\s*location|waste\s+cleanup|уборк[а-яё]*\s+мусор/i.test(q)) return 'waste';
-  if (/speed\s*cleanup|быстр[а-яё]*\s+уборк/i.test(q)) return 'speed';
+  if (/speed\s*cleanup|моя\s+экоуборк|экоуборк|быстр[а-яё]*\s+уборк/i.test(q)) return 'speed';
   if (/\bevent\b|субботник|ивент|мероприят/i.test(q)) return 'event';
   return null;
 }
@@ -2530,41 +2776,42 @@ function isRequestTypeDefinitionQuestion(question) {
 }
 
 function buildRequestTypeDefinitionAnswer(kind, answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (kind === 'waste') {
     if (answerLanguage === 'ru') {
       return (
-        'Waste Location — заявка, где на карте отмечают замусоренное место: фото и описание проблемы. ' +
+        `${waste} — заявка, где на карте отмечают замусоренное место: фото и описание проблемы. ` +
         'Присоединяется один исполнитель, убирает территорию и прикладывает фото подтверждения. ' +
         'Спонсоры могут отправить донат; его получает исполнитель, который выполнил уборку и прошёл проверку, а не автор только за создание точки.'
       );
     }
     return (
-      'Waste Location marks a littered spot on the map with a photo and description. ' +
+      `${waste} marks a littered spot on the map with a photo and description. ` +
       'One executor joins, cleans, and submits proof. Sponsors may donate; the payout goes to the executor who did the cleanup after review.'
     );
   }
   if (kind === 'speed') {
     if (answerLanguage === 'ru') {
       return (
-        'Speed Cleanup — быстрая уборка в Joy Pick: создатель сам отмечает точку, выполняет работу и отправляет результат на модерацию. ' +
+        `${speed} — личная экоуборка в Joy Pick: создатель сам отмечает точку, выполняет работу и отправляет результат на модерацию. ` +
         'Донаты после проверок получает тот же человек, который убрал, при подключённом Stripe.'
       );
     }
     return (
-      'Speed Cleanup is a quick cleanup in Joy Pick: you pin the spot, do the work yourself, and submit for moderation. ' +
+      `${speed} is a personal cleanup in Joy Pick: you pin the spot, do the work yourself, and submit for moderation. ` +
       'Donations after review go to you as creator/performer with Stripe connected.'
     );
   }
   if (kind === 'event') {
     if (answerLanguage === 'ru') {
       return (
-        'Event — экомероприятие в Joy Pick: уборка территории или посадка деревьев в назначенное время. ' +
-        'Указывают место, дату и описание; участники присоединяются через Join. ' +
+        `${event} — совместная экоакция в Joy Pick: уборка территории или посадка деревьев в назначенное время. ` +
+        'Указывают место, дату и описание; участники присоединяются через «Присоединиться». ' +
         'Пользователи могут отправлять донаты, которые после проверок распределяются между участниками с принятой работой.'
       );
     }
     return (
-      'Event is an eco activity in Joy Pick—area cleanup or tree planting at a set time and place. ' +
+      `${event} is a group eco activity in Joy Pick—area cleanup or tree planting at a set time and place. ` +
       'Participants join via Join. Donors can support the event; after review, donations are shared among participants with accepted work.'
     );
   }
@@ -2581,34 +2828,38 @@ function isMapContentQuestion(question) {
 }
 
 function buildMapContentAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'На карте приложения видны заявки Joy Pick: места, где нужна уборка территории (Waste Location), запланированные экомероприятия и субботники (Event), а также активные и завершённые экоактивности. ' +
+      `На карте приложения видны заявки Joy Pick: ${waste} (места, где нужна уборка), ${event} (запланированные субботники) и активные или завершённые экоактивности, в том числе ${speed}. ` +
       'Нажмите на значок — откроется карточка: можно прочитать описание, присоединиться к уборке или поддержать волонтёров донатом.'
     );
   }
   return (
-    'The app map shows Joy Pick requests: spots needing cleanup (Waste Location), scheduled eco events and subbotniks (Event), and active or completed cleanups. ' +
+    `The app map shows Joy Pick requests: ${waste} cleanup spots, scheduled ${event} subbotniks, and active or completed cleanups including ${speed}. ` +
     'Tap a marker to open the card—read details, join the cleanup, or donate to support volunteers.'
   );
 }
 
 function isCreateRequestHowToQuestion(question) {
   const q = normalizeText(question).toLowerCase();
-  return /как\s+создать\s+(заявк|субботник)|how\s+to\s+create\s+(a\s+)?(new\s+)?(request|cleanup|event)/i.test(q);
+  return (
+    /как\s+созда(ть|ва)\w*\s+(заявк|субботник)|how\s+to\s+create\s+(a\s+)?(new\s+)?(request|cleanup|event)/i.test(q)
+  );
 }
 
 function buildCreateRequestHowToAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'На главной вкладке нажмите «+», выберите тип: уборка мусора (Waste Location), быстрая уборка (Speed Cleanup) или Event. ' +
+      `На главной вкладке нажмите «+», выберите тип: ${waste}, ${speed} или ${event}. ` +
       'Добавьте фото и точку на карте, название и описание по подсказкам формы. ' +
       'Для донатной заявки укажите сумму при создании — выплату получит исполнитель или участники, которые выполнили работу, при подключённом Stripe у них. ' +
       'Опубликуйте — заявка появится на карте и в списке.'
     );
   }
   return (
-    'On the home tab tap +, choose Waste Location, Speed Cleanup, or Event. ' +
+    `On the home tab tap +, choose ${waste}, ${speed}, or ${event}. ` +
     'Add a photo, map pin, title, and description per the form. ' +
     'For a paid request set donations when creating—payouts go to executors or participants who do the work, with their Stripe connected. ' +
     'Publish to show it on the map and list.'
@@ -2616,28 +2867,80 @@ function buildCreateRequestHowToAnswer(answerLanguage) {
 }
 
 function buildAppOverviewAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'Joy Pick помогает организовывать и участвовать в экологических уборках: отмечать замусоренные места, сообщать о загрязнениях, находить волонтёров и отправлять донаты. ' +
-      'На главной — карта и список заявок (уборка мусора, быстрая уборка, субботники); можно общаться в чатах заявок. ' +
-      'Есть станции переработки и партнёры, новости добрых дел, профиль с учётом времени уборок и PDF волонтёрских часов, JoyCoins, Stripe для донатов и выплат.'
+      `В Joy Pick три пути экологической активности. (1) **${waste}** — отметить замусоренное место на карте (фото, описание); по желанию донат, чтобы привлечь исполнителя; точку видят на карте и в списке. ` +
+      `(2) **${speed}** — своя уборка с фото до/после; работа на карте, в списке и в ленте добрых дел; волонтёрские часы, JoyCoins, донаты от других. ` +
+      `(3) **${event}** — совместная уборка по расписанию: место, дата и время, участники; после сдачи — часы и донаты участникам. ` +
+      'Вкладки: карта/заявки, переработка и партнёры, новости, профиль (Stripe, часы).'
     );
   }
   return (
-    'Joy Pick helps organize and join environmental cleanups: mark polluted spots, report litter, find volunteers, and send donations. ' +
-    'The home tab has a map and list of requests with chats. There are recycling partners, good-news stories, profile with tracked cleanup time and a volunteer-hours PDF, JoyCoins, and Stripe for donations and payouts.'
+    `Joy Pick has three eco paths. (1) **${waste}** — mark litter on the map (photo, description); optional donation to attract an executor. ` +
+    `(2) **${speed}** — your own cleanup with before/after photos; visible on map, list, and Good News; hours, JoyCoins, donations from others. ` +
+    `(3) **${event}** — scheduled group cleanup with participants; hours and donations after submission. ` +
+    'Tabs: map/requests, recycling & partners, News, Profile (Stripe, hours).'
+  );
+}
+
+function isParkSelfCleanupQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /убра(ть|ться|ю).{0,40}(парк|двор|территор)|мусор.{0,40}(парк|двор)|clean.{0,40}(park|my park)|trash.{0,40}park/i.test(
+      q
+    ) && /как|how|хочу|want/i.test(q)
+  );
+}
+
+function buildParkSelfCleanupAnswer(answerLanguage) {
+  const { speed, event } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      `Чтобы убрать мусор в своём парке или на знакомой территории, откройте Joy Pick → главная → «+» → **«${speed}»** (личная уборка) или **«${event}»** (совместная по расписанию). ` +
+      'Укажите место на карте, для субботника — дату и время, описание и фото. После публикации заявку видят на карте и в списке.'
+    );
+  }
+  return (
+    `To clean litter in your park or area, open Joy Pick → home → + → **${speed}** (solo) or **${event}** (scheduled group). ` +
+    'Set the map location, for an Event add date/time, description, and photos. Others will see it on the map and list.'
+  );
+}
+
+function isSponsorVolunteersQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /спонсир|поддерж(ать|ивать).{0,32}(волонт|уборк|эко)|sponsor.{0,24}(volunteer|cleanup)|support.{0,24}(volunteer|cleanup)/i.test(
+      q
+    ) && /донат|donat|вознаград|reward|поддерж/i.test(q)
+  );
+}
+
+function buildSponsorVolunteersAnswer(answerLanguage) {
+  if (answerLanguage === 'ru') {
+    return (
+      'Поддерживать волонтёров можно через приложение: смотрите экоуборки на **карте**, в **списке заявок** и во вкладке **«Новости» / добрые дела**. ' +
+      'Откройте карточку работы и нажмите **донат** (Stripe) — так можно вознаградить исполнителя или участников, в том числе дополнительным донатом после публикации уборки. ' +
+      'Также можно найти запланированные субботники других пользователей и задонатить.'
+    );
+  }
+  return (
+    'You can support volunteers in the app: browse cleanups on the **map**, **request list**, and **News / Good News** tab. ' +
+    'Open a request card and tap **Donate** (Stripe)—including extra donations after work is published. ' +
+    'You can also find other users’ planned subbotniks and donate.'
   );
 }
 
 function buildWasteTrashPickupOnlyAnswer(answerLanguage) {
+  const { waste } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'При создании Waste Location включите «Только вывоз мусора» (индикатор грузовика на карте). ' +
+      `При создании ${waste} включите «Только вывоз мусора» (индикатор грузовика на карте). ` +
       'Тогда задача про вывоз без уборки на месте; к заявке по-прежнему может присоединиться один исполнитель.'
     );
   }
   return (
-    'When creating a Waste Location, enable Trash pickup only (truck indicator on the map). ' +
+    `When creating a ${waste}, enable Trash pickup only (truck indicator on the map). ` +
     'That means haul-away without on-site cleanup; still one executor per request.'
   );
 }
@@ -2662,10 +2965,11 @@ function isSubbotnikEventDonationWhoReceivesQuestion(question) {
 }
 
 function buildSubbotnikEventDonationWhoReceivesAnswer(answerLanguage) {
+  const { waste, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
-    return 'В субботнике участников несколько. После сдачи работы, проверок и модерации донаты распределяются между участниками события. Между теми, у кого в профиле подключён Stripe, сумма делится поровну по правилам приложения. На обычной уборке мусора донаты получает один исполнитель, это другой тип заявки.';
+    return `В ${event} участников несколько. После сдачи работы, проверок и модерации донаты распределяются между участниками. Между теми, у кого в профиле подключён Stripe, сумма делится поровну по правилам приложения. На ${waste} донаты получает один исполнитель — это другой тип заявки.`;
   }
-  return 'A subbotnik is an Event with several participants. After work submission, checks, and moderation, donations are shared among Event participants. Among participants with Stripe connected in Profile, the collected amount is split equally per app rules. A regular trash cleanup pays one executor—that is a different request type.';
+  return `A subbotnik is an ${event} with several participants. After work submission, checks, and moderation, donations are shared among participants. Among participants with Stripe connected in Profile, the collected amount is split equally per app rules. A regular ${waste} pays one executor—that is a different request type.`;
 }
 
 function isWasteCreatorFindExecutorQuestion(question) {
@@ -2681,13 +2985,14 @@ function isWasteCreatorFindExecutorQuestion(question) {
 }
 
 function buildWasteCreatorFindExecutorAnswer(answerLanguage) {
+  const { waste } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     return (
-      'Для уборки мусора (Waste Location) создайте заявку в приложении: на главной вкладке нажмите «+», выберите тип «Уборка мусора», заполните поля и отправьте. После публикации она видна на карте и в списке заявок. Исполнитель появится, когда один пользователь откроет вашу заявку и нажмёт «Присоединиться». Одновременно может работать только один исполнитель; у него обычно около суток, чтобы выполнить уборку. Если никто ещё не присоединился, заявка остаётся открытой для других — в деталях можно «Поделиться» ссылкой и при желании добавить донат.'
+      `Для ${waste} создайте заявку в приложении: на главной вкладке нажмите «+», выберите тип ${waste}, заполните поля и отправьте. После публикации она видна на карте и в списке заявок. Исполнитель появится, когда один пользователь откроет вашу заявку и нажмёт «Присоединиться». Одновременно может работать только один исполнитель; у него обычно около суток, чтобы выполнить уборку. Если никто ещё не присоединился, заявка остаётся открытой для других — в деталях можно «Поделиться» ссылкой и при желании добавить донат.`
     );
   }
   return (
-    'For Waste Location (trash cleanup), create the request in the app: on the home tab tap +, choose Waste Location, fill the fields, and submit. After publishing it appears on the map and in the request list. An executor appears when one user opens your request and taps Join. Only one executor at a time; they usually have about a day to complete the cleanup. If nobody joined yet, the request stays open for others—use Share from details and add a donation if you want.'
+    `For ${waste}, create the request in the app: on the home tab tap +, choose ${waste}, fill the fields, and submit. After publishing it appears on the map and in the request list. An executor appears when one user opens your request and taps Join. Only one executor at a time; they usually have about a day to complete the cleanup. If nobody joined yet, the request stays open for others—use Share from details and add a donation if you want.`
   );
 }
 
@@ -2719,10 +3024,11 @@ function shouldPinWasteCreatorFindExecutorKnowledge(bundleLower) {
 }
 
 function buildWasteSingleExecutorAnswer(answerLanguage) {
+  const { waste } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
-    return 'Для Waste Location исполнитель один: пользователь открывает чужую заявку на карте или в списке и нажимает «Присоединиться». Заявка закрепляется за ним примерно на сутки, другим в это время присоединиться нельзя. Если за сутки уборка не сдана по правилам приложения, исполнитель снимается автоматически и заявка снова видна другим. Донаты после проверок получает исполнитель, который убрал, а не автор точки только за создание. Для чужой открытой заявки нужен Join, а не «создайте новую заявку».';
+    return `Для ${waste} исполнитель один: пользователь открывает чужую заявку на карте или в списке и нажимает «Присоединиться». Заявка закрепляется за ним примерно на сутки, другим в это время присоединиться нельзя. Если за сутки уборка не сдана по правилам приложения, исполнитель снимается автоматически и заявка снова видна другим. Донаты после проверок получает исполнитель, который убрал, а не автор точки только за создание. Для чужой открытой заявки нужно «Присоединиться», а не «создайте новую заявку».`;
   }
-  return 'For **Waste Location** there is **one executor**: open an existing request on the map/list and tap **Join**—it is **reserved** for you for **~24 hours**, so others cannot take it as a free slot. If you **do not complete** in time per app rules, the slot **auto-releases** and the request is visible again. **Donations** after checks go to the **executor**, not “the pin author just for creating and self-donating” (the creator could join and execute, but the usual case pays the executor). Do not say “create a request” when the user means someone else’s open request—use **Join**.';
+  return `For **${waste}** there is **one executor**: open an existing request on the map/list and tap **Join**—it is **reserved** for you for **~24 hours**, so others cannot take it as a free slot. If you **do not complete** in time per app rules, the slot **auto-releases** and the request is visible again. **Donations** after checks go to the **executor**, not “the pin author just for creating and self-donating” (the creator could join and execute, but the usual case pays the executor). Do not say “create a request” when the user means someone else’s open request—use **Join**.`;
 }
 
 function isConcurrentExecutionQuestion(question) {
@@ -2738,14 +3044,15 @@ function isConcurrentExecutionQuestion(question) {
 
 function buildConcurrentExecutionAnswer(roleHint, answerLanguage) {
   const { requestType } = parseRoleHintMeta(roleHint);
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     if (requestType === 'event') {
-      return 'Да, одновременно это возможно только для заявок типа Event (субботник): там участвуют несколько участников.';
+      return `Да, одновременно это возможно только для ${event}: там участвуют несколько человек.`;
     }
     if (requestType === 'waste_location' || requestType === 'speed_cleanup') {
       return 'Нет. Одновременное выполнение не предусмотрено для этого типа заявки.';
     }
-    return 'Если тип заявки «Уборка мусора» (Waste Location) — в работу может взять только один исполнитель. Если тип заявки «Событие» (Event/субботник) — присоединиться могут несколько участников.';
+    return `Для ${waste} в работу может взять только один исполнитель. Для ${event} присоединиться могут несколько участников.`;
   }
   if (requestType === 'event') {
     return 'Yes, simultaneous execution is possible only for Event requests, where multiple participants can join.';
@@ -2768,10 +3075,37 @@ function isReservationFirstComeQuestion(question) {
 }
 
 function buildReservationTypeSplitAnswer(answerLanguage) {
+  const { waste, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
-    return 'Если тип заявки «Уборка мусора» (Waste Location) — в работу может взять только один исполнитель. Если тип заявки «Событие» (Event/субботник) — присоединиться могут несколько участников.';
+    return `Для ${waste} в работу может взять только один исполнитель. Для ${event} присоединиться могут несколько участников.`;
   }
-  return 'If request type is Waste Location, only one executor can take it. If request type is Event, multiple participants can join.';
+  return `If request type is ${waste}, only one executor can take it. If request type is ${event}, multiple participants can join.`;
+}
+
+function isRequestWorkMeaningQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  return (
+    /какую\s+работ|какое\s+выполнен|что\s+за\s+работ|что\s+имеет.*в\s+виду.*работ|что\s+такое\s+выполнен/i.test(q) &&
+    !/stripe|донат|заработ|выплат|комисс/i.test(q)
+  );
+}
+
+function buildRequestWorkMeaningAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      'Речь про реальную экоуборку в Joy Pick, а не про абстрактную «работу». ' +
+      `${waste} — отметили загрязнённое место, один исполнитель приезжает, убирает и сдаёт фото. ` +
+      `${speed} — вы сами убираете выбранную точку с фото «до» и «после», затем модерация. ` +
+      `${event} — совместная уборка или посадка по расписанию: участники присоединяются, выполняют свою часть и сдают результат.`
+    );
+  }
+  return (
+    'This means real eco-cleanup in Joy Pick, not abstract “work”. ' +
+    `${waste} — mark litter, one executor cleans and submits proof. ` +
+    `${speed} — you clean your spot with before/after photos, then moderation. ` +
+    `${event} — group cleanup or planting on schedule; participants join and submit their part.`
+  );
 }
 
 function isExtendOrRescheduleQuestion(question) {
@@ -2782,27 +3116,29 @@ function isExtendOrRescheduleQuestion(question) {
 
 function buildExtendOrRescheduleAnswer(roleHint, answerLanguage) {
   const { requestType } = parseRoleHintMeta(roleHint);
+  const { waste, event } = requestTypeUiLabelsList(answerLanguage);
   if (answerLanguage === 'ru') {
     if (requestType === 'waste_location') {
-      return 'Для «Уборка мусора» (Waste Location) заявку можно продлить, если в течение 7 дней к ней никто не присоединился.';
+      return `Для ${waste} заявку можно продлить, если в течение 7 дней к ней никто не присоединился.`;
     }
     if (requestType === 'event') {
-      return 'Для «Событие» (Event/субботник) можно перенести начало заявки на более поздний срок.';
+      return `Для ${event} можно перенести начало заявки на более поздний срок.`;
     }
-    return 'Если тип «Уборка мусора» (Waste Location) — заявку можно продлить, если в течение 7 дней никто не присоединился. Если тип «Событие» (Event/субботник) — можно перенести начало заявки на более поздний срок.';
+    return `Для ${waste} заявку можно продлить, если в течение 7 дней никто не присоединился. Для ${event} можно перенести начало на более поздний срок.`;
   }
   if (requestType === 'waste_location') {
-    return 'For Waste Location, request can be extended if nobody joined within 7 days.';
+    return `For ${waste}, request can be extended if nobody joined within 7 days.`;
   }
   if (requestType === 'event') {
-    return 'For Event, you can move the request start time to a later moment.';
+    return `For ${event}, you can move the request start time to a later moment.`;
   }
-  return 'If request type is Waste Location, extension is possible when nobody joined within 7 days. If request type is Event, start time can be moved later.';
+  return `For ${waste}, extension is possible when nobody joined within 7 days. For ${event}, start time can be moved later.`;
 }
 
 function isCommissionQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
+  if (isUserPersonalEarningQuestion(question)) return false;
   return /комисс|процент|fee|commission|stripe\s+fee|application\s+fee|приложени.*зарабат|зарабат.*приложени|app\s+earn/i.test(
     q
   );
@@ -2817,7 +3153,7 @@ function buildCommissionAnswer(question, answerLanguage) {
       return 'Сначала удерживается комиссия Stripe: ориентир **2.9% + $0.30 за донатную операцию** (точные значения — по тарифам Stripe на момент платежа).';
     }
     if (asksApp && !asksStripe) {
-      return 'После Stripe удерживается **около 7%** Joy Pick — **не как «прибыль приложения»**, а сбор на **инфраструктуру** (серверы, хостинг, сопутствующие сервисы, в т.ч. токены ИИ).';
+      return 'После Stripe удерживается около 7% Joy Pick — на поддержание инфраструктуры платформы (серверы, хостинг, сопутствующие сервисы, в т.ч. токены ИИ).';
     }
     return 'Порядок такой: **сначала** комиссия **Stripe** (процент и фикс **за донатную операцию**, ориентир 2.9% + $0.30), **затем** **около 7%** Joy Pick на **инфраструктуру**, а не как прибыль владельцев. На уточняющие вопросы сначала коротко про Stripe, потом про инфраструктурный сбор.';
   }
@@ -2834,12 +3170,42 @@ function isMonetizationQuestion(question) {
   const q = normalizeText(question).toLowerCase();
   if (!q) return false;
   const monetizationLex =
-    /на\s+ч[её]м\s+зарабат|как\s+зарабатыв|как\s+приложени.*зарабат|monetiz|how\s+does\s+.*earn|how\s+does\s+.*make\s+money/i.test(
+    /на\s+ч[её]м\s+зарабат|как.{0,48}зарабатыв|как\s+приложени.*зарабат|monetiz|how\s+does\s+.*earn|how\s+can\s+.*earn|how\s+do\s+.*earn|how\s+to\s+earn/i.test(
       q
     );
   const appCtx = /приложени|joy\s*pick|app/i.test(q);
   const donationLex = /донат|donation|stripe|выплат|payment|payout/i.test(q);
   return monetizationLex && (appCtx || donationLex);
+}
+
+function isUserPersonalEarningQuestion(question) {
+  const q = normalizeText(question).toLowerCase();
+  if (!q) return false;
+  const earning =
+    /на\s+ч[её]м\s+зарабат|как.{0,48}зарабатыв|могу\s+ли\s+.{0,24}зарабат|зарабатывать\s+(с|в|на|через)|how\s+can\s+i\s+earn|how\s+to\s+earn/i.test(
+      q
+    );
+  const commissionOnly =
+    /комисс|процент\s+joy|процент\s+прилож|stripe\s+fee|application\s+fee|сколько\s+удерж|only\s+fee/i.test(q);
+  return earning && !commissionOnly;
+}
+
+function buildUserPersonalEarningAnswer(answerLanguage) {
+  const { waste, speed, event } = requestTypeUiLabelsList(answerLanguage);
+  if (answerLanguage === 'ru') {
+    return (
+      'Заработать в Joy Pick можно как исполнитель или участник уборки: найдите донатную заявку на карте, присоединитесь, выполните работу и приложите фото по правилам. ' +
+      'После проверки выплата приходит через Stripe на подключённый счёт в профиле. ' +
+      `Можно создать свою донатную заявку — ${waste} или ${event} — и указать сумму при создании; деньги получает тот, кто реально убрал, после проверки. ` +
+      `Выполняя **${speed}** и другие уборки, вы публикуете работу на карте, в списке и в ленте добрых дел — другие видят результат и могут отправлять дополнительные донаты.`
+    );
+  }
+  return (
+    'You can earn in Joy Pick as an executor or event participant: join a paid request on the map, do the cleanup with proof photos, and pass review. ' +
+    'Payouts go through Stripe to the account linked in Profile. ' +
+    `You can also create your own paid ${waste} or ${event} with a donation amount—funds go to whoever actually performed the work after review. ` +
+    `With **${speed}** and other cleanups, your work appears on the map, list, and Good News feed—others may send additional donations.`
+  );
 }
 
 function isAllDonationsTakenQuestion(question) {
@@ -2879,7 +3245,7 @@ function questionMentionsPaymentDonationOrActivistThanks(question) {
       q
     );
   const activistThanks =
-    /благодар.*активист|thank.*activist|thank\s+eco|eco\s+activist.*thank|поблагодар/i.test(q);
+    /благодар.*активист|отблагодар|поблагодар|thank.*activist|thank\s+eco|eco\s+activist.*thank/i.test(q);
   return moneyOrDonation || activistThanks;
 }
 
@@ -3476,6 +3842,9 @@ async function getSupportAiAnswer({
   const deterministicMonetizationAnswer = isMonetizationQuestion(questionForModel)
     ? buildMonetizationAnswer(modelLanguage)
     : null;
+  const deterministicUserEarningAnswer = isUserPersonalEarningQuestion(questionForModel)
+    ? buildUserPersonalEarningAnswer(modelLanguage)
+    : null;
   const deterministicAllDonationsTakenAnswer = isAllDonationsTakenQuestion(questionForModel)
     ? buildAllDonationsTakenAnswer(modelLanguage)
     : null;
@@ -3513,6 +3882,30 @@ async function getSupportAiAnswer({
   const deterministicCreatableRequestTypesAnswer = isCreatableRequestTypesQuestion(questionForModel)
     ? buildCreatableRequestTypesAnswer(modelLanguage)
     : null;
+  const deterministicRequestTypesCatalogAnswer = isRequestTypesCatalogQuestion(questionForModel)
+    ? buildRequestTypesCatalogAnswer(modelLanguage)
+    : null;
+  const deterministicRequestsPurposeAnswer = isRequestsPurposeQuestion(questionForModel)
+    ? buildRequestsPurposeAnswer(modelLanguage)
+    : null;
+  const deterministicRequestWorkMeaningAnswer = isRequestWorkMeaningQuestion(questionForModel)
+    ? buildRequestWorkMeaningAnswer(modelLanguage)
+    : null;
+  const deterministicThankVolunteersAnswer = isThankVolunteersQuestion(questionForModel)
+    ? buildThankVolunteersAnswer(questionForModel, modelLanguage)
+    : null;
+  const deterministicVolunteerHoursAnswer = isVolunteerHoursQuestion(questionForModel)
+    ? buildVolunteerHoursAnswer(modelLanguage)
+    : null;
+  const deterministicJoycoinDefinitionAnswer = isJoycoinDefinitionQuestion(questionForModel)
+    ? buildJoycoinDefinitionAnswer(modelLanguage)
+    : null;
+  const deterministicAppCountriesAnswer = isAppCountriesQuestion(questionForModel)
+    ? buildAppCountriesAnswer(modelLanguage)
+    : null;
+  const deterministicFraudProtectionAnswer = isFraudProtectionQuestion(questionForModel)
+    ? buildFraudProtectionAnswer(modelLanguage)
+    : null;
   const requestTypeDefKind = isRequestTypeDefinitionQuestion(questionForModel)
     ? parseRequestTypeDefinitionKind(questionForModel)
     : null;
@@ -3524,6 +3917,12 @@ async function getSupportAiAnswer({
     : null;
   const deterministicCreateRequestHowToAnswer = isCreateRequestHowToQuestion(questionForModel)
     ? buildCreateRequestHowToAnswer(modelLanguage)
+    : null;
+  const deterministicParkSelfCleanupAnswer = isParkSelfCleanupQuestion(questionForModel)
+    ? buildParkSelfCleanupAnswer(modelLanguage)
+    : null;
+  const deterministicSponsorVolunteersAnswer = isSponsorVolunteersQuestion(questionForModel)
+    ? buildSponsorVolunteersAnswer(modelLanguage)
     : null;
   const deterministicAppOverviewAnswer =
     !deterministicHowToWorkWithAppAnswer &&
@@ -3571,13 +3970,24 @@ async function getSupportAiAnswer({
     deterministicSupportedLanguagesAnswer ||
     deterministicWasteHaulTerritoryHelpAnswer ||
     deterministicCreateRequestHowToAnswer ||
+    deterministicParkSelfCleanupAnswer ||
+    deterministicSponsorVolunteersAnswer ||
     deterministicHowToWorkWithAppAnswer ||
     deterministicAppAudienceAnswer ||
+    deterministicJoycoinDefinitionAnswer ||
+    deterministicAppCountriesAnswer ||
+    deterministicFraudProtectionAnswer ||
+    deterministicVolunteerHoursAnswer ||
+    deterministicThankVolunteersAnswer ||
+    deterministicRequestsPurposeAnswer ||
+    deterministicRequestWorkMeaningAnswer ||
+    deterministicRequestTypesCatalogAnswer ||
     deterministicCreatableRequestTypesAnswer ||
     deterministicRequestTypeDefinitionAnswer ||
     deterministicMapContentAnswer ||
     deterministicAppOverviewAnswer ||
     deterministicNewsSectionAnswer ||
+    deterministicUserEarningAnswer ||
     deterministicMonetizationAnswer ||
     deterministicAllDonationsTakenAnswer ||
     deterministicCommissionAnswer ||
@@ -3613,9 +4023,25 @@ async function getSupportAiAnswer({
               ? 'deterministic_how_to_work_with_app_router'
               : deterministicAppAudienceAnswer
                 ? 'deterministic_app_audience_router'
-                : deterministicCreatableRequestTypesAnswer
-                  ? 'deterministic_creatable_request_types_router'
-                  : deterministicRequestTypeDefinitionAnswer
+                : deterministicJoycoinDefinitionAnswer
+                  ? 'deterministic_joycoin_definition_router'
+                  : deterministicAppCountriesAnswer
+                    ? 'deterministic_app_countries_router'
+                    : deterministicFraudProtectionAnswer
+                      ? 'deterministic_fraud_protection_router'
+                      : deterministicVolunteerHoursAnswer
+                  ? 'deterministic_volunteer_hours_router'
+                  : deterministicThankVolunteersAnswer
+                    ? 'deterministic_thank_volunteers_router'
+                    : deterministicRequestsPurposeAnswer
+                      ? 'deterministic_requests_purpose_router'
+                      : deterministicRequestWorkMeaningAnswer
+                        ? 'deterministic_request_work_meaning_router'
+                        : deterministicRequestTypesCatalogAnswer
+                      ? 'deterministic_request_types_catalog_router'
+                      : deterministicCreatableRequestTypesAnswer
+                        ? 'deterministic_creatable_request_types_router'
+                        : deterministicRequestTypeDefinitionAnswer
                     ? 'deterministic_request_type_definition_router'
                     : deterministicMapContentAnswer
                       ? 'deterministic_map_content_router'
@@ -3623,7 +4049,9 @@ async function getSupportAiAnswer({
                         ? 'deterministic_app_overview_router'
                         : deterministicNewsSectionAnswer
                 ? 'deterministic_news_section_router'
-                : deterministicMonetizationAnswer
+                : deterministicUserEarningAnswer
+                  ? 'deterministic_user_earning_router'
+                  : deterministicMonetizationAnswer
                   ? 'deterministic_monetization_router'
                   : deterministicAllDonationsTakenAnswer
                     ? 'deterministic_donations_taken_router'

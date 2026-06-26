@@ -2022,6 +2022,84 @@ Future<void> createRequestWithPhotos({
 
 **`start_date` (speedCleanup):** после первой установки сервер **не сбрасывает** поле при resume/continue/`inProgress` без явного `start_date` в теле. Пустое значение в PATCH не затирает уже сохранённый `start_date`.
 
+---
+
+### Social share — публикация результата уборки (OG + HTML)
+
+Публичная страница для шаринга в Telegram / WhatsApp / Facebook после закрытия заявки. **Flutter web не пересобирается** — HTML отдаёт Node (`GET /social/:requestId`).
+
+#### БД (`requests`)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `social_share_url` | varchar nullable | `https://joypick.world/social/{uuid}` — только после POST создателя |
+| `social_share_created_at` | datetime nullable | когда создан share |
+| `social_share_og_image_url` | varchar nullable | абсолютный HTTPS на `og.jpg` (1200×630, до\|после) |
+
+Поля возвращаются в **`GET /api/requests/:id`** → `data.request.social_share_url` (и др.).
+
+#### POST `/api/requests/:id/social-share` (JWT)
+
+**Кто:** только создатель (`created_by` = `userId` из JWT).
+
+**Условия:** `status` ∈ `pending` \| `approved` \| `completed`; есть фото **до** и **после** (как `hasCompletionSharePhotos` на клиенте: `photos_before[0]` или `photos[0]`, `photos_after[0]` или первое `photos_after` в `participant_completions`).
+
+**Тело (опционально):** `{ "locale": "ru" }` — язык OG и текста страницы. **Сохраняется в БД** (`social_share_locale`) при создании; при повторном POST обновляется. Telegram/WhatsApp не шлют `Accept-Language: ru` — без этого поля OG будет на **en**.
+
+**Ответ 200:**
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "social_share_url": "https://joypick.world/social/{uuid}",
+    "created": true,
+    "social_share_og_image_url": "https://joypick.world/uploads/social/{uuid}/og.jpg"
+  }
+}
+```
+
+| `created` | Значение |
+|-----------|----------|
+| `false` | URL уже был — идемпотентный повтор |
+| `true` | сгенерированы OG-картинка и запись в БД |
+
+**Ошибки:**
+
+| HTTP | errorCode |
+|------|-----------|
+| 403 | `SOCIAL_SHARE_NOT_CREATOR` |
+| 404 | `SOCIAL_SHARE_NOT_FOUND` |
+| 422 | `SOCIAL_SHARE_PHOTOS_REQUIRED` |
+| 422 | `SOCIAL_SHARE_STATUS_NOT_ALLOWED` |
+
+#### GET `/social/:requestId` (без авторизации)
+
+Не под `/api`. **200** `text/html` — server-rendered страница с OG-тегами в `<head>` (краулеры не выполняют JS). **404** если заявки нет или `social_share_url` не создан (явное действие создателя).
+
+Query: `?locale=ru` (иначе `Accept-Language`, иначе `en`; только **ru** и **en** текстов).
+
+Кнопка «Открыть в JoyPick» → `https://joypick.world/request/{categoryPath}/{id}` (`waste_location` \| `speed_cleanup` \| `event`). **Без** auto-redirect для ботов.
+
+**Жизненный цикл:** при **удалении** заявки (`DELETE /api/requests/:id`) или переводе в **`archived`** (PUT, cron, таймаут модерации) сервер сбрасывает `social_share_*` в БД и удаляет `/uploads/social/{id}/`. Публичный URL после этого отдаёт **404**; при повторном share создаётся заново.
+
+**OG:** `og:image` = склейка до/после 1200×630 JPG, также `GET /social/:id/og.jpg` и `/uploads/social/{id}/og.jpg`.
+
+**Текст статьи:** шаблон как в приложении (`<111>` заявка, `<112>` организатор, `<113>` исполнитель(и)). Для **event** в `<113>` — все участники с `participant_completions.status` ∈ `pending` \| `approved`, кто сдал работу (не создатель).
+
+#### Правки Flutter (`joy_pick`) — для агента мобилки
+
+1. **`RequestSocialShareApi.ensureSharePage`** — парсить ответ из **`response.data['data']`**, не из корня:
+   ```dart
+   final payload = response.data['data'] as Map<String, dynamic>? ?? response.data!;
+   RequestSocialSharePageResult.fromJson(payload);
+   ```
+2. **`request_social_share_session.dart`** — ключ l10n: `share_completion_share_message` → **`share_completion_template`** (ключ `share_completion_share_message` в ARB отсутствует).
+3. Клиент уже шарит `shareText = message + url`; менять не нужно.
+
+---
+
 После **успешной** сдачи с `integrity_enforce` поля очищаются, `completion_integrity` → `null`, статус → `pending`. Это **не** модераторский `rejection_reason` (`status=rejected`).
 
 **Push при `status=rejected`:** `data.type` = `request_rejected`, `requestId`, `primary_code`, `message_key` (напр. `integrity_work_too_short_speed`), `title_key`; в `body` — человекочитаемый текст, **не** сырой код `WORK_TOO_SHORT_SPEED`.
