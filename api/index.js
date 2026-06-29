@@ -38,6 +38,7 @@ const landingRoutes = require('./routes/landing');
 const supportRoutes = require('./routes/support');
 const supportAiReviewAdminRoutes = require('./routes/supportAiReviewAdmin');
 const requestsAdminRoutes = require('./routes/requestsAdmin');
+const donationsAdminRoutes = require('./routes/donationsAdmin');
 
 const app = express();
 
@@ -130,6 +131,7 @@ app.use('/landing', landingRoutes);
 app.use('/support', supportRoutes);
 app.use('/admin/support-ai-reviews', supportAiReviewAdminRoutes);
 app.use('/admin/requests', requestsAdminRoutes);
+app.use('/admin/donations', donationsAdminRoutes);
 
 // Middleware для обработки ошибок в API маршрутах (до общего errorHandler)
 app.use((err, req, res, next) => {

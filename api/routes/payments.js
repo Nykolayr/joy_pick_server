@@ -41,6 +41,19 @@ router.post('/create-donation', authenticate, [
       return error(res, 'Request not found', 404);
     }
 
+    const { assertStripeDonationAllowed } = require('../services/donationRailService');
+    const railCheck = await assertStripeDonationAllowed(request_id);
+    if (!railCheck.ok) {
+      return res.status(railCheck.status).json({
+        success: false,
+        message: railCheck.message,
+        errorCode: railCheck.code,
+        rails: railCheck.rails || [],
+        blocked_reason: railCheck.blocked_reason || null,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     // Проверяем существование пользователя
     const [users] = await pool.execute(
       'SELECT id FROM users WHERE id = ?',

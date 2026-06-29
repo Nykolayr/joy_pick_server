@@ -1,0 +1,223 @@
+---
+description: Поэтапный план рельс донатов A/D/B/E (строгий matching, без F/G на MVP)
+alwaysApply: false
+---
+
+# План: рельсы донатов и выплат (вариант 1 — строгий matching)
+
+Политика: **метод доната = семья выплат исполнителя**. Кросс-рельсы **F** (crypto→Stripe) и **G** (Stripe→crypto) **не делаем** до отдельного решения и treasury.
+
+## Рельсы
+
+| Код | Донат | Выплата | Статус |
+|-----|--------|---------|--------|
+| **A** | Stripe (карта) | Stripe Connect transfer после approve | есть |
+| **D** | USDC on-chain | Zoneless payout после approve | план |
+| **B** | Pix / local (PSP) | PSP split | после sales EBANX/dLocal |
+| **E** | Off-platform | Реквизиты исполнителя | частично (description) |
+| **C** | Stripe | Payout orchestrator | отложено, только если B не покроет |
+
+## Архитектура (целевая)
+
+```
+GET /api/requests/:id/donation-rails  →  какие рельсы доступны на заявку
+POST /api/donations/...               →  по rail (stripe | crypto | psp | manual)
+
+users / executor payout profile:
+  payout_rail: stripe | crypto | manual | psp
+  stripe_account_id (как сейчас)
+  crypto_zoneless_account_id, solana_wallet (D)
+  manual_payout_details (E) — отдельное поле, не description
+  psp_account_id (B, позже)
+
+donations:
+  provider: stripe | crypto | psp | manual
+  rail_code: A | D | B | E
+  amount, currency, status
+  external_id (payment_intent_id | tx_hash | psp_payment_id)
+```
+
+`resolveDonationRails(request, executor)` — чистая функция в `api/services/donationRailResolver.js`.
+
+---
+
+## Порядок работ (обязательный)
+
+1. **Backend** (`joy_pick_server`) — миграция, resolver, API, admin endpoints, smoke-тесты
+2. **Документация** — `API_DOCUMENTATION.md`, обновление `database/donations_table_structure.md`
+3. **Flow / контракт** — согласование полей в ответах, error codes для клиента
+4. **Админка** (`joy_pick_admin`) — раздел «Донаты и рельсы» (см. ниже)
+5. **Flutter** (`joy_pick`) — промпт агенту только после п.1–2
+
+---
+
+## Фаза 0 — Упорядочить A + E (1–2 спринта)
+
+**Цель:** явная модель рельс без новых PSP; E не в свободном description.
+
+### Backend (`joy_pick_server`)
+
+1. **Миграция** `users` (или `user_payout_profiles`):
+   - `payout_rail` ENUM default по наличию `stripe_accounts`
+   - `manual_payout_details` JSON/text nullable (Pix, IBAN — структурировано)
+   - `manual_payout_verified_at` nullable
+
+2. **`donationRailResolver.js`**
+   - Вход: executor user, request category/status
+   - Выход: `[{ rail: 'A', methods: ['card'] }, { rail: 'E', ... }]` или только A
+
+3. **`GET /api/requests/:id/donation-rails`**
+   - JWT опционально; публично для кнопки «Поддержать»
+   - `data.rails[]`, `data.recommended`, `data.blocked_reason`
+
+4. **Integrity / UI**
+   - Реквизиты **не** в `description` для новых заявок (опционально: миграция подсказки «перенесите в профиль»)
+   - `GET /api/requests/:id` → `executor_payout_rail`, `manual_payout_available` (без полных реквизитов в листинге)
+
+5. **Документация** `API_DOCUMENTATION.md` — контракт rails, payout profile, admin
+
+6. **Admin API** (`api/routes/donationsAdmin.js`, mount `/admin/donations`):
+   - `GET /api/admin/donations` — список донатов (фильтры: `rail_code`, `provider`, `request_id`, `user_id`)
+   - `GET /api/admin/donations/summary` — агрегаты по рельсам + сводка payout-профилей пользователей
+   - `GET /api/admin/donations/payout-profiles` — кто на каком `payout_rail`, есть ли manual/Stripe
+
+7. **Админка UI** (`joy_pick_admin`, отдельный промпт после backend):
+   - Вкладка/раздел **«Донаты»**: таблица донатов, фильтр по rail A/E
+   - Подраздел **«Сводка»**: карточки `by_rail`, totals, `payout_profiles` breakdown
+   - Подраздел **«Профили выплат»**: пользователи с `manual` / без Stripe / `can_receive_payouts`
+   - Ссылка из карточки заявки (moderation) на донаты по `request_id`
+
+### Flutter (`joy_pick`) — после готовности API
+
+1. Экран/секция профиля: **«Как получать выплаты»** — Stripe **или** реквизиты (E), не оба как primary без выбора
+2. Донат: перед `create-donation` вызов `donation-rails`; если только E — экран «Перевод напрямую» + копировать реквизиты, **без** `total_contributed` от manual (или флаг `off_platform: true`)
+3. l10n: «Комиссия Joy Pick не взимается с прямого перевода»
+
+### Критерии готовности фазы 0
+
+- [ ] API rails возвращает A для Connect-complete исполнителя
+- [ ] API rails возвращает E только если `manual_payout_details` заполнены
+- [ ] `POST /payments/create-donation` → 422 `DONATION_RAIL_MANUAL_ONLY` если только E
+- [ ] Admin: список донатов и summary по рельсам
+- [ ] Flutter не вызывает Stripe, если доступен только E
+- [ ] Существующий Stripe flow без регресса
+
+---
+
+## Фаза 1 — Рельс D (Crypto + Zoneless) (2–3 спринта)
+
+**Цель:** opt-in crypto для wallet-native; строгий D only (crypto→crypto).
+
+### Infra
+
+1. Self-host Zoneless (Docker на VPS рядом с joypick) или staging
+2. ENV: `ZONELESS_API_URL`, `ZONELESS_SECRET`, `SOLANA_RPC`, platform wallet keys (secrets, не git)
+
+### Backend
+
+1. **Миграция**
+   - `users.zoneless_account_id`, `users.payout_wallet_address`, `users.payout_rail = crypto`
+   - `donations`: `provider`, `tx_hash`, `chain`, `amount_usdc`, `confirmations`
+   - `crypto_deposit_intents`: request_id, expected_amount, memo/reference, status
+
+2. **`POST /api/crypto/donation-intent`**
+   - Создаёт intent + `deposit_address` / memo для привязки tx к `request_id`
+   - Проверка: executor `payout_rail === crypto`
+
+3. **Webhook / poller** (Helius или cron): входящий USDC → `donations` status `confirmed`
+
+4. **Hook в approve** (`handleRequestApproval`, event approval):
+   - Если есть crypto donations pending payout → `zoneless.transfers` + `payouts.processAll`
+   - Платформа fee % как в Stripe (7% — сверить с продуктом)
+
+5. **`POST /api/crypto/connect-payout`** — онбординг исполнителя в Zoneless (аналог create-account)
+
+6. **Reject flow:** refund USDC с platform wallet (ручной/полуавтомат script сначала)
+
+7. **Тесты:** `scripts/test_donation_rail_resolver.js`, mock без mainnet
+
+### Flutter
+
+1. Профиль: «Получать в USDC» → Zoneless onboarding / привязка wallet
+2. Донат: WalletConnect / Phantom deep link, сумма + intent id
+3. Polling `GET /api/crypto/donation-intent/:id`
+
+### Критерии готовности фазы 1
+
+- [ ] Донат USDC → запись в donations → approve → USDC на кошельке исполнителя
+- [ ] Исполнитель только Stripe **не** видит crypto-донат
+- [ ] Исполнитель crypto **не** видит Stripe donate (вариант 1)
+- [ ] Smoke на devnet/mainnet с малыми суммами
+
+---
+
+## Фаза 2 — Рельс B (LATAM PSP) (после sales)
+
+**Предусловие:** выбран один партнёр (EBANX **или** dLocal), контракт US LLC, marketplace split подтверждён.
+
+### Backend
+
+1. `psp_accounts`, `donations.provider = psp`
+2. `POST /api/psp/create-donation` + webhooks split
+3. `donationRailResolver`: страна исполнителя ∈ PSP_COVERAGE → rail B
+4. Конфиг `config/donation_rail_corridors.json`
+
+### Flutter
+
+1. Pix / local checkout (WebView или SDK партнёра)
+2. Онбординг исполнителя в PSP
+
+### Критерии
+
+- [ ] BR: донат Pix → split → исполнитель + % платформы без прохождения через Stripe balance целиком как выручка
+
+---
+
+## Фаза 3 — Полировка и метрики
+
+1. Admin: донаты по `rail_code`, failed payouts
+2. Cron: stale crypto intents, Zoneless `processAll` retry
+3. Метрики: `donation_blocked_no_rail`, `rail_A_share`, `rail_E_share`
+4. Решение о **C** или **F/G** только по данным (порог: N запросов/месяц)
+
+---
+
+## Не делать на MVP
+
+- F (crypto donate → Stripe payout)
+- G (Stripe donate → crypto payout) кроме будущего Stripe stablecoin preview
+- Несколько LATAM PSP одновременно
+- Донат crypto без executor crypto profile
+- Хранить реквизиты только в description
+
+---
+
+## Порядок деплоя
+
+1. Фаза 0 backend → Flutter → прод
+2. Zoneless staging → фаза 1 internal QA → прод
+3. Sales LATAM → фаза 2
+
+---
+
+## Связанные файлы
+
+| Зона | Файлы |
+|------|--------|
+| Stripe donate | `api/routes/payments.js`, webhooks |
+| Rails resolver | `api/services/donationRailResolver.js`, `donationRailService.js` |
+| Admin donations | `api/routes/donationsAdmin.js` |
+| Transfers on approve | `api/routes/requests.js` (`handleEventApproval`, speed/waste paths) |
+| Flutter donate | `donation_dialog.dart`, `stripe_service.dart` |
+| Integrity реквизиты | `api/services/requestIntegrity/*` |
+
+---
+
+## Промпт для Flutter-агента (фаза 0)
+
+Скопировать в чат joy_pick после готовности `GET donation-rails`:
+
+- Вызов rails перед донатом
+- Профиль: payout rail stripe | manual
+- E: отдельный экран, не PaymentIntent
+- Не ломать существующий Stripe flow для rail A

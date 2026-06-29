@@ -8,6 +8,12 @@ const { uploadUserAvatar, getFileUrlFromPath } = require('../middleware/upload')
 const stripeRouter = require('./stripe.js');
 const { getCreditedWorkDurationItemsForUser } = require('../utils/workDurationStats');
 const { normalizeDatesInObject } = require('../utils/datetime');
+const {
+  PAYOUT_RAILS,
+  normalizeManualPayoutDetailsInput,
+  buildPayoutProfileSummary,
+  inferPayoutRail,
+} = require('../services/donationRailResolver');
 
 const router = express.Router();
 
@@ -157,7 +163,8 @@ router.get('/:id', authenticate, async (req, res) => {
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
        about, social_links, lang,
-       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
+       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at,
+       payout_rail, manual_payout_details, manual_payout_verified_at
        FROM users WHERE id = ?`,
       [id]
     );
@@ -186,6 +193,28 @@ router.get('/:id', authenticate, async (req, res) => {
       user.social_links = [];
     }
 
+    if (user.manual_payout_details && typeof user.manual_payout_details === 'string') {
+      try {
+        user.manual_payout_details = JSON.parse(user.manual_payout_details);
+      } catch {
+        user.manual_payout_details = { instructions: String(user.manual_payout_details) };
+      }
+    }
+
+    const [stripeAccountRows] = await pool.execute(
+      'SELECT user_id FROM stripe_accounts WHERE user_id = ? LIMIT 1',
+      [id]
+    );
+    user.payout_profile = buildPayoutProfileSummary(user, {
+      hasStripeAccount: stripeAccountRows.length > 0,
+    });
+
+    if (!isOwnProfile && !isAdmin) {
+      delete user.manual_payout_details;
+      delete user.manual_payout_verified_at;
+      delete user.payout_rail;
+    }
+
     // Если пользователь запрашивает не свой профиль и не админ, скрываем чувствительные данные
     if (!isOwnProfile && !isAdmin) {
       // Удаляем чувствительные поля
@@ -202,6 +231,106 @@ router.get('/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Ошибка получения пользователя:', err);
     error(res, 'Error fetching user data', 500, err);
+  }
+});
+
+/**
+ * PUT /api/users/:id/payout-profile
+ * Настройка рельса выплат (stripe | manual).
+ */
+router.put('/:id/payout-profile', authenticate, [
+  body('payout_rail').optional().isIn(['stripe', 'manual', 'crypto', 'psp']),
+  body('manual_payout_details').optional(),
+  body('clear_manual_payout_details').optional().isBoolean(),
+], async (req, res) => {
+  try {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
+      return error(res, 'Validation error', 400, validationErrors.array());
+    }
+
+    const { id } = req.params;
+    if (req.user.userId !== id && !req.user.isAdmin) {
+      return error(res, 'Access denied', 403);
+    }
+
+    const { payout_rail, manual_payout_details, clear_manual_payout_details } = req.body;
+
+    const [existingUsers] = await pool.execute(
+      'SELECT id FROM users WHERE id = ?',
+      [id]
+    );
+    if (existingUsers.length === 0) {
+      return error(res, 'User not found', 404);
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (payout_rail !== undefined) {
+      updates.push('payout_rail = ?');
+      params.push(String(payout_rail).toLowerCase());
+    }
+
+    if (clear_manual_payout_details === true) {
+      updates.push('manual_payout_details = NULL');
+      updates.push('manual_payout_verified_at = NULL');
+    } else if (manual_payout_details !== undefined) {
+      const normalized = normalizeManualPayoutDetailsInput(manual_payout_details);
+      if (!normalized) {
+        return error(res, 'manual_payout_details must contain instructions', 400);
+      }
+      updates.push('manual_payout_details = ?');
+      params.push(JSON.stringify(normalized));
+      updates.push('manual_payout_verified_at = NULL');
+      if (payout_rail === undefined) {
+        updates.push('payout_rail = ?');
+        params.push(PAYOUT_RAILS.MANUAL);
+      }
+    }
+
+    if (payout_rail === PAYOUT_RAILS.STRIPE && manual_payout_details === undefined && clear_manual_payout_details !== true) {
+      // stripe primary — manual details optional, not cleared automatically
+    }
+
+    if (updates.length === 0) {
+      return error(res, 'No payout profile fields to update', 400);
+    }
+
+    updates.push('updated_at = NOW()');
+    params.push(id);
+    await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    const [users] = await pool.execute(
+      `SELECT id, payout_rail, manual_payout_details, manual_payout_verified_at,
+              stripe_account_status, can_receive_payouts
+       FROM users WHERE id = ?`,
+      [id]
+    );
+    const user = users[0];
+    if (user.manual_payout_details && typeof user.manual_payout_details === 'string') {
+      try {
+        user.manual_payout_details = JSON.parse(user.manual_payout_details);
+      } catch {
+        user.manual_payout_details = { instructions: String(user.manual_payout_details) };
+      }
+    }
+    const [stripeAccountRows] = await pool.execute(
+      'SELECT user_id FROM stripe_accounts WHERE user_id = ? LIMIT 1',
+      [id]
+    );
+    const payout_profile = buildPayoutProfileSummary(user, {
+      hasStripeAccount: stripeAccountRows.length > 0,
+    });
+
+    success(res, {
+      payout_profile,
+      manual_payout_details: user.manual_payout_details || null,
+      payout_rail: inferPayoutRail(user, { hasStripeAccount: stripeAccountRows.length > 0 }),
+    }, 'Payout profile updated');
+  } catch (err) {
+    console.error('payout-profile update:', err);
+    error(res, 'Error updating payout profile', 500, err);
   }
 });
 
@@ -436,7 +565,8 @@ router.put('/:id', authenticate, (req, res, next) => {
        jcoins, coins_from_created, coins_from_participation, stripe_id, score,
        admin, super_admin, fcm_token, auth_type, latitude, longitude, created_time,
        about, social_links, lang,
-       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at
+       stripe_account_status, stripe_status_label, can_donate, can_receive_payouts, stripe_status_updated_at,
+       payout_rail, manual_payout_details, manual_payout_verified_at
        FROM users WHERE id = ?`,
       [id]
     );

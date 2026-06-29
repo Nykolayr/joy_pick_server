@@ -1196,8 +1196,8 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       const amountDollars = (paymentIntent.amount || 0) / 100;
       const donationId = generateId();
       await pool.execute(
-        'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-        [donationId, requestId, userId, amountDollars, paymentIntent.id]
+        'INSERT INTO donations (id, request_id, user_id, amount, payment_intent_id, provider, rail_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+        [donationId, requestId, userId, amountDollars, paymentIntent.id, 'stripe', 'A']
       );
       const [reqRows] = await pool.execute(
         'SELECT total_contributed, created_by, name, category FROM requests WHERE id = ?',

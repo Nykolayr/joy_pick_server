@@ -453,6 +453,18 @@ async function buildRequestDetailForApi(pool, id) {
     const { attachCompletionIntegrityToRequest } = require('../services/completionIntegrityPersist');
     attachCompletionIntegrityToRequest(request);
 
+    if (request.social_share_url) {
+      const { normalizeSocialSharePublicUrl } = require('../services/requestSocialShareService');
+      const { canonical, needsRepair } = normalizeSocialSharePublicUrl(id, request.social_share_url);
+      request.social_share_url = canonical;
+      if (needsRepair) {
+        await pool.execute(
+          'UPDATE requests SET social_share_url = ?, updated_at = NOW() WHERE id = ?',
+          [canonical, id]
+        );
+      }
+    }
+
     // Нормализация дат в UTC
     const normalizedRequest = normalizeDatesInObject(request);
     
@@ -463,8 +475,37 @@ async function buildRequestDetailForApi(pool, id) {
       );
     }
 
+    try {
+      const { getExecutorPayoutSummaryForRequest } = require('../services/donationRailService');
+      const executorPayout = await getExecutorPayoutSummaryForRequest(id, request);
+      if (executorPayout) {
+        normalizedRequest.executor_payout = executorPayout;
+      }
+    } catch (payoutErr) {
+      console.warn('executor_payout summary skipped:', payoutErr.message);
+    }
+
     return { request: normalizedRequest };
 }
+
+/**
+ * GET /api/requests/:id/donation-rails
+ * Доступные рельсы доната для заявки (A=Stripe, E=manual off-platform).
+ */
+router.get('/:id/donation-rails', async (req, res) => {
+  try {
+    const requestId = String(req.params.id || '').trim();
+    const { getDonationRailsForRequest } = require('../services/donationRailService');
+    const data = await getDonationRailsForRequest(requestId);
+    if (data.notFound) {
+      return error(res, 'Request not found', 404);
+    }
+    delete data.notFound;
+    return success(res, data);
+  } catch (err) {
+    return error(res, 'Error resolving donation rails', 500, err);
+  }
+});
 
 /**
  * GET /api/requests/:id

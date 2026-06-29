@@ -1,23 +1,14 @@
-# Структура таблицы donations
+# Структура таблицы `donations`
 
-**Всего колонок:** 6
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| `id` | VARCHAR | UUID |
+| `request_id` | VARCHAR | Заявка |
+| `user_id` | VARCHAR | Донатер |
+| `amount` | DECIMAL | Сумма в USD |
+| `payment_intent_id` | VARCHAR | Stripe PI (rail A) |
+| `provider` | VARCHAR | `stripe` \| `manual` \| `crypto` \| `psp` (default `stripe`) |
+| `rail_code` | VARCHAR(2) | `A` \| `E` \| `D` \| `B` (default `A`) |
+| `created_at` | DATETIME | |
 
-## Колонки:
-
-1. `id` - varchar(36) - PRIMARY KEY, NOT NULL
-2. `request_id` - varchar(36) - NOT NULL
-3. `user_id` - varchar(36) - NOT NULL
-4. `amount` - decimal(10,2) - NOT NULL
-5. `payment_intent_id` - varchar(255) - NOT NULL
-6. `created_at` - timestamp - NOT NULL, DEFAULT CURRENT_TIMESTAMP
-
-## Порядок колонок в INSERT запросе:
-
-```sql
-INSERT INTO donations (
-  id, request_id, user_id, amount, payment_intent_id, created_at
-) VALUES (?, ?, ?, ?, ?, NOW())
-```
-
-**Всего:** 6 колонок = 5 плейсхолдеров `?` + 1 `NOW()` для `created_at`
-
+Миграция: `migrations/047_donation_rails_phase0.sql`

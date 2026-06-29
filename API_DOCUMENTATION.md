@@ -7470,6 +7470,123 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 ---
 
+## 🛤 Рельсы донатов (Donation Rails) — фаза 0
+
+Политика: **метод доната = семья выплат исполнителя**. На MVP: **A** (Stripe) и **E** (off-platform / manual).
+
+### Доступные рельсы для заявки
+
+**GET** `/requests/:id/donation-rails`
+
+**Аутентификация:** не обязательна (публично для кнопки «Поддержать»).
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "request_id": "uuid",
+    "category": "wasteLocation",
+    "status": "pending",
+    "rails": [
+      {
+        "code": "A",
+        "provider": "stripe",
+        "methods": ["card"],
+        "label_key": "donation_rail_stripe_card",
+        "platform_fee": true
+      },
+      {
+        "code": "E",
+        "provider": "manual",
+        "methods": ["off_platform"],
+        "label_key": "donation_rail_manual",
+        "platform_fee": false,
+        "manual_instructions": {
+          "label": "Pix",
+          "instructions": "Chave Pix: ...",
+          "currency_hint": "BRL"
+        }
+      }
+    ],
+    "recommended": "A",
+    "blocked_reason": null,
+    "executor_user_ids": ["uuid-исполнителя"],
+    "payout_profiles": [
+      {
+        "user_id": "uuid",
+        "payout_rail": "stripe",
+        "stripe_account_status": "complete",
+        "can_receive_payouts": true,
+        "has_stripe_account": true,
+        "manual_payout_configured": false,
+        "manual_payout_verified_at": null
+      }
+    ]
+  }
+}
+```
+
+**`blocked_reason`:** `NO_EXECUTOR` | `EXECUTOR_PAYOUT_NOT_CONFIGURED` | `null`
+
+**`GET /requests/:id`** дополнительно возвращает `request.executor_payout` (без полных реквизитов manual).
+
+---
+
+### Профиль выплат исполнителя
+
+**PUT** `/users/:id/payout-profile`
+
+**Требует аутентификации** (только свой профиль или admin).
+
+**Request Body:**
+```json
+{
+  "payout_rail": "manual",
+  "manual_payout_details": {
+    "label": "Pix",
+    "instructions": "Chave Pix: email@example.com",
+    "currency_hint": "BRL"
+  }
+}
+```
+
+Очистить реквизиты: `{ "clear_manual_payout_details": true }`
+
+**Response (200):** `payout_profile`, `payout_rail`, `manual_payout_details`
+
+**GET** `/users/:id` — для своего профиля: `payout_rail`, `manual_payout_details`, `payout_profile`. Для чужих — только `payout_profile` без реквизитов.
+
+---
+
+### Admin: донаты и рельсы
+
+**Базовый путь:** `/admin/donations` (JWT admin).
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/` | Список донатов (`rail_code`, `provider`, `request_id`, `user_id`, пагинация) |
+| GET | `/summary` | Totals, `by_rail[]`, `payout_profiles[]`, hints |
+| GET | `/payout-profiles` | Пользователи с `payout_rail`, Stripe/manual флаги |
+
+**Пример summary:**
+```json
+{
+  "success": true,
+  "data": {
+    "totals": { "donations_count": 120, "total_amount": 5400.5 },
+    "by_rail": [
+      { "rail_code": "A", "provider": "stripe", "donations_count": 118, "total_amount": 5300 }
+    ],
+    "payout_profiles": [
+      { "payout_rail": "unset", "users_count": 400, "with_manual_details": 2, "can_receive_payouts_count": 15 }
+    ]
+  }
+}
+```
+
+---
+
 ## 💰 Платежи (Payments)
 
 ### Создание доната
@@ -7503,6 +7620,19 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
   }
 }
 ```
+
+**Ошибка (422) — только рельс E (manual off-platform):**
+```json
+{
+  "success": false,
+  "message": "In-app card donation is not available; use off-platform transfer (rail E)",
+  "errorCode": "DONATION_RAIL_MANUAL_ONLY",
+  "rails": [{ "code": "E", "provider": "manual", "methods": ["off_platform"] }],
+  "blocked_reason": null
+}
+```
+
+**Рекомендуемый flow:** сначала `GET /requests/:id/donation-rails`. Если `recommended === "A"` — этот endpoint. Если доступен только `E` — показать реквизиты, Stripe не вызывать.
 
 **Ошибка (400):**
 ```json
