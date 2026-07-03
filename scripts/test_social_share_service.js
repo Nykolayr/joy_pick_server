@@ -7,6 +7,8 @@ const {
   resolveSharePhotos,
   hasCompletionSharePhotos,
   resolveExecutorUserIds,
+  normalizeSocialSharePublicUrl,
+  buildSharePageUrl,
 } = require('../api/services/requestSocialShareService');
 const { applyShareTemplate, resolveShareLocale } = require('../api/utils/socialShareCopy');
 
@@ -85,6 +87,25 @@ ok('speed single executor', () => {
 ok('locale ru from Accept-Language', () => {
   assert.strictEqual(resolveShareLocale({ acceptLanguage: 'pt-BR, ru;q=0.9' }), 'ru');
   assert.strictEqual(resolveShareLocale({ locale: 'de' }), 'en');
+});
+
+ok('normalizeSocialSharePublicUrl — joypick legacy', () => {
+  const id = '84d11da2-b3f7-4137-83a7-30f5f2c79a80';
+  const canonical = buildSharePageUrl(id);
+  const legacy = `joypick://request/speed_cleanup/${id}`;
+  const r = normalizeSocialSharePublicUrl(id, legacy);
+  assert.strictEqual(r.canonical, canonical);
+  assert.strictEqual(r.needsRepair, true);
+  assert.ok(r.canonical.startsWith('https://'));
+  assert.ok(r.canonical.includes('/social/'));
+});
+
+ok('normalizeSocialSharePublicUrl — already canonical', () => {
+  const id = 'test-id';
+  const canonical = buildSharePageUrl(id);
+  const r = normalizeSocialSharePublicUrl(id, canonical);
+  assert.strictEqual(r.canonical, canonical);
+  assert.strictEqual(r.needsRepair, false);
 });
 
 ok('applyShareTemplate placeholders', () => {

@@ -2060,6 +2060,8 @@ Future<void> createRequestWithPhotos({
 }
 ```
 
+**Важно для клиента:** `social_share_url` **всегда** `https://joypick.world/social/{uuid}` — для WebView-превью, Instagram, WhatsApp и т.д. **Не** подставлять `joypick://request/...` (WebView не откроет custom scheme → `ERR_UNKNOWN_URL_SCHEME`). Deep link в приложение — отдельно, не из этого поля.
+
 | `created` | Значение |
 |-----------|----------|
 | `false` | URL уже был — идемпотентный повтор |

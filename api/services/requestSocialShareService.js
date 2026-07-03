@@ -110,6 +110,20 @@ function buildSharePageUrl(requestId) {
   return `${PUBLIC_BASE_URL}/social/${encodeURIComponent(requestId)}`;
 }
 
+/**
+ * Публичный share-URL всегда https://…/social/{id}.
+ * В БД могли остаться joypick:// или /request/… — чиним при чтении.
+ * @returns {{ canonical: string, needsRepair: boolean }}
+ */
+function normalizeSocialSharePublicUrl(requestId, storedUrl) {
+  const id = String(requestId || '').trim();
+  const canonical = id ? buildSharePageUrl(id) : '';
+  const raw = String(storedUrl || '').trim();
+  if (!canonical) return { canonical: '', needsRepair: false };
+  if (!raw || raw === canonical) return { canonical, needsRepair: false };
+  return { canonical, needsRepair: true };
+}
+
 function buildDeepLinkUrl(category, requestId) {
   const path = CATEGORY_PATH[category] || 'waste_location';
   return `${PUBLIC_BASE_URL}/request/${path}/${encodeURIComponent(requestId)}`;
@@ -242,14 +256,21 @@ async function ensureSocialSharePage(requestId, userId, options = {}) {
   const locale = options.locale ? normalizeShareLocale(options.locale) : null;
 
   if (row.social_share_url && String(row.social_share_url).trim()) {
-    if (locale) {
+    const { canonical, needsRepair } = normalizeSocialSharePublicUrl(requestId, row.social_share_url);
+
+    if (needsRepair || locale) {
       await pool.execute(
-        'UPDATE requests SET social_share_locale = ?, updated_at = NOW() WHERE id = ?',
-        [locale, requestId]
+        `UPDATE requests SET
+          social_share_url = ?,
+          social_share_locale = COALESCE(?, social_share_locale),
+          updated_at = NOW()
+        WHERE id = ?`,
+        [canonical, locale, requestId]
       );
     }
+
     return {
-      social_share_url: String(row.social_share_url).trim(),
+      social_share_url: canonical,
       created: false,
       social_share_og_image_url: row.social_share_og_image_url || null,
       social_share_locale: locale || row.social_share_locale || null,
@@ -306,9 +327,11 @@ async function loadPublicSharePage(requestId, options = {}) {
   const category = String(row.category || '');
   const categoryLabel = ui.categoryLabels[category] || category;
 
+  const { canonical: shareUrl } = normalizeSocialSharePublicUrl(requestId, row.social_share_url);
+
   return {
     requestId,
-    shareUrl: String(row.social_share_url).trim(),
+    shareUrl,
     locale,
     ui,
     requestName: row.name || '',
@@ -335,6 +358,7 @@ module.exports = {
   ensureSocialSharePage,
   loadPublicSharePage,
   buildSharePageUrl,
+  normalizeSocialSharePublicUrl,
   buildDeepLinkUrl,
   CATEGORY_PATH,
 };

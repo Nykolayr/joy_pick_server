@@ -526,11 +526,15 @@ router.post('/:id/social-share', authenticate, async (req, res) => {
     }
 
     const locale = req.body?.locale || req.query?.locale || null;
-    const { ensureSocialSharePage } = require('../services/requestSocialShareService');
+    const { ensureSocialSharePage, normalizeSocialSharePublicUrl } = require('../services/requestSocialShareService');
     const result = await ensureSocialSharePage(requestId, userId, { locale });
+    const { canonical: socialShareUrl } = normalizeSocialSharePublicUrl(
+      requestId,
+      result.social_share_url
+    );
 
     return success(res, {
-      social_share_url: result.social_share_url,
+      social_share_url: socialShareUrl,
       created: result.created,
       ...(result.social_share_og_image_url
         ? { social_share_og_image_url: result.social_share_og_image_url }
