@@ -1,100 +1,70 @@
 const { SUPPORTED_LOCALES } = require('../services/translateNews');
 
-/** @type {Record<string, Record<string, string>>} */
-const CATALOG = {
-  VALIDATION_FAILED: {
-    en: 'Please fix the fields below and try again.',
-    ru: 'Исправьте указанные поля и попробуйте снова.',
-  },
-  INVALID_CATEGORY: {
-    en: 'Choose a valid request type.',
-    ru: 'Выберите корректный тип заявки.',
-  },
-  NAME_REQUIRED: {
-    en: 'Enter a request title.',
-    ru: 'Укажите название заявки.',
-  },
-  DESCRIPTION_REQUIRED: {
-    en: 'Describe the cleanup or event.',
-    ru: 'Добавьте описание уборки или события.',
-  },
-  INVALID_DATE_FORMAT: {
-    en: 'Check the date format and try again.',
-    ru: 'Проверьте формат даты и попробуйте снова.',
-  },
-  INVALID_BOOLEAN_FIELD: {
-    en: 'Invalid value for a yes/no field.',
-    ru: 'Некорректное значение для поля да/нет.',
-  },
-  INVALID_LOCALE: {
-    en: 'Unsupported language code.',
-    ru: 'Неподдерживаемый код языка.',
-  },
-  REQUEST_CREATE_FAILED: {
-    en: 'Could not create the request. Try again or contact support.',
-    ru: 'Не удалось создать заявку. Попробуйте ещё раз или обратитесь в поддержку.',
-  },
-  FORBIDDEN: {
-    en: 'You do not have permission for this action.',
-    ru: 'У вас нет прав для этого действия.',
-  },
-  REQUEST_NOT_FOUND: {
-    en: 'Request not found.',
-    ru: 'Заявка не найдена.',
-  },
-  USER_NOT_FOUND: {
-    en: 'User not found.',
-    ru: 'Пользователь не найден.',
-  },
-  DONATION_MIN_AMOUNT: {
-    en: 'Minimum donation amount is $0.50.',
-    ru: 'Минимальная сумма доната — $0.50.',
-  },
-  DONATION_REQUEST_ID_REQUIRED: {
-    en: 'Request ID is required.',
-    ru: 'Укажите ID заявки.',
-  },
-  DONATION_USER_ID_REQUIRED: {
-    en: 'User ID is required.',
-    ru: 'Укажите ID пользователя.',
-  },
-  DONATION_AMOUNT_REQUIRED: {
-    en: 'Enter a donation amount.',
-    ru: 'Укажите сумму доната.',
-  },
-  DONATION_AMOUNT_INVALID: {
-    en: 'Enter a valid donation amount.',
-    ru: 'Укажите корректную сумму доната.',
-  },
-  INSUFFICIENT_PERMISSIONS: {
-    en: 'You can only donate on your own behalf.',
-    ru: 'Можно создать донат только от своего имени.',
-  },
-  STRIPE_NOT_CONFIGURED: {
-    en: 'Payments are temporarily unavailable. Please contact support.',
-    ru: 'Платежи временно недоступны. Обратитесь в поддержку.',
-  },
-  STRIPE_ERROR: {
-    en: 'Payment could not be started. Try again or use another card.',
-    ru: 'Не удалось начать оплату. Попробуйте снова или используйте другую карту.',
-  },
-  STRIPE_TIMEOUT: {
-    en: 'Payment service did not respond in time. Try again in a moment.',
-    ru: 'Платёжный сервис не ответил вовремя. Попробуйте через минуту.',
-  },
-  DONATION_RAIL_MANUAL_ONLY: {
-    en: 'Card payment is not available for this request. Use the bank details shown in the app.',
-    ru: 'Оплата картой для этой заявки недоступна. Используйте реквизиты в приложении.',
-  },
-  DONATION_RAIL_UNAVAILABLE: {
-    en: 'Donations are not set up for this request yet.',
-    ru: 'Донаты для этой заявки пока не настроены.',
-  },
-  DONATION_CREATE_FAILED: {
-    en: 'Could not start the donation. Try again or contact support.',
-    ru: 'Не удалось начать донат. Попробуйте снова или обратитесь в поддержку.',
-  },
+/**
+ * Стабильные ключи для ARB в joy_pick (api_error_*).
+ * Клиент переводит по message_key; message на сервере — только EN fallback.
+ */
+const MESSAGE_KEYS = {
+  VALIDATION_FAILED: 'api_error_validation_failed',
+  INVALID_CATEGORY: 'api_error_invalid_category',
+  NAME_REQUIRED: 'api_error_name_required',
+  DESCRIPTION_REQUIRED: 'api_error_description_required',
+  INVALID_DATE_FORMAT: 'api_error_invalid_date_format',
+  INVALID_BOOLEAN_FIELD: 'api_error_invalid_boolean_field',
+  INVALID_LOCALE: 'api_error_invalid_locale',
+  REQUEST_CREATE_FAILED: 'api_error_request_create_failed',
+  FORBIDDEN: 'api_error_forbidden',
+  REQUEST_NOT_FOUND: 'api_error_request_not_found',
+  USER_NOT_FOUND: 'api_error_user_not_found',
+  DONATION_MIN_AMOUNT: 'api_error_donation_min_amount',
+  DONATION_REQUEST_ID_REQUIRED: 'api_error_donation_request_id_required',
+  DONATION_USER_ID_REQUIRED: 'api_error_donation_user_id_required',
+  DONATION_AMOUNT_REQUIRED: 'api_error_donation_amount_required',
+  DONATION_AMOUNT_INVALID: 'api_error_donation_amount_invalid',
+  INSUFFICIENT_PERMISSIONS: 'api_error_insufficient_permissions',
+  STRIPE_NOT_CONFIGURED: 'api_error_stripe_not_configured',
+  STRIPE_ERROR: 'api_error_stripe_error',
+  STRIPE_TIMEOUT: 'api_error_stripe_timeout',
+  DONATION_RAIL_MANUAL_ONLY: 'api_error_donation_rail_manual_only',
+  DONATION_RAIL_UNAVAILABLE: 'api_error_donation_rail_unavailable',
+  DONATION_CREATE_FAILED: 'api_error_donation_create_failed',
 };
+
+/** English fallback only — все остальные языки в Flutter ARB. */
+const MESSAGE_EN = {
+  VALIDATION_FAILED: 'Please fix the fields below and try again.',
+  INVALID_CATEGORY: 'Choose a valid request type.',
+  NAME_REQUIRED: 'Enter a request title.',
+  DESCRIPTION_REQUIRED: 'Describe the cleanup or event.',
+  INVALID_DATE_FORMAT: 'Check the date format and try again.',
+  INVALID_BOOLEAN_FIELD: 'Invalid value for a yes/no field.',
+  INVALID_LOCALE: 'Unsupported language code.',
+  REQUEST_CREATE_FAILED: 'Could not create the request. Try again or contact support.',
+  FORBIDDEN: 'You do not have permission for this action.',
+  REQUEST_NOT_FOUND: 'Request not found.',
+  USER_NOT_FOUND: 'User not found.',
+  DONATION_MIN_AMOUNT: 'Minimum donation amount is $0.50.',
+  DONATION_REQUEST_ID_REQUIRED: 'Request ID is required.',
+  DONATION_USER_ID_REQUIRED: 'User ID is required.',
+  DONATION_AMOUNT_REQUIRED: 'Enter a donation amount.',
+  DONATION_AMOUNT_INVALID: 'Enter a valid donation amount.',
+  INSUFFICIENT_PERMISSIONS: 'You can only donate on your own behalf.',
+  STRIPE_NOT_CONFIGURED: 'Payments are temporarily unavailable. Please contact support.',
+  STRIPE_ERROR: 'Payment could not be started. Try again or use another card.',
+  STRIPE_TIMEOUT: 'Payment service did not respond in time. Try again in a moment.',
+  DONATION_RAIL_MANUAL_ONLY:
+    'Card payment is not available for this request. Use the bank details shown in the app.',
+  DONATION_RAIL_UNAVAILABLE: 'Donations are not set up for this request yet.',
+  DONATION_CREATE_FAILED: 'Could not start the donation. Try again or contact support.',
+};
+
+function messageKeyForErrorCode(errorCode) {
+  return MESSAGE_KEYS[errorCode] || `api_error_${String(errorCode || 'unknown').toLowerCase()}`;
+}
+
+function messageEnForErrorCode(errorCode) {
+  return MESSAGE_EN[errorCode] || 'Something went wrong. Please try again.';
+}
 
 function normalizeLocale(raw) {
   const l = String(raw || 'en')
@@ -114,6 +84,7 @@ function pickLocaleFromAcceptLanguage(acceptLanguage) {
   return 'en';
 }
 
+/** Locale клиента — для логов / data.integrity; тексты ошибок API не локализуются на сервере. */
 function resolveRequestLocale(req, bodyData) {
   const explicit = bodyData?.locale ?? req?.query?.locale;
   if (explicit != null && String(explicit).trim() !== '') {
@@ -122,37 +93,37 @@ function resolveRequestLocale(req, bodyData) {
   return pickLocaleFromAcceptLanguage(req?.headers?.['accept-language']);
 }
 
-function t(key, locale, fallbackEn) {
-  const loc = normalizeLocale(locale);
-  const row = CATALOG[key];
-  if (!row) return fallbackEn || key;
-  return row[loc] || row.en || fallbackEn || key;
-}
-
-function mapExpressValidatorItem(item, locale) {
-  const field = item.path || item.param || item.location || 'unknown';
-  const rawMsg = String(item.msg || '');
-
-  let key = 'VALIDATION_FAILED';
-  if (field === 'category') key = 'INVALID_CATEGORY';
-  else if (field === 'name') key = 'NAME_REQUIRED';
-  else if (field === 'description') key = 'DESCRIPTION_REQUIRED';
-  else if (field === 'request_id') key = 'DONATION_REQUEST_ID_REQUIRED';
-  else if (field === 'user_id') key = 'DONATION_USER_ID_REQUIRED';
-  else if (field === 'amount') {
-    if (/minimum|min/i.test(rawMsg)) key = 'DONATION_MIN_AMOUNT';
-    else key = 'DONATION_AMOUNT_INVALID';
+function errorCodeForValidatorField(field, rawMsg) {
+  if (field === 'category') return 'INVALID_CATEGORY';
+  if (field === 'name') return 'NAME_REQUIRED';
+  if (field === 'description') return 'DESCRIPTION_REQUIRED';
+  if (field === 'request_id') return 'DONATION_REQUEST_ID_REQUIRED';
+  if (field === 'user_id') return 'DONATION_USER_ID_REQUIRED';
+  if (field === 'amount') {
+    if (/minimum|min/i.test(String(rawMsg || ''))) return 'DONATION_MIN_AMOUNT';
+    return 'DONATION_AMOUNT_INVALID';
   }
-
-  return { field, msg: t(key, locale) };
+  return 'VALIDATION_FAILED';
 }
 
-function mapExpressValidatorErrors(items, locale) {
-  return (items || []).map((item) => mapExpressValidatorItem(item, locale));
+function mapExpressValidatorItem(item) {
+  const field = item.path || item.param || item.location || 'unknown';
+  const errorCode = errorCodeForValidatorField(field, item.msg);
+  const message_key = messageKeyForErrorCode(errorCode);
+  return {
+    field,
+    message_key,
+    msg: messageEnForErrorCode(errorCode),
+  };
+}
+
+function mapExpressValidatorErrors(items) {
+  return (items || []).map((item) => mapExpressValidatorItem(item));
 }
 
 function buildErrorPayload({
   errorCode,
+  message_key,
   message,
   locale,
   errors,
@@ -163,13 +134,16 @@ function buildErrorPayload({
   const payload = {
     success: false,
     errorCode,
+    message_key,
     message,
     timestamp,
   };
+  if (locale) payload.locale = locale;
   if (Array.isArray(errors) && errors.length) payload.errors = errors;
   if (errorDetails || requestId) {
     payload.errorDetails = {
       errorCode,
+      message_key,
       errorMessage: message,
       timestamp,
       ...(requestId ? { requestId } : {}),
@@ -185,7 +159,7 @@ function sendUserFacingError(res, options) {
     errorCode,
     messageKey,
     message,
-    locale = 'en',
+    locale,
     errors,
     errorDetails,
     requestId,
@@ -198,10 +172,13 @@ function sendUserFacingError(res, options) {
     if (logError.stack) console.error(logError.stack);
   }
 
-  const userMessage = message || t(messageKey, locale);
+  const resolvedKey = messageKey || messageKeyForErrorCode(errorCode);
+  const fallbackMessage = message || messageEnForErrorCode(errorCode);
+
   const payload = buildErrorPayload({
     errorCode,
-    message: userMessage,
+    message_key: resolvedKey,
+    message: fallbackMessage,
     locale,
     errors,
     errorDetails: statusCode >= 500 ? errorDetails : undefined,
@@ -212,19 +189,26 @@ function sendUserFacingError(res, options) {
 
 function sendValidationError(res, req, validationItems, bodyData) {
   const locale = resolveRequestLocale(req, bodyData);
-  const errors = mapExpressValidatorErrors(validationItems, locale);
+  const errors = mapExpressValidatorErrors(validationItems);
+  const primaryCode =
+    validationItems.length === 1
+      ? errorCodeForValidatorField(
+          validationItems[0].path || validationItems[0].param,
+          validationItems[0].msg
+        )
+      : 'VALIDATION_FAILED';
   const message =
-    errors.length === 1 ? errors[0].msg : t('VALIDATION_FAILED', locale);
+    errors.length === 1 ? errors[0].msg : messageEnForErrorCode('VALIDATION_FAILED');
   return sendUserFacingError(res, {
     statusCode: 400,
-    errorCode: 'VALIDATION_FAILED',
+    errorCode: primaryCode,
     message,
     locale,
     errors,
   });
 }
 
-function stripeUserMessage(stripeErr, locale) {
+function stripeUserError(stripeErr) {
   const code = stripeErr?.code || '';
   const type = stripeErr?.type || '';
   if (
@@ -232,29 +216,20 @@ function stripeUserMessage(stripeErr, locale) {
     code === 'ETIMEDOUT' ||
     /timeout/i.test(String(stripeErr?.message || ''))
   ) {
-    return { errorCode: 'STRIPE_TIMEOUT', message: t('STRIPE_TIMEOUT', locale) };
+    return { errorCode: 'STRIPE_TIMEOUT' };
   }
-  return { errorCode: 'STRIPE_ERROR', message: t('STRIPE_ERROR', locale) };
-}
-
-function railErrorMessage(code, locale) {
-  const key =
-    code === 'DONATION_RAIL_MANUAL_ONLY'
-      ? 'DONATION_RAIL_MANUAL_ONLY'
-      : code === 'REQUEST_NOT_FOUND'
-        ? 'REQUEST_NOT_FOUND'
-        : 'DONATION_RAIL_UNAVAILABLE';
-  return t(key, locale);
+  return { errorCode: 'STRIPE_ERROR' };
 }
 
 module.exports = {
-  CATALOG,
+  MESSAGE_KEYS,
+  MESSAGE_EN,
+  messageKeyForErrorCode,
+  messageEnForErrorCode,
   normalizeLocale,
   resolveRequestLocale,
-  t,
   mapExpressValidatorErrors,
   sendUserFacingError,
   sendValidationError,
-  stripeUserMessage,
-  railErrorMessage,
+  stripeUserError,
 };

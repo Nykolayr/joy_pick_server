@@ -31,7 +31,7 @@ const {
   resolveRequestLocale,
   sendUserFacingError,
   sendValidationError,
-  t,
+  messageEnForErrorCode,
 } = require('../utils/userFacingErrors');
 
 const router = express.Router();
@@ -666,7 +666,7 @@ router.post('/', authenticate, uploadRequestPhotos, [
         errorCode: 'INVALID_DATE_FORMAT',
         messageKey: 'INVALID_DATE_FORMAT',
         locale,
-        errors: [{ field: 'start_date', msg: t('INVALID_DATE_FORMAT', locale) }],
+        errors: [{ field: 'start_date', message_key: 'api_error_invalid_date_format', msg: messageEnForErrorCode('INVALID_DATE_FORMAT') }],
       });
     }
 

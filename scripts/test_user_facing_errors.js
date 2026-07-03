@@ -1,28 +1,21 @@
 #!/usr/bin/env node
 const assert = require('assert');
 const {
-  t,
+  messageEnForErrorCode,
+  messageKeyForErrorCode,
   mapExpressValidatorErrors,
-  normalizeLocale,
-  stripeUserMessage,
-  railErrorMessage,
+  stripeUserError,
 } = require('../api/utils/userFacingErrors');
 
-assert.strictEqual(t('NAME_REQUIRED', 'ru'), 'Укажите название заявки.');
-assert.strictEqual(t('DONATION_MIN_AMOUNT', 'en'), 'Minimum donation amount is $0.50.');
-assert.strictEqual(normalizeLocale('ru-RU'), 'ru');
+assert.strictEqual(messageKeyForErrorCode('NAME_REQUIRED'), 'api_error_name_required');
+assert.strictEqual(messageEnForErrorCode('NAME_REQUIRED'), 'Enter a request title.');
+assert.strictEqual(messageEnForErrorCode('DONATION_MIN_AMOUNT'), 'Minimum donation amount is $0.50.');
 
-const mapped = mapExpressValidatorErrors(
-  [{ path: 'name', msg: 'Name is required' }],
-  'ru'
-);
+const mapped = mapExpressValidatorErrors([{ path: 'name', msg: 'Name is required' }]);
 assert.strictEqual(mapped[0].field, 'name');
-assert.ok(mapped[0].msg.includes('название'));
+assert.strictEqual(mapped[0].message_key, 'api_error_name_required');
+assert.ok(mapped[0].msg.includes('title'));
 
-const stripeTimeout = stripeUserMessage({ type: 'StripeConnectionError' }, 'ru');
-assert.strictEqual(stripeTimeout.errorCode, 'STRIPE_TIMEOUT');
-
-const railManual = railErrorMessage('DONATION_RAIL_MANUAL_ONLY', 'ru');
-assert.ok(railManual.includes('картой') || railManual.includes('реквизиты'));
+assert.strictEqual(stripeUserError({ type: 'StripeConnectionError' }).errorCode, 'STRIPE_TIMEOUT');
 
 console.log('test_user_facing_errors: ok');

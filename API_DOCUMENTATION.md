@@ -7472,36 +7472,52 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 ## ⚠️ Ошибки POST /api/requests и POST /api/payments/create-donation
 
-Клиент показывает пользователю **`message`** (и при необходимости **`errors[]`** / **`errorDetails.errorMessage`**). Язык: `body.locale`, `query.locale` или заголовок **`Accept-Language`**.
+Клиент показывает пользователю текст **из ARB по `message_key`** (приоритет), иначе **`message`** (EN fallback с сервера).
 
 ### Общий формат (`success: false`)
 
 ```json
 {
   "success": false,
-  "errorCode": "VALIDATION_FAILED",
-  "message": "Укажите название заявки.",
+  "errorCode": "NAME_REQUIRED",
+  "message_key": "api_error_name_required",
+  "message": "Enter a request title.",
   "timestamp": "2026-07-03T03:36:00.000Z",
+  "locale": "pt",
   "errors": [
-    { "field": "name", "msg": "Укажите название заявки." }
+    {
+      "field": "name",
+      "message_key": "api_error_name_required",
+      "msg": "Enter a request title."
+    }
   ]
 }
 ```
 
-### Коды `errorCode` (основные)
+**Локализация:** сервер отдаёт только **EN** в `message` / `msg`. Все 10 языков приложения — в Flutter ARB по ключам `api_error_*`. Поле `locale` — подсказка клиенту (из `body.locale` / `Accept-Language`), не для перевода на бэкенде.
 
-| Код | HTTP | Когда |
-|-----|------|--------|
-| `VALIDATION_FAILED` | 400 | express-validator / несколько полей |
-| `NAME_REQUIRED` | 400 | пустое `name` |
-| `DESCRIPTION_REQUIRED` | 400 | пустое `description` (с `integrity_enforce`) |
-| `INVALID_DATE_FORMAT` | 400 | некорректные даты |
-| `REQUEST_CREATE_FAILED` | 500 | сбой БД/сервера при создании заявки |
-| `INTEGRITY_CHECK_FAILED` | 422 | фото/координаты/текст (см. `data.integrity.issues[]`) |
-| `DONATION_MIN_AMOUNT` | 400 | сумма < $0.50 |
-| `DONATION_RAIL_MANUAL_ONLY` | 422 | только off-platform (рельс E) |
-| `STRIPE_NOT_CONFIGURED` | 500 | нет `STRIPE_SECRET_KEY` |
-| `STRIPE_ERROR` / `STRIPE_TIMEOUT` | 500 | ошибка / таймаут Stripe |
+### Ключи ARB (`message_key` → Flutter)
+
+| errorCode | message_key |
+|-----------|-------------|
+| `VALIDATION_FAILED` | `api_error_validation_failed` |
+| `NAME_REQUIRED` | `api_error_name_required` |
+| `DESCRIPTION_REQUIRED` | `api_error_description_required` |
+| `INVALID_CATEGORY` | `api_error_invalid_category` |
+| `INVALID_DATE_FORMAT` | `api_error_invalid_date_format` |
+| `REQUEST_CREATE_FAILED` | `api_error_request_create_failed` |
+| `DONATION_MIN_AMOUNT` | `api_error_donation_min_amount` |
+| `DONATION_RAIL_MANUAL_ONLY` | `api_error_donation_rail_manual_only` |
+| `STRIPE_NOT_CONFIGURED` | `api_error_stripe_not_configured` |
+| `STRIPE_ERROR` | `api_error_stripe_error` |
+| `STRIPE_TIMEOUT` | `api_error_stripe_timeout` |
+| `INSUFFICIENT_PERMISSIONS` | `api_error_insufficient_permissions` |
+| `REQUEST_NOT_FOUND` | `api_error_request_not_found` |
+| `USER_NOT_FOUND` | `api_error_user_not_found` |
+| `DONATION_CREATE_FAILED` | `api_error_donation_create_failed` |
+| `DONATION_RAIL_UNAVAILABLE` | `api_error_donation_rail_unavailable` |
+
+Integrity 422 — `data.integrity.issues[].message_key` (`integrity_*`); переводы в ARB, на сервере EN + ключи.
 
 ### Integrity 422 (без изменений контракта)
 
@@ -7532,11 +7548,13 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 {
   "success": false,
   "errorCode": "STRIPE_NOT_CONFIGURED",
-  "message": "Платежи временно недоступны. Обратитесь в поддержку.",
+  "message_key": "api_error_stripe_not_configured",
+  "message": "Payments are temporarily unavailable. Please contact support.",
   "timestamp": "...",
   "errorDetails": {
     "errorCode": "STRIPE_NOT_CONFIGURED",
-    "errorMessage": "Платежи временно недоступны. Обратитесь в поддержку.",
+    "message_key": "api_error_stripe_not_configured",
+    "errorMessage": "Payments are temporarily unavailable. Please contact support.",
     "timestamp": "...",
     "requestId": "uuid-заявки"
   }

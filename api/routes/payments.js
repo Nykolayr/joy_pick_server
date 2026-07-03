@@ -9,9 +9,8 @@ const {
   resolveRequestLocale,
   sendUserFacingError,
   sendValidationError,
-  stripeUserMessage,
-  railErrorMessage,
-  t,
+  stripeUserError,
+  messageEnForErrorCode,
 } = require('../utils/userFacingErrors');
 
 const router = express.Router();
@@ -67,7 +66,6 @@ router.post('/create-donation', authenticate, [
       return sendUserFacingError(res, {
         statusCode: railCheck.status,
         errorCode: railCheck.code,
-        message: railErrorMessage(railCheck.code, locale),
         locale,
         errorDetails: {
           rails: railCheck.rails || [],
@@ -114,7 +112,7 @@ router.post('/create-donation', authenticate, [
         errorCode: 'DONATION_MIN_AMOUNT',
         messageKey: 'DONATION_MIN_AMOUNT',
         locale,
-        errors: [{ field: 'amount', msg: t('DONATION_MIN_AMOUNT', locale) }],
+        errors: [{ field: 'amount', message_key: 'api_error_donation_min_amount', msg: messageEnForErrorCode('DONATION_MIN_AMOUNT') }],
         requestId: request_id,
       });
     }
@@ -149,11 +147,10 @@ router.post('/create-donation', authenticate, [
       }
 
     } catch (stripeErr) {
-      const stripeMsg = stripeUserMessage(stripeErr, locale);
+      const stripeMeta = stripeUserError(stripeErr);
       return sendUserFacingError(res, {
         statusCode: 500,
-        errorCode: stripeMsg.errorCode,
-        message: stripeMsg.message,
+        errorCode: stripeMeta.errorCode,
         locale,
         requestId: request_id,
         logError: stripeErr,
