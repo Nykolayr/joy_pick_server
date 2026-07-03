@@ -5,6 +5,14 @@ const stripe = require('../config/stripe.js');
 const { success, error } = require('../utils/response');
 const { authenticate } = require('../middleware/auth');
 const { generateId } = require('../utils/uuid');
+const {
+  resolveRequestLocale,
+  sendUserFacingError,
+  sendValidationError,
+  stripeUserMessage,
+  railErrorMessage,
+  t,
+} = require('../utils/userFacingErrors');
 
 const router = express.Router();
 
@@ -18,17 +26,23 @@ router.post('/create-donation', authenticate, [
   body('amount').isFloat({ min: 0.5 }).withMessage('Minimum 0.5 dollars (50 cents)'),
   body('request_category').optional().isString()
 ], async (req, res) => {
+  const locale = resolveRequestLocale(req, req.body);
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return error(res, 'Validation error', 400, errors.array());
+      return sendValidationError(res, req, errors.array(), req.body);
     }
 
     const { request_id, user_id, amount, request_category } = req.body;
 
     // Проверяем права доступа
     if (req.user.userId !== user_id && !req.user.isAdmin) {
-      return error(res, 'Insufficient permissions', 403);
+      return sendUserFacingError(res, {
+        statusCode: 403,
+        errorCode: 'INSUFFICIENT_PERMISSIONS',
+        messageKey: 'INSUFFICIENT_PERMISSIONS',
+        locale,
+      });
     }
 
     // Проверяем существование заявки
@@ -38,19 +52,28 @@ router.post('/create-donation', authenticate, [
     );
 
     if (requests.length === 0) {
-      return error(res, 'Request not found', 404);
+      return sendUserFacingError(res, {
+        statusCode: 404,
+        errorCode: 'REQUEST_NOT_FOUND',
+        messageKey: 'REQUEST_NOT_FOUND',
+        locale,
+        requestId: request_id,
+      });
     }
 
     const { assertStripeDonationAllowed } = require('../services/donationRailService');
     const railCheck = await assertStripeDonationAllowed(request_id);
     if (!railCheck.ok) {
-      return res.status(railCheck.status).json({
-        success: false,
-        message: railCheck.message,
+      return sendUserFacingError(res, {
+        statusCode: railCheck.status,
         errorCode: railCheck.code,
-        rails: railCheck.rails || [],
-        blocked_reason: railCheck.blocked_reason || null,
-        timestamp: new Date().toISOString(),
+        message: railErrorMessage(railCheck.code, locale),
+        locale,
+        errorDetails: {
+          rails: railCheck.rails || [],
+          blocked_reason: railCheck.blocked_reason || null,
+        },
+        requestId: request_id,
       });
     }
 
@@ -61,12 +84,24 @@ router.post('/create-donation', authenticate, [
     );
 
     if (users.length === 0) {
-      return error(res, 'User not found', 404);
+      return sendUserFacingError(res, {
+        statusCode: 404,
+        errorCode: 'USER_NOT_FOUND',
+        messageKey: 'USER_NOT_FOUND',
+        locale,
+        requestId: request_id,
+      });
     }
 
     // Проверяем, что Stripe API ключ настроен
     if (!process.env.STRIPE_SECRET_KEY) {
-      return error(res, 'Stripe not configured on server', 500);
+      return sendUserFacingError(res, {
+        statusCode: 500,
+        errorCode: 'STRIPE_NOT_CONFIGURED',
+        messageKey: 'STRIPE_NOT_CONFIGURED',
+        locale,
+        requestId: request_id,
+      });
     }
 
     // ВАЖНО: amount приходит в долларах (как возвращается на фронт)
@@ -74,7 +109,14 @@ router.post('/create-donation', authenticate, [
     const amountCents = Math.round(parseFloat(amount) * 100);
     
     if (amountCents < 50) {
-      return error(res, 'Minimum 50 cents (Stripe requirement)', 400);
+      return sendUserFacingError(res, {
+        statusCode: 400,
+        errorCode: 'DONATION_MIN_AMOUNT',
+        messageKey: 'DONATION_MIN_AMOUNT',
+        locale,
+        errors: [{ field: 'amount', msg: t('DONATION_MIN_AMOUNT', locale) }],
+        requestId: request_id,
+      });
     }
 
     // Создаем PaymentIntent в Stripe
@@ -107,17 +149,19 @@ router.post('/create-donation', authenticate, [
       }
 
     } catch (stripeErr) {
-      return error(res, 'Error creating PaymentIntent for donation', 500, {
-        errorMessage: stripeErr.message || 'Unknown error',
-        errorType: stripeErr.type || 'StripeError',
-        errorCode: stripeErr.code || 'STRIPE_ERROR',
+      const stripeMsg = stripeUserMessage(stripeErr, locale);
+      return sendUserFacingError(res, {
+        statusCode: 500,
+        errorCode: stripeMsg.errorCode,
+        message: stripeMsg.message,
+        locale,
         requestId: request_id,
-        userId: user_id,
-        amountCents: amountCents,
-        amountDollars: parseFloat(amount),
-        stripeRaw: stripeErr.raw || null,
-        stripeDeclineCode: stripeErr.decline_code || null,
-        stripeParam: stripeErr.param || null
+        logError: stripeErr,
+        logContext: 'POST /api/payments/create-donation stripe',
+        errorDetails: {
+          stripeType: stripeErr.type || null,
+          stripeCode: stripeErr.code || null,
+        },
       });
     }
 
@@ -151,7 +195,15 @@ router.post('/create-donation', authenticate, [
     }, 'Payment intent created');
 
   } catch (err) {
-    return error(res, 'Error creating donation', 500, err);
+    return sendUserFacingError(res, {
+      statusCode: 500,
+      errorCode: 'DONATION_CREATE_FAILED',
+      messageKey: 'DONATION_CREATE_FAILED',
+      locale,
+      requestId: req.body?.request_id || null,
+      logError: err,
+      logContext: 'POST /api/payments/create-donation',
+    });
   }
 });
 

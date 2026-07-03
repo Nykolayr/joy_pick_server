@@ -7470,6 +7470,83 @@ Stripe **требует HTTPS** для webhooks в продакшене. На Be
 
 ---
 
+## ⚠️ Ошибки POST /api/requests и POST /api/payments/create-donation
+
+Клиент показывает пользователю **`message`** (и при необходимости **`errors[]`** / **`errorDetails.errorMessage`**). Язык: `body.locale`, `query.locale` или заголовок **`Accept-Language`**.
+
+### Общий формат (`success: false`)
+
+```json
+{
+  "success": false,
+  "errorCode": "VALIDATION_FAILED",
+  "message": "Укажите название заявки.",
+  "timestamp": "2026-07-03T03:36:00.000Z",
+  "errors": [
+    { "field": "name", "msg": "Укажите название заявки." }
+  ]
+}
+```
+
+### Коды `errorCode` (основные)
+
+| Код | HTTP | Когда |
+|-----|------|--------|
+| `VALIDATION_FAILED` | 400 | express-validator / несколько полей |
+| `NAME_REQUIRED` | 400 | пустое `name` |
+| `DESCRIPTION_REQUIRED` | 400 | пустое `description` (с `integrity_enforce`) |
+| `INVALID_DATE_FORMAT` | 400 | некорректные даты |
+| `REQUEST_CREATE_FAILED` | 500 | сбой БД/сервера при создании заявки |
+| `INTEGRITY_CHECK_FAILED` | 422 | фото/координаты/текст (см. `data.integrity.issues[]`) |
+| `DONATION_MIN_AMOUNT` | 400 | сумма < $0.50 |
+| `DONATION_RAIL_MANUAL_ONLY` | 422 | только off-platform (рельс E) |
+| `STRIPE_NOT_CONFIGURED` | 500 | нет `STRIPE_SECRET_KEY` |
+| `STRIPE_ERROR` / `STRIPE_TIMEOUT` | 500 | ошибка / таймаут Stripe |
+
+### Integrity 422 (без изменений контракта)
+
+```json
+{
+  "success": false,
+  "errorCode": "INTEGRITY_CHECK_FAILED",
+  "message": "Заявка не прошла проверку…",
+  "data": {
+    "integrity": {
+      "ok": false,
+      "issues": [
+        {
+          "code": "MISSING_COORDS",
+          "field": "location",
+          "message": "Укажите место на карте.",
+          "message_key": "integrity_missing_coords"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Ошибки 500 — `errorDetails`
+
+```json
+{
+  "success": false,
+  "errorCode": "STRIPE_NOT_CONFIGURED",
+  "message": "Платежи временно недоступны. Обратитесь в поддержку.",
+  "timestamp": "...",
+  "errorDetails": {
+    "errorCode": "STRIPE_NOT_CONFIGURED",
+    "errorMessage": "Платежи временно недоступны. Обратитесь в поддержку.",
+    "timestamp": "...",
+    "requestId": "uuid-заявки"
+  }
+}
+```
+
+Полный stack trace **не** отдаётся клиенту — только в логах сервера.
+
+---
+
 ## 🛤 Рельсы донатов (Donation Rails) — фаза 0
 
 Политика: **метод доната = семья выплат исполнителя**. На MVP: **A** (Stripe) и **E** (off-platform / manual).

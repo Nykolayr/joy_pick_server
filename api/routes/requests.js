@@ -27,6 +27,12 @@ const { createGroupChatForRequest } = require('../utils/chatHelpers');
 const { insertTransferPayoutCheck } = require('../utils/transferPayoutCheck.js');
 const stripe = require('../config/stripe.js');
 const { parseWorkDurationMinutesInput, normalizeRequestRowWorkDuration } = require('../utils/workDurationStats');
+const {
+  resolveRequestLocale,
+  sendUserFacingError,
+  sendValidationError,
+  t,
+} = require('../utils/userFacingErrors');
 
 const router = express.Router();
 const PUBLIC_BASE_URL = (process.env.BASE_URL || process.env.APP_URL || 'https://joypick.world').replace(/\/+$/, '');
@@ -582,10 +588,18 @@ router.post('/', authenticate, uploadRequestPhotos, [
   body('longitude').optional().isFloat(),
   body('city').optional().isString()
 ], async (req, res, next) => {
+  let bodyDataForLocale = req.body;
   try {
     const validationErrors = validationResult(req);
     if (!validationErrors.isEmpty()) {
-      return error(res, 'Validation error', 400, validationErrors.array());
+      if (typeof req.body === 'string') {
+        try {
+          bodyDataForLocale = JSON.parse(req.body);
+        } catch {
+          bodyDataForLocale = req.body;
+        }
+      }
+      return sendValidationError(res, req, validationErrors.array(), bodyDataForLocale);
     }
 
     // Обработка загруженных файлов (только файлы, URL не принимаем)
@@ -646,7 +660,14 @@ router.post('/', authenticate, uploadRequestPhotos, [
     const endDateForDb = formatDateTimeForMySql(end_date);
     if ((start_date !== undefined && start_date !== null && start_date !== '' && !startDateForDb) ||
       (end_date !== undefined && end_date !== null && end_date !== '' && !endDateForDb)) {
-      return error(res, 'start_date/end_date: некорректный формат даты', 400);
+      const locale = resolveRequestLocale(req, bodyData);
+      return sendUserFacingError(res, {
+        statusCode: 400,
+        errorCode: 'INVALID_DATE_FORMAT',
+        messageKey: 'INVALID_DATE_FORMAT',
+        locale,
+        errors: [{ field: 'start_date', msg: t('INVALID_DATE_FORMAT', locale) }],
+      });
     }
 
     const onlyFootForDb = parseBooleanToDbInt(only_foot, 0);
@@ -664,11 +685,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
       });
     }
     if (onlyFootForDb === null || possibleByCarForDb === null || plantTreeForDb === null || trashPickupOnlyForDb === null) {
-      return error(
-        res,
-        'only_foot/possible_by_car/plant_tree/trash_pickup_only: ожидаются boolean или 0/1',
-        400
-      );
+      const locale = resolveRequestLocale(req, bodyData);
+      return sendUserFacingError(res, {
+        statusCode: 400,
+        errorCode: 'VALIDATION_FAILED',
+        messageKey: 'INVALID_BOOLEAN_FIELD',
+        locale,
+      });
     }
 
     let fromExternalSource = false;
@@ -679,7 +702,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
       rawFromExternal === 'true'
     ) {
       if (!req.user.isSuperAdmin) {
-        return error(res, 'from_external_source: true доступно только суперадмину', 403);
+        const locale = resolveRequestLocale(req, bodyData);
+        return sendUserFacingError(res, {
+          statusCode: 403,
+          errorCode: 'FORBIDDEN',
+          messageKey: 'FORBIDDEN',
+          locale,
+        });
       }
       fromExternalSource = true;
     } else if (
@@ -756,11 +785,13 @@ router.post('/', authenticate, uploadRequestPhotos, [
     if (rawLocale != null && String(rawLocale).trim() !== '') {
       const locKey = String(rawLocale).trim().toLowerCase().split('-')[0];
       if (!SUPPORTED_LOCALES.includes(locKey)) {
-        return error(
-          res,
-          `locale must be one of: ${SUPPORTED_LOCALES.join(', ')}`,
-          400
-        );
+        const locale = resolveRequestLocale(req, bodyData);
+        return sendUserFacingError(res, {
+          statusCode: 400,
+          errorCode: 'INVALID_LOCALE',
+          messageKey: 'INVALID_LOCALE',
+          locale,
+        });
       }
     }
     // Без integrity_enforce — legacy, locale не обязателен. С enforce — желателен с мобилки, иначе en / Accept-Language.
@@ -979,34 +1010,15 @@ router.post('/', authenticate, uploadRequestPhotos, [
       request: normalizedRequest
     }, 'Request created', 201);
   } catch (err) {
-    // Добавляем диагностическую информацию в ответ
-    const diagnosticInfo = {
-      originalError: err.message,
-      sqlError: err.sql || null,
-      errorCode: err.code || null,
-      
-      // Информация о структуре запроса
-      insertColumnsCount: 45, // ожидаемое количество колонок
-      insertColumns: [
-        'id', 'user_id', 'category', 'name', 'description', 'latitude', 'longitude', 'city',
-        'garbage_size', 'only_foot', 'possible_by_car', 'reward_amount', 'is_open',
-        'start_date', 'end_date', 'status', 'priority', 'assigned_to', 'notes', 'created_by',
-        'taken_by', 'total_contributed', 'target_amount', 'joined_user_id', 'join_date',
-        'completion_comment', 'plant_tree', 'trash_pickup_only',
-        'created_at', 'updated_at', 'rejection_reason', 'rejection_message', 'actual_participants',
-        'photos_before', 'photos_after', 'registered_participants', 'waste_types', 'expires_at',
-        'extended_count', 'participant_completions', 'group_chat_id', 'private_chats', 'from_external_source',
-        'earthday_cleanup_objectid', 'work_duration_minutes'
-      ],
-      
-      // Информация о параметрах
-      valuesCount: 43, // количество ? плейсхолдеров + 2 NOW()
-      nowCount: 2,
-      totalParams: 45
-    };
-    
-    // Возвращаем детальную ошибку клиенту
-    error(res, 'VALUES_COUNT_41_EXPECTED_42_MISSING_1_PARAM', 500, { ...err, diagnostic: diagnosticInfo });
+    const locale = resolveRequestLocale(req, bodyDataForLocale);
+    return sendUserFacingError(res, {
+      statusCode: 500,
+      errorCode: 'REQUEST_CREATE_FAILED',
+      messageKey: 'REQUEST_CREATE_FAILED',
+      locale,
+      logError: err,
+      logContext: 'POST /api/requests',
+    });
   }
 });
 
